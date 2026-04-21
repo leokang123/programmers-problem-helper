@@ -1,0 +1,70 @@
+{
+  "name": "programmers-problem-helper",
+  "displayName": "Programmers Problem Helper",
+  "description": "Create Programmers problem files, open a preview/solution split view, and run sample or custom C++ tests.",
+  "version": "0.0.1",
+  "publisher": "local",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "programmers",
+    "algorithm",
+    "cpp",
+    "coding-test",
+    "korean"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YOUR_GITHUB_ID/programmers-problem-helper.git"
+  },
+  "bugs": {
+    "url": "https://github.com/YOUR_GITHUB_ID/programmers-problem-helper/issues"
+  },
+  "homepage": "https://github.com/YOUR_GITHUB_ID/programmers-problem-helper#readme",
+  "scripts": {
+    "check": "node --check extension.js",
+    "package": "npx @vscode/vsce package",
+    "publish": "npx @vscode/vsce publish"
+  },
+  "activationEvents": [
+    "onCommand:programmersHelper.createProblem",
+    "onCommand:programmersHelper.runSamples",
+    "onView:programmersHelper.sidebar"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "programmersHelper",
+          "title": "Programmers",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "programmersHelper": [
+        {
+          "id": "programmersHelper.sidebar",
+          "type": "webview",
+          "name": "Problem Helper"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "programmersHelper.createProblem",
+        "title": "Programmers: Create Problem"
+      },
+      {
+        "command": "programmersHelper.runSamples",
+        "title": "Programmers: Run Sample Tests"
+      }
+    ]
+  }
+}

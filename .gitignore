@@ -1,0 +1,8 @@
+.DS_Store
+node_modules/
+*.vsix
+*.log
+.vscode/
+.programmers-helper/
+out/
+dist/
