@@ -11,7 +11,7 @@
 - 왼쪽 Activity Bar에 `Programmers` 사이드바 추가
 - `Programmers/<문제번호>_<문제이름>/problem.md` 생성
 - `Programmers/<문제번호>_<문제이름>/solution.cpp` 생성
-- 예제 정보를 담은 `programmers.json` 생성
+- 예제 정보를 담은 `.programmers-helper/programmers.json` 생성
 - 왼쪽에는 `problem.md` Markdown Preview 열기
 - 오른쪽에는 `solution.cpp` 에디터 열기
 - 문제의 입출력 예를 기반으로 샘플 테스트 실행
@@ -141,6 +141,6 @@ This extension was built with OpenAI Codex.
 
 Programmers Problem Helper is a local VS Code extension for solving Programmers coding-test problems.
 
-It creates `problem.md`, `solution.cpp`, and `programmers.json` from a Programmers lesson number, opens the problem preview beside the C++ solution file, and runs sample or custom C++ tests.
+It creates `problem.md`, `solution.cpp`, and `.programmers-helper/programmers.json` from a Programmers lesson number, opens the problem preview beside the C++ solution file, and runs sample or custom C++ tests.
 
 This project was built with OpenAI Codex.

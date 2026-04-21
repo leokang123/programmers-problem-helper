@@ -258,9 +258,11 @@ async function createProblem(workspaceUri, lessonId) {
   const problemDir = vscode.Uri.joinPath(workspaceUri, "Programmers", folderName);
   const mdUri = vscode.Uri.joinPath(problemDir, "problem.md");
   const cppUri = vscode.Uri.joinPath(problemDir, "solution.cpp");
-  const metadataUri = vscode.Uri.joinPath(problemDir, "programmers.json");
+  const helperDir = vscode.Uri.joinPath(problemDir, ".programmers-helper");
+  const metadataUri = vscode.Uri.joinPath(helperDir, "programmers.json");
 
   await vscode.workspace.fs.createDirectory(problemDir);
+  await vscode.workspace.fs.createDirectory(helperDir);
 
   const problemMd = [
     `# [Programmers ${lessonId}] ${title}`,
