@@ -1,75 +1,78 @@
 # Programmers Problem Helper
 
-VS Code extension for solving Programmers coding-test problems locally.
+프로그래머스 코딩테스트 문제를 VS Code에서 더 편하게 풀기 위한 로컬 확장입니다.
 
-It creates a problem folder from a Programmers lesson number, opens the problem preview beside `solution.cpp`, and runs sample or custom C++ tests.
+이 확장은 OpenAI Codex를 사용해서 만들었습니다.
 
-## Features
+문제 번호를 입력하면 프로그래머스 문제 페이지를 가져와서 `problem.md`와 `solution.cpp`를 만들고, 왼쪽에는 문제 미리보기, 오른쪽에는 C++ 풀이 파일을 열어줍니다. 샘플 테스트와 직접 추가한 커스텀 테스트도 실행할 수 있습니다.
 
-- Activity Bar sidebar named `Programmers`
-- Create `Programmers/<lessonId>_<title>/problem.md`
-- Create `Programmers/<lessonId>_<title>/solution.cpp`
-- Create `programmers.json` metadata with parsed examples
-- Open `problem.md` Markdown Preview on the left
-- Open `solution.cpp` editor on the right
-- Run sample tests parsed from the problem table
-- Add custom tests with separate Input / Expected Output fields
-- Show expected and actual values for PASS and FAIL results
+## 주요 기능
 
-## Requirements
+- 왼쪽 Activity Bar에 `Programmers` 사이드바 추가
+- `Programmers/<문제번호>_<문제이름>/problem.md` 생성
+- `Programmers/<문제번호>_<문제이름>/solution.cpp` 생성
+- 예제 정보를 담은 `programmers.json` 생성
+- 왼쪽에는 `problem.md` Markdown Preview 열기
+- 오른쪽에는 `solution.cpp` 에디터 열기
+- 문제의 입출력 예를 기반으로 샘플 테스트 실행
+- `+ 테스트 추가`로 Input / Expected Output을 직접 넣어 커스텀 테스트 실행
+- PASS/FAIL 모두 expected / actual 출력
 
-- VS Code 1.85.0 or newer
-- Node.js, only for packaging or publishing
-- `clang++` for running C++ sample/custom tests
+## 필요 조건
 
-On macOS, `clang++` is usually available after installing Xcode Command Line Tools:
+- VS Code 1.85.0 이상
+- C++ 테스트 실행용 `clang++`
+
+macOS에서는 보통 Xcode Command Line Tools를 설치하면 `clang++`를 사용할 수 있습니다.
 
 ```sh
 xcode-select --install
 ```
 
-## Local Development
+## GitHub에서 설치하기
 
-Open this extension folder in VS Code:
-
-```sh
-cd vscode-programmers-helper
-code .
-```
-
-Then press `F5` to launch an Extension Development Host.
-
-Run a syntax check:
+이 저장소를 clone합니다.
 
 ```sh
-npm run check
+git clone https://github.com/YOUR_GITHUB_ID/programmers-problem-helper.git
 ```
 
-## Package As VSIX
+clone한 폴더를 VS Code 로컬 확장 폴더에 연결합니다.
 
-From this folder:
+macOS/Linux:
 
 ```sh
-npm run package
+mkdir -p ~/.vscode/extensions
+ln -s "$(pwd)/programmers-problem-helper" ~/.vscode/extensions/local.programmers-problem-helper
 ```
 
-This creates a file like:
+Windows PowerShell:
 
-```text
-programmers-problem-helper-0.0.1.vsix
+```powershell
+New-Item -ItemType Directory -Force "$HOME\.vscode\extensions"
+New-Item -ItemType Junction "$HOME\.vscode\extensions\local.programmers-problem-helper" "$(Get-Location)\programmers-problem-helper"
 ```
 
-Install it on another computer:
+그 다음 VS Code를 다시 불러옵니다.
+
+1. VS Code 실행
+2. `Developer: Reload Window` 실행
+3. 왼쪽 Activity Bar에서 `Programmers` 아이콘 열기
+
+## 업데이트
+
+최신 코드를 받고 VS Code를 다시 불러오면 됩니다.
 
 ```sh
-code --install-extension programmers-problem-helper-0.0.1.vsix
+cd programmers-problem-helper
+git pull
 ```
 
-Then reload VS Code and open the `Programmers` icon in the Activity Bar.
+그 다음 `Developer: Reload Window`를 실행합니다.
 
-## Publish To GitHub
+## 이 프로젝트를 내 GitHub에 올리기
 
-Create a new GitHub repository, then push this extension folder as the repository root.
+새 GitHub 저장소를 만든 뒤, 이 확장 폴더를 저장소 루트로 push합니다.
 
 ```sh
 cd vscode-programmers-helper
@@ -81,40 +84,20 @@ git remote add origin https://github.com/YOUR_GITHUB_ID/programmers-problem-help
 git push -u origin main
 ```
 
-Before pushing, replace `YOUR_GITHUB_ID` in `package.json` with your GitHub username.
+push하기 전에 `package.json`과 이 README의 `YOUR_GITHUB_ID`를 본인 GitHub 아이디로 바꿔주세요.
 
-GitHub Actions will package a VSIX when you push a tag:
+## 사용 방법
 
-```sh
-git tag v0.0.1
-git push origin v0.0.1
-```
+1. VS Code에서 문제 풀이용 작업 폴더를 엽니다.
+2. 왼쪽 Activity Bar의 `Programmers` 아이콘을 엽니다.
+3. 프로그래머스 문제 번호를 입력합니다.
+4. `문제 생성 및 열기`를 누릅니다.
+5. 오른쪽 `solution.cpp`에 풀이를 작성합니다.
+6. `샘플 테스트 실행` 또는 `커스텀 테스트 실행`을 누릅니다.
 
-Download the packaged VSIX from the workflow artifact.
+커스텀 테스트의 Input은 `solution(...)` 인자 순서대로 씁니다.
 
-## Publish To VS Code Marketplace
-
-1. Create a publisher in the Visual Studio Marketplace.
-2. Replace `"publisher": "local"` in `package.json` with your real publisher id.
-3. Replace repository URLs in `package.json`.
-4. Create a Marketplace access token.
-5. Login and publish:
-
-```sh
-npx @vscode/vsce login YOUR_PUBLISHER_ID
-npm run publish
-```
-
-## Usage
-
-1. Open a PS workspace folder in VS Code.
-2. Open the `Programmers` icon in the Activity Bar.
-3. Enter a Programmers lesson number.
-4. Click `문제 생성 및 열기`.
-5. Write your solution in `solution.cpp`.
-6. Click `샘플 테스트 실행` or add custom tests and click `커스텀 테스트 실행`.
-
-Custom test Input is written in `solution(...)` argument order:
+예:
 
 ```text
 4, 5, 2, 2, [[0, 0], [3, 1]]
@@ -126,9 +109,17 @@ Expected Output:
 [2, 2]
 ```
 
-## Notes
+## 개발
 
-The test runner supports common Programmers C++ function-style signatures such as:
+문법 확인:
+
+```sh
+npm run check
+```
+
+## 참고
+
+테스트 러너는 프로그래머스 C++ 함수형 문제에서 자주 쓰이는 타입을 지원합니다.
 
 - `int`
 - `long long`
@@ -138,4 +129,18 @@ The test runner supports common Programmers C++ function-style signatures such a
 - `vector<string>`
 - `vector<vector<int>>`
 
-Very unusual custom types may require extending the runner.
+특수한 사용자 정의 타입이나 복잡한 시그니처는 추가 구현이 필요할 수 있습니다.
+
+## Credits
+
+This extension was built with OpenAI Codex.
+
+---
+
+## English Summary
+
+Programmers Problem Helper is a local VS Code extension for solving Programmers coding-test problems.
+
+It creates `problem.md`, `solution.cpp`, and `programmers.json` from a Programmers lesson number, opens the problem preview beside the C++ solution file, and runs sample or custom C++ tests.
+
+This project was built with OpenAI Codex.
