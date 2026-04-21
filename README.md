@@ -40,7 +40,7 @@ GitHub 저장소의 `Releases` 페이지에서 최신 `.vsix` 파일을 다운�
 다운로드한 뒤 VS Code에서 설치합니다.
 
 ```sh
-code --install-extension programmers-problem-helper-0.0.2.vsix
+code --install-extension <다운로드한-vsix-파일>
 ```
 
 그 다음 VS Code를 다시 불러옵니다.
@@ -144,11 +144,7 @@ Expected Output:
 npm run check
 ```
 
-로컬에서 설치 파일 만들기:
-
-```sh
-npm run package
-```
+배포는 `v*.*.*` 태그를 push하면 GitHub Actions가 `.vsix`를 만들고 Release에 첨부합니다.
 
 ## 참고
 
