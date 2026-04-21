@@ -31,6 +31,26 @@ xcode-select --install
 
 ## GitHub에서 설치하기
 
+방법은 두 가지입니다.
+
+### 방법 1: GitHub Releases에서 VSIX 다운로드
+
+GitHub 저장소의 `Releases` 페이지에서 최신 `.vsix` 파일을 다운로드합니다.
+
+다운로드한 뒤 VS Code에서 설치합니다.
+
+```sh
+code --install-extension programmers-problem-helper-0.0.1.vsix
+```
+
+그 다음 VS Code를 다시 불러옵니다.
+
+1. VS Code 실행
+2. `Developer: Reload Window` 실행
+3. 왼쪽 Activity Bar에서 `Programmers` 아이콘 열기
+
+### 방법 2: 저장소를 clone해서 연결
+
 이 저장소를 clone합니다.
 
 ```sh
@@ -86,6 +106,15 @@ git push -u origin main
 
 push하기 전에 `package.json`과 이 README의 `YOUR_GITHUB_ID`를 본인 GitHub 아이디로 바꿔주세요.
 
+GitHub Release에 설치 파일을 올리고 싶다면 버전 태그를 push합니다.
+
+```sh
+git tag v0.0.1
+git push origin v0.0.1
+```
+
+태그가 올라가면 GitHub Actions가 `.vsix` 파일을 만들고 Release에 첨부합니다.
+
 ## 사용 방법
 
 1. VS Code에서 문제 풀이용 작업 폴더를 엽니다.
@@ -115,6 +144,12 @@ Expected Output:
 
 ```sh
 npm run check
+```
+
+로컬에서 설치 파일 만들기:
+
+```sh
+npm run package
 ```
 
 ## 참고

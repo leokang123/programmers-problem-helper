@@ -27,7 +27,8 @@
   },
   "homepage": "https://github.com/YOUR_GITHUB_ID/programmers-problem-helper#readme",
   "scripts": {
-    "check": "node --check extension.js"
+    "check": "node --check extension.js",
+    "package": "npx @vscode/vsce package"
   },
   "activationEvents": [
     "onCommand:programmersHelper.createProblem",

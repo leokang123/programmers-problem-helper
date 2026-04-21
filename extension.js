@@ -125,6 +125,18 @@ class ProgrammersSidebarProvider {
       customTests.appendChild(card);
     }
 
+    function setCustomTests(tests) {
+      customTests.innerHTML = '';
+      testCount = 0;
+      if (!Array.isArray(tests) || tests.length === 0) {
+        addTest();
+        return;
+      }
+      for (const test of tests) {
+        addTest((test.inputs || []).join(', '), test.expected || '');
+      }
+    }
+
     function collectTests() {
       return Array.from(document.querySelectorAll('.test-card')).map((card) => ({
         inputsText: card.querySelector('.test-input').value.trim(),
@@ -132,7 +144,7 @@ class ProgrammersSidebarProvider {
       })).filter((test) => test.inputsText || test.expectedText);
     }
 
-    addTest('4, 5, 2, 2, [[0, 0], [3, 1], [1, 3], [2, 4], [1, 1], [2, 2], [2, 3], [0, 4]]', '[2, 2]');
+    addTest();
     document.getElementById('create').addEventListener('click', () => {
       vscode.postMessage({ type: 'create', lessonId: input.value.trim() });
     });
@@ -152,6 +164,9 @@ class ProgrammersSidebarProvider {
       if (event.data.type === 'status') {
         status.textContent = event.data.text;
         status.className = 'status ' + (event.data.kind || '');
+      }
+      if (event.data.type === 'customTests') {
+        setCustomTests(event.data.tests || []);
       }
     });
   </script>
@@ -206,6 +221,9 @@ async function createProblemFromId(context, rawLessonId) {
     );
 
     await context.workspaceState.update("lastProblemDir", result.problemDir.fsPath);
+    if (result.examples.length > 0) {
+      sidebarProvider?.post({ type: "customTests", tests: [result.examples[0]] });
+    }
     sidebarProvider?.post({
       type: "status",
       kind: "ready",
@@ -220,6 +238,8 @@ async function createProblemFromId(context, rawLessonId) {
 }
 
 async function openProblem(mdUri, cppUri) {
+  await vscode.workspace.saveAll(false);
+  await vscode.commands.executeCommand("workbench.action.closeAllEditors");
   await vscode.commands.executeCommand("markdown.showPreview", mdUri, vscode.ViewColumn.One);
   await vscode.window.showTextDocument(cppUri, {
     viewColumn: vscode.ViewColumn.Two,
@@ -295,7 +315,7 @@ async function createProblem(workspaceUri, lessonId) {
   };
   await vscode.workspace.fs.writeFile(metadataUri, Buffer.from(JSON.stringify(metadata, null, 2) + "\n", "utf8"));
 
-  return { folderName, problemDir, mdUri, cppUri };
+  return { folderName, problemDir, mdUri, cppUri, examples: metadata.examples };
 }
 
 async function writeFileIfAbsent(uri, contents) {
