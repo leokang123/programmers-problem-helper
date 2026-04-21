@@ -40,7 +40,7 @@ GitHub 저장소의 `Releases` 페이지에서 최신 `.vsix` 파일을 다운�
 다운로드한 뒤 VS Code에서 설치합니다.
 
 ```sh
-code --install-extension programmers-problem-helper-0.0.1.vsix
+code --install-extension programmers-problem-helper-0.0.2.vsix
 ```
 
 그 다음 VS Code를 다시 불러옵니다.
@@ -54,7 +54,7 @@ code --install-extension programmers-problem-helper-0.0.1.vsix
 이 저장소를 clone합니다.
 
 ```sh
-git clone https://github.com/YOUR_GITHUB_ID/programmers-problem-helper.git
+git clone https://github.com/leokang123/programmers-problem-helper.git
 ```
 
 clone한 폴더를 VS Code 로컬 확장 폴더에 연결합니다.
@@ -104,13 +104,11 @@ git remote add origin https://github.com/YOUR_GITHUB_ID/programmers-problem-help
 git push -u origin main
 ```
 
-push하기 전에 `package.json`과 이 README의 `YOUR_GITHUB_ID`를 본인 GitHub 아이디로 바꿔주세요.
-
 GitHub Release에 설치 파일을 올리고 싶다면 버전 태그를 push합니다.
 
 ```sh
-git tag v0.0.1
-git push origin v0.0.1
+git tag v0.0.2
+git push origin v0.0.2
 ```
 
 태그가 올라가면 GitHub Actions가 `.vsix` 파일을 만들고 Release에 첨부합니다.

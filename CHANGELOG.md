@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.0.2
+
+- Add a current problem review checkbox backed by `.programmers-helper/review.json`.
+- Add collapsible review and full problem lists in the sidebar.
+- Open problems consistently from create, last problem, review list, and full list actions.
+- Refresh custom test defaults and ready status whenever a problem is opened.
+
 ## 0.0.1
 
 - Add Programmers sidebar view.

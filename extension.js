@@ -34,6 +34,7 @@ class ProgrammersSidebarProvider {
     this.view = webviewView;
     webviewView.webview.options = { enableScripts: true };
     webviewView.webview.html = this.getHtml(webviewView.webview);
+    this.refreshProblems();
 
     webviewView.webview.onDidReceiveMessage(async (message) => {
       if (message.type === "create") {
@@ -48,11 +49,28 @@ class ProgrammersSidebarProvider {
       if (message.type === "openLast") {
         await openLastProblem(this.context);
       }
+      if (message.type === "refreshProblems") {
+        await this.refreshProblems();
+      }
+      if (message.type === "toggleReview") {
+        await toggleReview(this.context, String(message.problemDir || ""), Boolean(message.review));
+      }
+      if (message.type === "openProblem") {
+        await openProblemFromDir(this.context, String(message.problemDir || ""));
+      }
     });
   }
 
   post(message) {
     this.view?.webview.postMessage(message);
+  }
+
+  async refreshProblems() {
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    const problems = workspaceFolder ? await loadProblems(workspaceFolder.uri) : [];
+    this.post({ type: "problems", problems });
+    const currentProblem = getCurrentProblemFromList(this.context, problems);
+    this.post({ type: "currentProblem", problem: currentProblem });
   }
 
   getHtml(webview) {
@@ -71,7 +89,22 @@ class ProgrammersSidebarProvider {
     button { width: 100%; margin-top: 8px; padding: 7px 8px; border: 0; background: var(--vscode-button-background); color: var(--vscode-button-foreground); cursor: pointer; }
     button.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
     button:hover { background: var(--vscode-button-hoverBackground); }
+    .section-title { margin-bottom: 8px; font-size: 12px; font-weight: 600; color: var(--vscode-foreground); }
     .section { margin-bottom: 18px; }
+    .current-card { padding: 9px 0; border-top: 1px solid var(--vscode-panel-border); border-bottom: 1px solid var(--vscode-panel-border); }
+    .current-title { font-size: 12px; line-height: 1.35; color: var(--vscode-foreground); word-break: break-word; }
+    .current-option { display: flex; gap: 6px; align-items: center; margin: 8px 0 0; font-size: 12px; color: var(--vscode-foreground); }
+    .current-option input { width: auto; margin: 0; }
+    .list-actions { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .filter { display: flex; gap: 6px; align-items: center; margin: 0; font-size: 12px; color: var(--vscode-foreground); }
+    .filter input { width: auto; margin: 0; }
+    .refresh { width: auto; min-width: 34px; margin: 0 0 0 auto; padding: 4px 8px; }
+    .problem-list { border-top: 1px solid var(--vscode-panel-border); }
+    .problem-row { padding: 8px 0; border-bottom: 1px solid var(--vscode-panel-border); cursor: pointer; }
+    .problem-row:hover { background: var(--vscode-list-hoverBackground); }
+    .problem-title { font-size: 12px; line-height: 1.35; color: var(--vscode-foreground); word-break: break-word; }
+    .problem-id { margin-top: 2px; font-size: 11px; color: var(--vscode-descriptionForeground); }
+    .empty { padding: 9px 0; font-size: 12px; color: var(--vscode-descriptionForeground); line-height: 1.4; }
     .test-card { margin-top: 10px; padding: 10px; border: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); }
     .test-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 12px; color: var(--vscode-descriptionForeground); }
     .remove { width: auto; margin: 0; padding: 3px 7px; background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
@@ -87,6 +120,25 @@ class ProgrammersSidebarProvider {
     <label for="lessonId">Programmers 문제 번호</label>
     <input id="lessonId" value="468379" inputmode="numeric" />
     <button id="create">문제 생성 및 열기</button>
+  </div>
+  <div class="section">
+    <div class="section-title">현재 문제</div>
+    <div id="currentProblem" class="current-card"></div>
+  </div>
+  <div class="section">
+    <div class="section-title">다시풀 리스트</div>
+    <div class="list-actions">
+      <label class="filter"><input id="showReviewList" type="checkbox" /> 다시풀 보기</label>
+      <button id="refreshProblems" class="secondary refresh" title="새로고침">↻</button>
+    </div>
+    <div id="reviewList" class="problem-list"></div>
+  </div>
+  <div class="section">
+    <div class="section-title">전체 리스트</div>
+    <div class="list-actions">
+      <label class="filter"><input id="showAllList" type="checkbox" /> 전체 보기</label>
+    </div>
+    <div id="allList" class="problem-list"></div>
   </div>
   <div class="section">
     <button id="run">샘플 테스트 실행</button>
@@ -106,8 +158,81 @@ class ProgrammersSidebarProvider {
     const vscode = acquireVsCodeApi();
     const input = document.getElementById('lessonId');
     const customTests = document.getElementById('customTests');
+    const currentProblemEl = document.getElementById('currentProblem');
+    const reviewList = document.getElementById('reviewList');
+    const allList = document.getElementById('allList');
+    const showReviewList = document.getElementById('showReviewList');
+    const showAllList = document.getElementById('showAllList');
     const status = document.getElementById('status');
     let testCount = 0;
+    let problems = [];
+    let currentProblem = null;
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (ch) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      })[ch]);
+    }
+
+    function renderCurrentProblem() {
+      if (!currentProblem) {
+        currentProblemEl.innerHTML = '<div class="empty">열린 문제가 없습니다.</div>';
+        return;
+      }
+
+      currentProblemEl.innerHTML =
+        '<div class="current-title">' + escapeHtml(currentProblem.title) + '</div>' +
+        '<div class="problem-id">#' + escapeHtml(currentProblem.lessonId || '-') + '</div>' +
+        '<label class="current-option"><input id="currentReview" type="checkbox" ' + (currentProblem.review ? 'checked' : '') + ' /> 다시 풀어보기</label>';
+
+      document.getElementById('currentReview').addEventListener('change', (event) => {
+        vscode.postMessage({
+          type: 'toggleReview',
+          problemDir: currentProblem.problemDir,
+          review: event.currentTarget.checked
+        });
+      });
+    }
+
+    function renderList(container, visible, emptyText) {
+      if (visible.length === 0) {
+        container.innerHTML = '<div class="empty">' + escapeHtml(emptyText) + '</div>';
+        return;
+      }
+
+      container.innerHTML = visible.map((problem, index) => (
+        '<div class="problem-row" data-index="' + index + '">' +
+          '<div class="problem-title">' + escapeHtml(problem.title) + '</div>' +
+          '<div class="problem-id">#' + escapeHtml(problem.lessonId || '-') + (problem.review ? ' · 다시풀' : '') + '</div>' +
+        '</div>'
+      )).join('');
+
+      Array.from(container.querySelectorAll('.problem-row')).forEach((row, index) => {
+        const problem = visible[index];
+        row.addEventListener('click', () => {
+          vscode.postMessage({ type: 'openProblem', problemDir: problem.problemDir });
+        });
+      });
+    }
+
+    function renderProblems() {
+      if (showReviewList.checked) {
+        renderList(reviewList, problems.filter((problem) => problem.review), '다시 풀 문제가 없습니다.');
+      } else {
+        reviewList.innerHTML = '';
+      }
+
+      if (!showAllList.checked) {
+        allList.innerHTML = '';
+        return;
+      }
+
+      renderList(allList, problems, 'Programmers 폴더에 문제가 없습니다.');
+    }
 
     function addTest(inputValue = '', expectedValue = '') {
       testCount += 1;
@@ -160,6 +285,11 @@ class ProgrammersSidebarProvider {
     document.getElementById('open').addEventListener('click', () => {
       vscode.postMessage({ type: 'openLast' });
     });
+    showReviewList.addEventListener('change', renderProblems);
+    showAllList.addEventListener('change', renderProblems);
+    document.getElementById('refreshProblems').addEventListener('click', () => {
+      vscode.postMessage({ type: 'refreshProblems' });
+    });
     window.addEventListener('message', (event) => {
       if (event.data.type === 'status') {
         status.textContent = event.data.text;
@@ -168,7 +298,17 @@ class ProgrammersSidebarProvider {
       if (event.data.type === 'customTests') {
         setCustomTests(event.data.tests || []);
       }
+      if (event.data.type === 'problems') {
+        problems = event.data.problems || [];
+        renderProblems();
+      }
+      if (event.data.type === 'currentProblem') {
+        currentProblem = event.data.problem || null;
+        renderCurrentProblem();
+      }
     });
+    renderCurrentProblem();
+    vscode.postMessage({ type: 'refreshProblems' });
   </script>
 </body>
 </html>`;
@@ -215,20 +355,11 @@ async function createProblemFromId(context, rawLessonId) {
         progress.report({ message: "문제 페이지를 가져오는 중..." });
         const created = await createProblem(workspaceFolder.uri, lessonId);
         progress.report({ message: "에디터를 여는 중..." });
-        await openProblem(created.mdUri, created.cppUri);
         return created;
       }
     );
 
-    await context.workspaceState.update("lastProblemDir", result.problemDir.fsPath);
-    if (result.examples.length > 0) {
-      sidebarProvider?.post({ type: "customTests", tests: [result.examples[0]] });
-    }
-    sidebarProvider?.post({
-      type: "status",
-      kind: "ready",
-      text: `준비 완료\n\n${result.folderName}\n\n왼쪽: problem.md Preview\n오른쪽: solution.cpp\n\n이제 샘플 테스트를 실행할 수 있습니다.`,
-    });
+    await openProblemFromDir(context, result.problemDir.fsPath);
     vscode.window.showInformationMessage(`Programmers ${lessonId} 준비 완료`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -253,7 +384,171 @@ async function openLastProblem(context) {
   if (!dir) {
     return;
   }
-  await openProblem(vscode.Uri.file(path.join(dir, "problem.md")), vscode.Uri.file(path.join(dir, "solution.cpp")));
+  await openProblemFromDir(context, dir);
+}
+
+async function openProblemFromDir(context, problemDir) {
+  const safeDir = await validateProblemDir(problemDir);
+  if (!safeDir) {
+    vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다.");
+    return;
+  }
+
+  await context.workspaceState.update("lastProblemDir", safeDir);
+  await openProblem(vscode.Uri.file(path.join(safeDir, "problem.md")), vscode.Uri.file(path.join(safeDir, "solution.cpp")));
+  await showOpenedProblemState(context, safeDir);
+}
+
+async function toggleReview(context, problemDir, review) {
+  const safeDir = await validateProblemDir(problemDir);
+  if (!safeDir) {
+    vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다.");
+    return;
+  }
+
+  const helperDir = vscode.Uri.file(path.join(safeDir, ".programmers-helper"));
+  const reviewUri = vscode.Uri.joinPath(helperDir, "review.json");
+  const payload = {
+    review,
+    updatedAt: new Date().toISOString(),
+  };
+
+  await vscode.workspace.fs.createDirectory(helperDir);
+  await vscode.workspace.fs.writeFile(reviewUri, Buffer.from(JSON.stringify(payload, null, 2) + "\n", "utf8"));
+  await context.workspaceState.update("lastProblemDir", safeDir);
+  await sidebarProvider?.refreshProblems();
+}
+
+async function showOpenedProblemState(context, problemDir) {
+  const problem = await loadProblemInfo(problemDir);
+  const examples = await loadProblemExamples(problemDir);
+
+  await context.workspaceState.update("lastProblemDir", problemDir);
+  sidebarProvider?.post({ type: "currentProblem", problem });
+  sidebarProvider?.post({ type: "customTests", tests: examples.length > 0 ? [examples[0]] : [] });
+  await sidebarProvider?.refreshProblems();
+  sidebarProvider?.post({
+    type: "status",
+    kind: "ready",
+    text: `준비 완료\n\n${problem.folderName}\n\n왼쪽: problem.md Preview\n오른쪽: solution.cpp\n\n이제 샘플 테스트를 실행할 수 있습니다.`,
+  });
+}
+
+async function validateProblemDir(problemDir) {
+  const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+  if (!workspaceFolder || !problemDir) {
+    return undefined;
+  }
+
+  const root = path.resolve(workspaceFolder.uri.fsPath, "Programmers");
+  const target = path.resolve(problemDir);
+  if (target !== root && !target.startsWith(root + path.sep)) {
+    return undefined;
+  }
+
+  try {
+    await vscode.workspace.fs.stat(vscode.Uri.file(path.join(target, "problem.md")));
+    await vscode.workspace.fs.stat(vscode.Uri.file(path.join(target, "solution.cpp")));
+    return target;
+  } catch {
+    return undefined;
+  }
+}
+
+async function loadProblems(workspaceUri) {
+  const programmersDir = vscode.Uri.joinPath(workspaceUri, "Programmers");
+  let entries = [];
+  try {
+    entries = await vscode.workspace.fs.readDirectory(programmersDir);
+  } catch {
+    return [];
+  }
+
+  const problems = [];
+  for (const [name, type] of entries) {
+    if (type !== vscode.FileType.Directory) {
+      continue;
+    }
+
+    const problemDir = vscode.Uri.joinPath(programmersDir, name);
+    const mdUri = vscode.Uri.joinPath(problemDir, "problem.md");
+    const cppUri = vscode.Uri.joinPath(problemDir, "solution.cpp");
+    try {
+      await vscode.workspace.fs.stat(mdUri);
+      await vscode.workspace.fs.stat(cppUri);
+    } catch {
+      continue;
+    }
+
+    problems.push(await loadProblemInfo(problemDir.fsPath));
+  }
+
+  return problems.sort((a, b) => {
+    const left = /^\d+$/.test(a.lessonId) ? Number(a.lessonId) : undefined;
+    const right = /^\d+$/.test(b.lessonId) ? Number(b.lessonId) : undefined;
+    if (left !== undefined && right !== undefined && left !== right) {
+      return left - right;
+    }
+    return a.folderName.localeCompare(b.folderName, "ko");
+  });
+}
+
+function getCurrentProblemFromList(context, problems) {
+  const last = context.workspaceState.get("lastProblemDir");
+  if (typeof last !== "string") {
+    return undefined;
+  }
+  const normalizedLast = path.resolve(last);
+  return problems.find((problem) => path.resolve(problem.problemDir) === normalizedLast);
+}
+
+async function loadProblemInfo(problemDir) {
+  const folderName = path.basename(problemDir);
+  const helperDir = vscode.Uri.file(path.join(problemDir, ".programmers-helper"));
+  const metadata = await readJson(vscode.Uri.joinPath(helperDir, "programmers.json"));
+  const reviewData = await readJson(vscode.Uri.joinPath(helperDir, "review.json"));
+  const fallback = parseProblemFolderName(folderName);
+  return {
+    problemDir,
+    folderName,
+    lessonId: String(metadata?.lessonId || fallback.lessonId || ""),
+    title: String(metadata?.title || fallback.title || folderName),
+    review: Boolean(reviewData?.review),
+    updatedAt: typeof reviewData?.updatedAt === "string" ? reviewData.updatedAt : "",
+  };
+}
+
+async function loadProblemExamples(problemDir) {
+  const metadata = await readJson(vscode.Uri.file(path.join(problemDir, ".programmers-helper", "programmers.json")));
+  if (Array.isArray(metadata?.examples)) {
+    return metadata.examples;
+  }
+
+  try {
+    const markdown = await readText(vscode.Uri.file(path.join(problemDir, "problem.md")));
+    return extractExamplesFromMarkdown(markdown);
+  } catch {
+    return [];
+  }
+}
+
+async function readJson(uri) {
+  try {
+    return JSON.parse(await readText(uri));
+  } catch {
+    return undefined;
+  }
+}
+
+function parseProblemFolderName(folderName) {
+  const match = folderName.match(/^(\d+)_?(.*)$/);
+  if (!match) {
+    return { lessonId: "", title: folderName.replace(/_/g, " ") };
+  }
+  return {
+    lessonId: match[1],
+    title: (match[2] || folderName).replace(/_/g, " "),
+  };
 }
 
 async function createProblem(workspaceUri, lessonId) {

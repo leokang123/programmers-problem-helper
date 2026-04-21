@@ -2,7 +2,7 @@
   "name": "programmers-problem-helper",
   "displayName": "Programmers Problem Helper",
   "description": "Create Programmers problem files, open a preview/solution split view, and run sample or custom C++ tests.",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "publisher": "local",
   "license": "MIT",
   "engines": {
@@ -20,12 +20,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/YOUR_GITHUB_ID/programmers-problem-helper.git"
+    "url": "https://github.com/leokang123/programmers-problem-helper.git"
   },
   "bugs": {
-    "url": "https://github.com/YOUR_GITHUB_ID/programmers-problem-helper/issues"
+    "url": "https://github.com/leokang123/programmers-problem-helper/issues"
   },
-  "homepage": "https://github.com/YOUR_GITHUB_ID/programmers-problem-helper#readme",
+  "homepage": "https://github.com/leokang123/programmers-problem-helper#readme",
   "scripts": {
     "check": "node --check extension.js",
     "package": "npx @vscode/vsce package"
