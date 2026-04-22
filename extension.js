@@ -5,6 +5,12 @@ const cp = require("child_process");
 
 let sidebarProvider;
 let outputChannel;
+let activeTestProcess;
+let testRunInProgress = false;
+let stopRequested = false;
+
+const COMPILE_TIMEOUT_MS = 15000;
+const TEST_TIMEOUT_MS = 5000;
 
 function activate(context) {
   outputChannel = vscode.window.createOutputChannel("Programmers Helper");
@@ -45,6 +51,9 @@ class ProgrammersSidebarProvider {
       }
       if (message.type === "runCustom") {
         await runSamplesFromCommand(this.context, JSON.stringify(message.tests || []));
+      }
+      if (message.type === "stopTests") {
+        stopTestRun();
       }
       if (message.type === "openLast") {
         await openLastProblem(this.context);
@@ -116,6 +125,7 @@ class ProgrammersSidebarProvider {
     .filter { display: flex; gap: 6px; align-items: center; margin: 0; font-size: 12px; color: var(--vscode-foreground); }
     .filter input { width: auto; margin: 0; }
     .refresh { width: auto; min-width: 30px; margin: 0 0 0 auto; padding: 3px 7px; }
+    button:disabled { opacity: 0.55; cursor: default; }
     .problem-list { border-top: 1px solid var(--vscode-panel-border); }
     .problem-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--vscode-panel-border); cursor: pointer; }
     .problem-row:hover { background: var(--vscode-list-hoverBackground); }
@@ -163,6 +173,7 @@ class ProgrammersSidebarProvider {
       <div class="pane-body">
         <div class="section">
           <button id="run">샘플 테스트 실행</button>
+          <button id="stopRun" class="secondary" disabled>실행 중지</button>
         </div>
         <div class="section">
           <label>커스텀 테스트케이스</label>
@@ -328,6 +339,9 @@ class ProgrammersSidebarProvider {
     document.getElementById('runCustom').addEventListener('click', () => {
       vscode.postMessage({ type: 'runCustom', tests: collectTests() });
     });
+    document.getElementById('stopRun').addEventListener('click', () => {
+      vscode.postMessage({ type: 'stopTests' });
+    });
     document.getElementById('open').addEventListener('click', () => {
       vscode.postMessage({ type: 'openLast' });
     });
@@ -350,6 +364,9 @@ class ProgrammersSidebarProvider {
       if (event.data.type === 'status') {
         status.textContent = event.data.text;
         status.className = 'status ' + (event.data.kind || '');
+      }
+      if (event.data.type === 'testRunning') {
+        document.getElementById('stopRun').disabled = !event.data.running;
       }
       if (event.data.type === 'customTests') {
         setCustomTests(event.data.tests || []);
@@ -493,7 +510,7 @@ async function validateProblemDir(problemDir) {
     return undefined;
   }
 
-  const root = path.resolve(workspaceFolder.uri.fsPath, "Programmers");
+  const root = path.resolve(getProgrammersDir(workspaceFolder.uri).fsPath);
   const target = path.resolve(problemDir);
   if (target !== root && !target.startsWith(root + path.sep)) {
     return undefined;
@@ -509,7 +526,7 @@ async function validateProblemDir(problemDir) {
 }
 
 async function loadProblems(workspaceUri) {
-  const programmersDir = vscode.Uri.joinPath(workspaceUri, "Programmers");
+  const programmersDir = getProgrammersDir(workspaceUri);
   let entries = [];
   try {
     entries = await vscode.workspace.fs.readDirectory(programmersDir);
@@ -537,6 +554,10 @@ async function loadProblems(workspaceUri) {
     }
     return a.folderName.localeCompare(b.folderName, "ko");
   });
+}
+
+function getProgrammersDir(workspaceUri) {
+  return path.basename(workspaceUri.fsPath) === "Programmers" ? workspaceUri : vscode.Uri.joinPath(workspaceUri, "Programmers");
 }
 
 function getCurrentProblemFromList(context, problems) {
@@ -621,7 +642,8 @@ async function createProblem(workspaceUri, lessonId) {
   const level = matchFirst(html, /data-challenge-level="([^"]+)"/);
   const category = matchFirst(html, /data-challenge-category="([^"]+)"/);
   const folderName = `${lessonId}_${slugify(title)}`;
-  const problemDir = vscode.Uri.joinPath(workspaceUri, "Programmers", folderName);
+  const programmersDir = getProgrammersDir(workspaceUri);
+  const problemDir = vscode.Uri.joinPath(programmersDir, folderName);
   const mdUri = vscode.Uri.joinPath(problemDir, "problem.md");
   const cppUri = vscode.Uri.joinPath(problemDir, "solution.cpp");
   const helperDir = vscode.Uri.joinPath(problemDir, ".programmers-helper");
@@ -665,7 +687,7 @@ async function createProblem(workspaceUri, lessonId) {
 }
 
 async function findExistingProblem(workspaceUri, lessonId) {
-  const programmersDir = vscode.Uri.joinPath(workspaceUri, "Programmers");
+  const programmersDir = getProgrammersDir(workspaceUri);
   let entries = [];
   try {
     entries = await vscode.workspace.fs.readDirectory(programmersDir);
@@ -726,14 +748,23 @@ async function writeFileIfAbsent(uri, contents) {
 }
 
 async function runSamplesFromCommand(context, customTestsText = "") {
+  if (testRunInProgress) {
+    vscode.window.showInformationMessage("이미 테스트가 실행 중입니다.");
+    return;
+  }
+
   const problemDir = await getProblemDir(context);
   if (!problemDir) {
     return;
   }
 
+  testRunInProgress = true;
+  stopRequested = false;
+  sidebarProvider?.post({ type: "testRunning", running: true });
+
   try {
     const hasCustomTests = customTestsText.trim().length > 0;
-    sidebarProvider?.post({ type: "status", kind: "running", text: `${hasCustomTests ? "커스텀" : "샘플"} 테스트 실행 중...\n\n결과는 Output > Programmers Helper에도 표시됩니다.` });
+    sidebarProvider?.post({ type: "status", kind: "running", text: `${hasCustomTests ? "커스텀" : "샘플"} 테스트 실행 중...` });
     const result = await runSamples(problemDir, customTestsText);
     sidebarProvider?.post({
       type: "status",
@@ -743,9 +774,72 @@ async function runSamplesFromCommand(context, customTestsText = "") {
     outputChannel.show(true);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    sidebarProvider?.post({ type: "status", kind: "error", text: `테스트 실행 오류\n\n${message}` });
-    vscode.window.showErrorMessage(message);
+    outputChannel.appendLine("");
+    outputChannel.appendLine(`[Programmers Helper] ${message}`);
+    outputChannel.show(true);
+    sidebarProvider?.post({ type: "status", kind: "error", text: `테스트 실행 오류\n\n${formatTestErrorForStatus(error)}` });
+    vscode.window.showErrorMessage(formatTestErrorForStatus(error));
+  } finally {
+    activeTestProcess = undefined;
+    testRunInProgress = false;
+    stopRequested = false;
+    sidebarProvider?.post({ type: "testRunning", running: false });
   }
+}
+
+function formatTestErrorForStatus(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (!message.trim()) {
+    return "알 수 없는 오류";
+  }
+
+  if (message.startsWith("clang++ 실패")) {
+    return summarizeCompilerError(message);
+  }
+
+  return limitStatusText(message);
+}
+
+function summarizeCompilerError(message) {
+  const lines = message.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const errorLine = lines.find((line) => /\b(fatal )?error:/.test(line));
+  if (!errorLine) {
+    return "컴파일 실패";
+  }
+
+  return limitStatusText(`컴파일 실패\n${shortenCompilerPaths(errorLine)}`);
+}
+
+function shortenCompilerPaths(line) {
+  return line.replace(/(?:\/[^\s:]+)+\/([^/\s:]+:\d+:\d+:)/g, "$1");
+}
+
+function limitStatusText(text, maxLength = 180) {
+  const trimmed = text.trim();
+  if (trimmed.length <= maxLength) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, maxLength - 1)}…`;
+}
+
+function stopTestRun() {
+  if (!testRunInProgress) {
+    return;
+  }
+
+  stopRequested = true;
+  if (activeTestProcess && !activeTestProcess.killed) {
+    const child = activeTestProcess;
+    child.kill("SIGTERM");
+    setTimeout(() => {
+      if (!child.killed) {
+        child.kill("SIGKILL");
+      }
+    }, 1000);
+  }
+  outputChannel.appendLine("");
+  outputChannel.appendLine("[Programmers Helper] 테스트 실행 중지 요청");
+  sidebarProvider?.post({ type: "status", kind: "error", text: "테스트 실행 중지 요청\n\n현재 실행 중인 프로세스를 종료하고 있습니다." });
 }
 
 async function getProblemDir(context) {
@@ -771,7 +865,7 @@ async function getProblemDir(context) {
     return undefined;
   }
 
-  const programmersDir = vscode.Uri.joinPath(workspaceFolder.uri, "Programmers");
+  const programmersDir = getProgrammersDir(workspaceFolder.uri);
   let entries = [];
   try {
     entries = await vscode.workspace.fs.readDirectory(programmersDir);
@@ -826,12 +920,42 @@ async function runSamples(problemDir, customTestsText = "") {
   outputChannel.appendLine(`[Programmers Helper] ${path.basename(problemDir)} ${customTestsText.trim() ? "커스텀" : "샘플"} 테스트`);
   outputChannel.appendLine("");
 
-  await execFile("clang++", ["-std=c++17", runnerPath, "-o", binaryPath], problemDir);
-  const output = await execFile(binaryPath, [], problemDir);
-  outputChannel.append(output);
+  await execFile("clang++", ["-std=c++17", runnerPath, "-o", binaryPath], problemDir, {
+    timeoutMs: COMPILE_TIMEOUT_MS,
+    label: "컴파일",
+  });
+  if (stopRequested) {
+    throw new Error("테스트 실행이 중지되었습니다.");
+  }
+
+  let output = "";
+  let timedOut = 0;
+  for (let index = 0; index < examples.length; index++) {
+    if (stopRequested) {
+      throw new Error("테스트 실행이 중지되었습니다.");
+    }
+
+    try {
+      output += await execFile(binaryPath, [String(index + 1)], problemDir, {
+        timeoutMs: TEST_TIMEOUT_MS,
+        label: `테스트 #${index + 1}`,
+        streamOutput: true,
+      });
+    } catch (error) {
+      if (error?.code === "ETIMEOUT") {
+        timedOut += 1;
+        const seconds = Math.round(TEST_TIMEOUT_MS / 1000);
+        const line = `[TIMEOUT] #${index + 1} limit=${seconds}s`;
+        output += line + "\n";
+        outputChannel.appendLine(line);
+        continue;
+      }
+      throw error;
+    }
+  }
 
   const passed = (output.match(/\[PASS\]/g) || []).length;
-  const failed = (output.match(/\[FAIL\]/g) || []).length;
+  const failed = (output.match(/\[FAIL\]/g) || []).length + timedOut;
   const summary = `테스트 완료: ${passed} 통과, ${failed} 실패`;
   outputChannel.appendLine("");
   outputChannel.appendLine(summary);
@@ -844,20 +968,71 @@ async function readText(uri) {
   return Buffer.from(bytes).toString("utf8");
 }
 
-function execFile(command, args, cwd) {
+function execFile(command, args, cwd, options = {}) {
   return new Promise((resolve, reject) => {
+    if (stopRequested) {
+      reject(new Error("테스트 실행이 중지되었습니다."));
+      return;
+    }
+
     const child = cp.spawn(command, args, { cwd });
+    activeTestProcess = child;
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
+    let killTimer;
+
+    const timeout = options.timeoutMs ? setTimeout(() => {
+      timedOut = true;
+      if (!child.killed) {
+        child.kill("SIGTERM");
+        killTimer = setTimeout(() => {
+          if (!child.killed) {
+            child.kill("SIGKILL");
+          }
+        }, 1000);
+      }
+    }, options.timeoutMs) : undefined;
 
     child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
+      const text = chunk.toString();
+      stdout += text;
+      if (options.streamOutput) {
+        outputChannel.append(text);
+      }
     });
     child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
+      const text = chunk.toString();
+      stderr += text;
+      if (options.streamOutput) {
+        outputChannel.append(text);
+      }
     });
-    child.on("error", reject);
+    child.on("error", (error) => {
+      if (timeout) clearTimeout(timeout);
+      if (killTimer) clearTimeout(killTimer);
+      if (activeTestProcess === child) {
+        activeTestProcess = undefined;
+      }
+      reject(error);
+    });
     child.on("close", (code) => {
+      if (timeout) clearTimeout(timeout);
+      if (killTimer) clearTimeout(killTimer);
+      if (activeTestProcess === child) {
+        activeTestProcess = undefined;
+      }
+      if (stopRequested) {
+        reject(new Error("테스트 실행이 중지되었습니다."));
+        return;
+      }
+      if (timedOut) {
+        const seconds = Math.round((options.timeoutMs || 0) / 1000);
+        const error = new Error(`${options.label || command} 시간이 초과되었습니다. (${seconds}초)\n무한루프를 확인해주세요.`);
+        error.code = "ETIMEOUT";
+        reject(error);
+        return;
+      }
       if (code !== 0) {
         reject(new Error(`${command} 실패\n${stderr || stdout}`));
         return;
@@ -900,20 +1075,22 @@ function buildRunner(signature, examples) {
     const expected = `    ${signature.returnType} expected = ${toCppLiteral(signature.returnType, example.expected)};`;
     const callArgs = signature.params.map((_, paramIndex) => `arg${paramIndex}`).join(", ");
 
-    return `  {
+    return `  if (target == 0 || target == ${index + 1}) {
 ${declarations.join("\n")}
 ${expected}
     auto actual = solution(${callArgs});
     if (actual == expected) {
-      cout << "[PASS] #" << ${index + 1} << " expected=" << repr(expected) << " actual=" << repr(actual) << "\\n";
+      cout << "[PASS] #" << ${index + 1} << " expected=" << repr(expected) << " actual=" << repr(actual) << endl;
     } else {
-      cout << "[FAIL] #" << ${index + 1} << " expected=" << repr(expected) << " actual=" << repr(actual) << "\\n";
+      cout << "[FAIL] #" << ${index + 1} << " expected=" << repr(expected) << " actual=" << repr(actual) << endl;
       failed++;
     }
   }`;
   });
 
-  return `#include <algorithm>
+  return `#include "../solution.cpp"
+
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <map>
@@ -927,8 +1104,6 @@ ${expected}
 #include <utility>
 #include <vector>
 using namespace std;
-
-#include "../solution.cpp"
 
 string repr(const string& value) { return string("\\"") + value + "\\""; }
 string repr(const char* value) { return repr(string(value)); }
@@ -950,11 +1125,12 @@ string repr(const vector<T>& value) {
   return out;
 }
 
-int main() {
+int main(int argc, char** argv) {
+  int target = argc > 1 ? stoi(argv[1]) : 0;
   int failed = 0;
 ${testBlocks.join("\n")}
-  if (failed == 0) {
-    cout << "All sample tests passed.\\n";
+  if (target == 0 && failed == 0) {
+    cout << "All sample tests passed." << endl;
   }
   return 0;
 }

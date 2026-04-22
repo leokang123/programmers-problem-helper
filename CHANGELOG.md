@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.0.5
+
+- Add per-test-case timeouts and a stop button for running tests.
+- Show concise compile error summaries in the sidebar while keeping full logs in the Output panel.
+- Run generated test cases one at a time so timeouts do not block the whole suite.
+- Compile `solution.cpp` before runner helper headers so missing includes are not hidden.
+- Use the opened `Programmers` folder directly instead of creating `Programmers/Programmers`.
+
 ## 0.0.4
 
 - Avoid crawling Programmers when an existing local problem already has `problem.md` and `solution.cpp`.
