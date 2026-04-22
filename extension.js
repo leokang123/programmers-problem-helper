@@ -11,6 +11,9 @@ let stopRequested = false;
 
 const COMPILE_TIMEOUT_MS = 15000;
 const TEST_TIMEOUT_MS = 5000;
+const PROGRAMMERS_HOST = "school.programmers.co.kr";
+const MAX_FETCH_BYTES = 5 * 1024 * 1024;
+const MAX_REDIRECTS = 5;
 
 function activate(context) {
   outputChannel = vscode.window.createOutputChannel("Programmers Helper");
@@ -67,6 +70,9 @@ class ProgrammersSidebarProvider {
       if (message.type === "openProblem") {
         await openProblemFromDir(this.context, String(message.problemDir || ""));
       }
+      if (message.type === "deleteProblem") {
+        await deleteProblem(this.context, String(message.problemDir || ""));
+      }
     });
   }
 
@@ -76,7 +82,8 @@ class ProgrammersSidebarProvider {
 
   async refreshProblems() {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-    const problems = workspaceFolder ? await loadProblems(workspaceFolder.uri) : [];
+    const programmersDir = await resolveProgrammersDir(this.context, workspaceFolder?.uri);
+    const problems = programmersDir ? await loadProblems(programmersDir) : [];
     this.post({ type: "problems", problems });
     const currentProblem = getCurrentProblemFromList(this.context, problems);
     this.post({ type: "currentProblem", problem: currentProblem });
@@ -131,8 +138,11 @@ class ProgrammersSidebarProvider {
     .problem-row:hover { background: var(--vscode-list-hoverBackground); }
     .problem-title { font-size: 12px; line-height: 1.35; color: var(--vscode-foreground); word-break: break-word; }
     .problem-id { margin-top: 2px; font-size: 11px; color: var(--vscode-descriptionForeground); }
+    .problem-actions { display: flex; gap: 6px; align-items: center; }
     .review-toggle { display: flex; gap: 4px; align-items: center; margin: 0; font-size: 11px; color: var(--vscode-descriptionForeground); }
     .review-toggle input { width: auto; margin: 0; }
+    .delete-problem { width: auto; margin: 0; padding: 2px 6px; background: transparent; color: var(--vscode-descriptionForeground); font-size: 12px; }
+    .delete-problem:hover { background: var(--vscode-list-hoverBackground); color: var(--vscode-errorForeground); }
     .empty { padding: 9px 0; font-size: 12px; color: var(--vscode-descriptionForeground); line-height: 1.4; }
     .test-card { margin-top: 8px; padding: 8px; border: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); }
     .test-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; font-size: 12px; color: var(--vscode-descriptionForeground); }
@@ -181,6 +191,7 @@ class ProgrammersSidebarProvider {
           <button id="addTest" class="secondary">+ 테스트 추가</button>
           <button id="runCustom">커스텀 테스트 실행</button>
           <div class="hint">Input은 solution 인자 순서대로 쉼표로 구분합니다. 예: 4, 5, 2, 2, [[0,0]]</div>
+          <div class="hint">테스트는 현재 사용자 권한으로 solution.cpp를 컴파일하고 실행합니다.</div>
         </div>
       </div>
     </section>
@@ -260,7 +271,10 @@ class ProgrammersSidebarProvider {
         '<div class="problem-row" data-index="' + index + '">' +
           '<div><div class="problem-title">' + escapeHtml(problem.title) + '</div>' +
           '<div class="problem-id">#' + escapeHtml(problem.lessonId || '-') + '</div></div>' +
-          '<label class="review-toggle"><input class="review-check" type="checkbox" ' + (problem.review ? 'checked' : '') + ' /> 다시풀</label>' +
+          '<div class="problem-actions">' +
+            '<label class="review-toggle"><input class="review-check" type="checkbox" ' + (problem.review ? 'checked' : '') + ' /> 다시풀</label>' +
+            '<button class="delete-problem" type="button" title="문제 삭제">삭제</button>' +
+          '</div>' +
         '</div>'
       )).join('');
 
@@ -275,6 +289,13 @@ class ProgrammersSidebarProvider {
             type: 'toggleReview',
             problemDir: problem.problemDir,
             review: event.currentTarget.checked
+          });
+        });
+        row.querySelector('.delete-problem').addEventListener('click', (event) => {
+          event.stopPropagation();
+          vscode.postMessage({
+            type: 'deleteProblem',
+            problemDir: problem.problemDir
           });
         });
       });
@@ -408,10 +429,7 @@ async function createProblemFromId(context, rawLessonId) {
   }
 
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-  if (!workspaceFolder) {
-    vscode.window.showErrorMessage("먼저 문제를 저장할 워크스페이스 폴더를 열어주세요.");
-    return;
-  }
+  const programmersDir = await resolveProgrammersDir(context, workspaceFolder?.uri, { create: true });
 
   try {
     sidebarProvider?.post({ type: "status", kind: "running", text: `생성 중\n\n기존 문제를 확인하고 있습니다...` });
@@ -423,7 +441,7 @@ async function createProblemFromId(context, rawLessonId) {
       },
       async (progress) => {
         progress.report({ message: "기존 문제를 확인하는 중..." });
-        const created = await createProblem(workspaceFolder.uri, lessonId);
+        const created = await createProblem(programmersDir, lessonId);
         progress.report({ message: "에디터를 여는 중..." });
         return created;
       }
@@ -458,7 +476,7 @@ async function openLastProblem(context) {
 }
 
 async function openProblemFromDir(context, problemDir) {
-  const safeDir = await validateProblemDir(problemDir);
+  const safeDir = await validateProblemDir(context, problemDir);
   if (!safeDir) {
     vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다.");
     return;
@@ -470,7 +488,7 @@ async function openProblemFromDir(context, problemDir) {
 }
 
 async function toggleReview(context, problemDir, review) {
-  const safeDir = await validateProblemDir(problemDir);
+  const safeDir = await validateProblemDir(context, problemDir);
   if (!safeDir) {
     vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다.");
     return;
@@ -489,6 +507,36 @@ async function toggleReview(context, problemDir, review) {
   await sidebarProvider?.refreshProblems();
 }
 
+async function deleteProblem(context, problemDir) {
+  const safeDir = await validateProblemDir(context, problemDir);
+  if (!safeDir) {
+    vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다.");
+    return;
+  }
+
+  const folderName = path.basename(safeDir);
+  const picked = await vscode.window.showWarningMessage(
+    `${folderName} 문제 폴더를 삭제할까요?`,
+    { modal: true, detail: "problem.md, solution.cpp, .programmers-helper가 함께 삭제됩니다." },
+    "삭제"
+  );
+  if (picked !== "삭제") {
+    return;
+  }
+
+  await vscode.workspace.fs.delete(vscode.Uri.file(safeDir), { recursive: true, useTrash: true });
+
+  const last = context.workspaceState.get("lastProblemDir");
+  if (typeof last === "string" && path.resolve(last) === path.resolve(safeDir)) {
+    await context.workspaceState.update("lastProblemDir", undefined);
+    sidebarProvider?.post({ type: "currentProblem", problem: undefined });
+    sidebarProvider?.post({ type: "status", kind: "", text: "대기 중\n\n문제 번호를 입력하고 생성 버튼을 누르세요." });
+  }
+
+  await sidebarProvider?.refreshProblems();
+  vscode.window.showInformationMessage(`${folderName} 삭제 완료`);
+}
+
 async function showOpenedProblemState(context, problemDir) {
   const problem = await loadProblemInfo(problemDir);
   const examples = await loadProblemExamples(problemDir);
@@ -504,13 +552,18 @@ async function showOpenedProblemState(context, problemDir) {
   });
 }
 
-async function validateProblemDir(problemDir) {
-  const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-  if (!workspaceFolder || !problemDir) {
+async function validateProblemDir(context, problemDir) {
+  if (!problemDir) {
     return undefined;
   }
 
-  const root = path.resolve(getProgrammersDir(workspaceFolder.uri).fsPath);
+  const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+  const programmersDir = await resolveProgrammersDir(context, workspaceFolder?.uri);
+  if (!programmersDir) {
+    return undefined;
+  }
+
+  const root = path.resolve(programmersDir.fsPath);
   const target = path.resolve(problemDir);
   if (target !== root && !target.startsWith(root + path.sep)) {
     return undefined;
@@ -525,8 +578,7 @@ async function validateProblemDir(problemDir) {
   }
 }
 
-async function loadProblems(workspaceUri) {
-  const programmersDir = getProgrammersDir(workspaceUri);
+async function loadProblems(programmersDir) {
   let entries = [];
   try {
     entries = await vscode.workspace.fs.readDirectory(programmersDir);
@@ -556,8 +608,48 @@ async function loadProblems(workspaceUri) {
   });
 }
 
-function getProgrammersDir(workspaceUri) {
-  return path.basename(workspaceUri.fsPath) === "Programmers" ? workspaceUri : vscode.Uri.joinPath(workspaceUri, "Programmers");
+async function resolveProgrammersDir(context, workspaceUri, options = {}) {
+  const candidates = getProgrammersDirCandidates(context, workspaceUri);
+  for (const candidate of candidates) {
+    try {
+      const stat = await vscode.workspace.fs.stat(candidate);
+      if (stat.type === vscode.FileType.Directory) {
+        return candidate;
+      }
+    } catch {
+      // Try the next known location.
+    }
+  }
+
+  const fallback = getDefaultProgrammersDir(context);
+  if (options.create) {
+    await vscode.workspace.fs.createDirectory(fallback);
+    return fallback;
+  }
+
+  return undefined;
+}
+
+function getProgrammersDirCandidates(context, workspaceUri) {
+  const candidates = [];
+  if (workspaceUri) {
+    candidates.push(path.basename(workspaceUri.fsPath) === "Programmers" ? workspaceUri : vscode.Uri.joinPath(workspaceUri, "Programmers"));
+  }
+  candidates.push(getDefaultProgrammersDir(context));
+
+  const seen = new Set();
+  return candidates.filter((candidate) => {
+    const key = path.resolve(candidate.fsPath);
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function getDefaultProgrammersDir(context) {
+  return vscode.Uri.joinPath(context.globalStorageUri, "Programmers");
 }
 
 function getCurrentProblemFromList(context, problems) {
@@ -618,8 +710,8 @@ function parseProblemFolderName(folderName) {
   };
 }
 
-async function createProblem(workspaceUri, lessonId) {
-  const existing = await findExistingProblem(workspaceUri, lessonId);
+async function createProblem(programmersDir, lessonId) {
+  const existing = await findExistingProblem(programmersDir, lessonId);
   if (existing) {
     return existing;
   }
@@ -642,7 +734,6 @@ async function createProblem(workspaceUri, lessonId) {
   const level = matchFirst(html, /data-challenge-level="([^"]+)"/);
   const category = matchFirst(html, /data-challenge-category="([^"]+)"/);
   const folderName = `${lessonId}_${slugify(title)}`;
-  const programmersDir = getProgrammersDir(workspaceUri);
   const problemDir = vscode.Uri.joinPath(programmersDir, folderName);
   const mdUri = vscode.Uri.joinPath(problemDir, "problem.md");
   const cppUri = vscode.Uri.joinPath(problemDir, "solution.cpp");
@@ -686,8 +777,7 @@ async function createProblem(workspaceUri, lessonId) {
   return { folderName, problemDir, mdUri, cppUri, examples: metadata.examples };
 }
 
-async function findExistingProblem(workspaceUri, lessonId) {
-  const programmersDir = getProgrammersDir(workspaceUri);
+async function findExistingProblem(programmersDir, lessonId) {
   let entries = [];
   try {
     entries = await vscode.workspace.fs.readDirectory(programmersDir);
@@ -811,7 +901,17 @@ function summarizeCompilerError(message) {
 }
 
 function shortenCompilerPaths(line) {
-  return line.replace(/(?:\/[^\s:]+)+\/([^/\s:]+:\d+:\d+:)/g, "$1");
+  const sourceMatch = line.match(/([^/\\:\s]+\.cpp:\d+:\d+:\s+(?:fatal\s+)?error:\s+.*)$/);
+  if (sourceMatch) {
+    return sourceMatch[1];
+  }
+
+  const includedMatch = line.match(/([^/\\:\s]+\.cpp:\d+:\d+:)$/);
+  if (includedMatch) {
+    return includedMatch[1];
+  }
+
+  return line.replace(/.*[\/\\]([^\/\\:]+:\d+:\d+:)/, "$1");
 }
 
 function limitStatusText(text, maxLength = 180) {
@@ -846,13 +946,16 @@ async function getProblemDir(context) {
   const activeFile = vscode.window.activeTextEditor?.document.uri.fsPath;
   const fromActive = activeFile ? findProblemDirFromPath(activeFile) : undefined;
   if (fromActive) {
-    await context.workspaceState.update("lastProblemDir", fromActive);
-    return fromActive;
+    const validActive = await validateProblemDir(context, fromActive);
+    if (validActive) {
+      await context.workspaceState.update("lastProblemDir", validActive);
+      return validActive;
+    }
   }
 
   const last = context.workspaceState.get("lastProblemDir");
   if (typeof last === "string") {
-    const validLast = await validateProblemDir(last);
+    const validLast = await validateProblemDir(context, last);
     if (validLast) {
       return validLast;
     }
@@ -860,17 +963,17 @@ async function getProblemDir(context) {
   }
 
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-  if (!workspaceFolder) {
-    vscode.window.showErrorMessage("먼저 워크스페이스 폴더를 열어주세요.");
+  const programmersDir = await resolveProgrammersDir(context, workspaceFolder?.uri);
+  if (!programmersDir) {
+    vscode.window.showErrorMessage(`Programmers 폴더를 찾지 못했습니다: ${getDefaultProgrammersDir(context).fsPath}`);
     return undefined;
   }
 
-  const programmersDir = getProgrammersDir(workspaceFolder.uri);
   let entries = [];
   try {
     entries = await vscode.workspace.fs.readDirectory(programmersDir);
   } catch {
-    vscode.window.showErrorMessage("Programmers 폴더를 찾지 못했습니다.");
+    vscode.window.showErrorMessage(`Programmers 폴더를 찾지 못했습니다: ${programmersDir.fsPath}`);
     return undefined;
   }
 
@@ -1285,8 +1388,14 @@ function cleanCell(value) {
   return decodeHtml(value).replace(/^`|`$/g, "").replace(/\\\|/g, "|").trim();
 }
 
-function fetchText(targetUrl) {
+function fetchText(targetUrl, redirects = 0) {
   return new Promise((resolve, reject) => {
+    const parsedUrl = new URL(targetUrl);
+    if (parsedUrl.hostname !== PROGRAMMERS_HOST) {
+      reject(new Error(`허용되지 않은 프로그래머스 URL입니다: ${targetUrl}`));
+      return;
+    }
+
     const request = https.get(
       targetUrl,
       {
@@ -1297,7 +1406,20 @@ function fetchText(targetUrl) {
       },
       (response) => {
         if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-          resolve(fetchText(new URL(response.headers.location, targetUrl).toString()));
+          if (redirects >= MAX_REDIRECTS) {
+            reject(new Error("프로그래머스 페이지 redirect가 너무 많습니다."));
+            response.resume();
+            return;
+          }
+
+          const redirectUrl = new URL(response.headers.location, targetUrl);
+          if (redirectUrl.hostname !== PROGRAMMERS_HOST) {
+            reject(new Error(`허용되지 않은 redirect URL입니다: ${redirectUrl.toString()}`));
+            response.resume();
+            return;
+          }
+
+          resolve(fetchText(redirectUrl.toString(), redirects + 1));
           return;
         }
 
@@ -1309,7 +1431,13 @@ function fetchText(targetUrl) {
 
         response.setEncoding("utf8");
         let body = "";
+        let bytes = 0;
         response.on("data", (chunk) => {
+          bytes += Buffer.byteLength(chunk, "utf8");
+          if (bytes > MAX_FETCH_BYTES) {
+            request.destroy(new Error("프로그래머스 페이지 응답이 너무 큽니다."));
+            return;
+          }
           body += chunk;
         });
         response.on("end", () => resolve(body));

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.0.6
+
+- Use VS Code global storage as the default problem store when no local `Programmers` folder is available.
+- Add a delete action for problem folders with confirmation and trash support.
+- Validate active editor paths before using them as test targets.
+- Restrict Programmers redirects and response size while crawling problem pages.
+- Improve compile error summaries by hiding long local paths.
+- Document that C++ tests run with the current user permissions.
+
 ## 0.0.5
 
 - Add per-test-case timeouts and a stop button for running tests.

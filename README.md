@@ -29,6 +29,10 @@ macOS에서는 보통 Xcode Command Line Tools를 설치하면 `clang++`를 사�
 xcode-select --install
 ```
 
+## 보안 안내
+
+샘플/커스텀 테스트 실행은 `solution.cpp`를 로컬에서 컴파일한 뒤 현재 사용자 권한으로 실행합니다. 신뢰할 수 없는 C++ 코드는 실행하지 마세요.
+
 ## GitHub에서 설치하기
 
 방법은 두 가지입니다.
