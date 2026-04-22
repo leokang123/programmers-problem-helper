@@ -82,33 +82,52 @@ class ProgrammersSidebarProvider {
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    body { padding: 14px; color: var(--vscode-foreground); font-family: var(--vscode-font-family); }
+    html, body { height: 100%; margin: 0; overflow: hidden; }
+    body { color: var(--vscode-foreground); font-family: var(--vscode-font-family); }
     label { display: block; margin-bottom: 6px; font-size: 12px; color: var(--vscode-descriptionForeground); }
-    input, textarea { width: 100%; box-sizing: border-box; padding: 7px 8px; border: 1px solid var(--vscode-input-border); background: var(--vscode-input-background); color: var(--vscode-input-foreground); }
+    input, textarea { width: 100%; box-sizing: border-box; padding: 6px 7px; border: 1px solid var(--vscode-input-border); background: var(--vscode-input-background); color: var(--vscode-input-foreground); }
     textarea { min-height: 52px; resize: vertical; font-family: var(--vscode-editor-font-family); font-size: 12px; }
-    button { width: 100%; margin-top: 8px; padding: 7px 8px; border: 0; background: var(--vscode-button-background); color: var(--vscode-button-foreground); cursor: pointer; }
+    button { width: 100%; margin-top: 6px; padding: 6px 7px; border: 0; background: var(--vscode-button-background); color: var(--vscode-button-foreground); cursor: pointer; }
     button.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
     button:hover { background: var(--vscode-button-hoverBackground); }
-    .section-title { margin-bottom: 8px; font-size: 12px; font-weight: 600; color: var(--vscode-foreground); }
-    .section { margin-bottom: 18px; }
-    .current-card { padding: 9px 0; border-top: 1px solid var(--vscode-panel-border); border-bottom: 1px solid var(--vscode-panel-border); }
-    .current-title { font-size: 12px; line-height: 1.35; color: var(--vscode-foreground); word-break: break-word; }
-    .current-option { display: flex; gap: 6px; align-items: center; margin: 8px 0 0; font-size: 12px; color: var(--vscode-foreground); }
-    .current-option input { width: auto; margin: 0; }
-    .list-actions { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .app { height: 100%; box-sizing: border-box; display: grid; grid-template-rows: auto minmax(0, 58fr) minmax(0, 42fr); gap: 4px; padding: 4px; overflow: hidden; }
+    .app.tests-collapsed { grid-template-rows: auto auto minmax(0, 1fr); }
+    .app.list-collapsed { grid-template-rows: auto minmax(0, 1fr) auto; }
+    .app.tests-collapsed.list-collapsed { grid-template-rows: auto auto auto; align-content: start; }
+    .pane { min-height: 0; display: flex; flex-direction: column; background: var(--vscode-sideBar-background); }
+    .pane + .pane { border-top: 1px solid var(--vscode-panel-border); }
+    .pane-title { flex: 0 0 auto; padding: 5px 2px; font-size: 12px; font-weight: 600; color: var(--vscode-foreground); }
+    .toggle-title { display: flex; align-items: center; gap: 6px; width: 100%; margin: 0; border: 0; background: transparent; color: var(--vscode-foreground); text-align: left; cursor: pointer; }
+    .toggle-title:hover { background: var(--vscode-list-hoverBackground); }
+    .toggle-icon { width: 10px; color: var(--vscode-descriptionForeground); }
+    .toggle-label { flex: 1 1 auto; min-width: 0; }
+    .toggle-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 400; color: var(--vscode-descriptionForeground); }
+    .collapsed-badge { display: none; flex: 0 0 auto; padding: 1px 5px; border: 1px solid var(--vscode-panel-border); border-radius: 2px; font-size: 10px; font-weight: 400; color: var(--vscode-descriptionForeground); }
+    .pane-body { min-height: 0; flex: 1 1 auto; overflow: auto; padding: 2px; box-sizing: border-box; }
+    .top-pane .pane-body { overflow: visible; }
+    .pane.collapsed .pane-body { display: none; }
+    .pane.collapsed .collapsed-badge { display: inline-block; }
+    .section-title { margin-bottom: 5px; font-size: 12px; font-weight: 600; color: var(--vscode-foreground); }
+    .section { margin-bottom: 8px; }
+    .section:last-child { margin-bottom: 0; }
+    .open-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .open-actions button { margin-top: 6px; }
+    .list-actions { display: flex; gap: 8px; align-items: center; margin-bottom: 5px; flex-wrap: wrap; }
     .filter { display: flex; gap: 6px; align-items: center; margin: 0; font-size: 12px; color: var(--vscode-foreground); }
     .filter input { width: auto; margin: 0; }
-    .refresh { width: auto; min-width: 34px; margin: 0 0 0 auto; padding: 4px 8px; }
+    .refresh { width: auto; min-width: 30px; margin: 0 0 0 auto; padding: 3px 7px; }
     .problem-list { border-top: 1px solid var(--vscode-panel-border); }
-    .problem-row { padding: 8px 0; border-bottom: 1px solid var(--vscode-panel-border); cursor: pointer; }
+    .problem-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--vscode-panel-border); cursor: pointer; }
     .problem-row:hover { background: var(--vscode-list-hoverBackground); }
     .problem-title { font-size: 12px; line-height: 1.35; color: var(--vscode-foreground); word-break: break-word; }
     .problem-id { margin-top: 2px; font-size: 11px; color: var(--vscode-descriptionForeground); }
+    .review-toggle { display: flex; gap: 4px; align-items: center; margin: 0; font-size: 11px; color: var(--vscode-descriptionForeground); }
+    .review-toggle input { width: auto; margin: 0; }
     .empty { padding: 9px 0; font-size: 12px; color: var(--vscode-descriptionForeground); line-height: 1.4; }
-    .test-card { margin-top: 10px; padding: 10px; border: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); }
-    .test-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 12px; color: var(--vscode-descriptionForeground); }
+    .test-card { margin-top: 8px; padding: 8px; border: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); }
+    .test-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; font-size: 12px; color: var(--vscode-descriptionForeground); }
     .remove { width: auto; margin: 0; padding: 3px 7px; background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
-    .status { margin-top: 10px; padding: 10px; border: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBarSectionHeader-background); white-space: pre-wrap; font-size: 12px; color: var(--vscode-foreground); line-height: 1.45; }
+    .status { margin-top: 5px; padding: 5px 6px; border: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBarSectionHeader-background); white-space: pre-wrap; font-size: 12px; color: var(--vscode-foreground); line-height: 1.25; }
     .status.ready { border-color: var(--vscode-testing-iconPassed); }
     .status.error { border-color: var(--vscode-testing-iconFailed); }
     .status.running { border-color: var(--vscode-progressBar-background); }
@@ -116,57 +135,87 @@ class ProgrammersSidebarProvider {
   </style>
 </head>
 <body>
-  <div class="section">
-    <label for="lessonId">Programmers 문제 번호</label>
-    <input id="lessonId" value="468379" inputmode="numeric" />
-    <button id="create">문제 생성 및 열기</button>
-  </div>
-  <div class="section">
-    <div class="section-title">현재 문제</div>
-    <div id="currentProblem" class="current-card"></div>
-  </div>
-  <div class="section">
-    <div class="section-title">다시풀 리스트</div>
-    <div class="list-actions">
-      <label class="filter"><input id="showReviewList" type="checkbox" /> 다시풀 보기</label>
-      <button id="refreshProblems" class="secondary refresh" title="새로고침">↻</button>
-    </div>
-    <div id="reviewList" class="problem-list"></div>
-  </div>
-  <div class="section">
-    <div class="section-title">전체 리스트</div>
-    <div class="list-actions">
-      <label class="filter"><input id="showAllList" type="checkbox" /> 전체 보기</label>
-    </div>
-    <div id="allList" class="problem-list"></div>
-  </div>
-  <div class="section">
-    <button id="run">샘플 테스트 실행</button>
-    <button id="open" class="secondary">마지막 문제 다시 열기</button>
-  </div>
-  <div class="section">
-    <label>커스텀 테스트케이스</label>
-    <div id="customTests"></div>
-    <button id="addTest" class="secondary">+ 테스트 추가</button>
-    <button id="runCustom">커스텀 테스트 실행</button>
-    <div class="hint">Input은 solution 인자 순서대로 쉼표로 구분합니다. 예: 4, 5, 2, 2, [[0,0]]</div>
-  </div>
-  <div id="status" class="status">대기 중
+  <div class="app">
+    <section class="pane top-pane">
+      <div class="pane-title">문제 열기 / 현재 상태</div>
+      <div class="pane-body">
+        <div class="section">
+          <label for="lessonId">Programmers 문제 번호</label>
+          <input id="lessonId" value="468379" inputmode="numeric" />
+          <div class="open-actions">
+            <button id="create">생성 및 열기</button>
+            <button id="open" class="secondary">마지막 열기</button>
+          </div>
+        </div>
+        <div id="status" class="status">대기 중
 
 문제 번호를 입력하고 생성 버튼을 누르세요.</div>
+      </div>
+    </section>
+
+    <section id="testsPane" class="pane collapsible-pane">
+      <button id="toggleTests" class="pane-title toggle-title" type="button" aria-expanded="true">
+        <span class="toggle-icon">▾</span>
+        <span class="toggle-label">테스트 실행</span>
+        <span id="testsSummary" class="toggle-summary"></span>
+        <span class="collapsed-badge">닫힘</span>
+      </button>
+      <div class="pane-body">
+        <div class="section">
+          <button id="run">샘플 테스트 실행</button>
+        </div>
+        <div class="section">
+          <label>커스텀 테스트케이스</label>
+          <div id="customTests"></div>
+          <button id="addTest" class="secondary">+ 테스트 추가</button>
+          <button id="runCustom">커스텀 테스트 실행</button>
+          <div class="hint">Input은 solution 인자 순서대로 쉼표로 구분합니다. 예: 4, 5, 2, 2, [[0,0]]</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="listPane" class="pane collapsible-pane">
+      <button id="toggleList" class="pane-title toggle-title" type="button" aria-expanded="true">
+        <span class="toggle-icon">▾</span>
+        <span class="toggle-label">문제 목록</span>
+        <span id="listSummary" class="toggle-summary"></span>
+        <span class="collapsed-badge">닫힘</span>
+      </button>
+      <div class="pane-body">
+        <div class="list-actions">
+          <label class="filter"><input name="problemFilter" type="radio" value="all" checked /> 전체</label>
+          <label class="filter"><input name="problemFilter" type="radio" value="review" /> 다시풀</label>
+          <button id="refreshProblems" class="secondary refresh" title="새로고침">↻</button>
+        </div>
+        <div id="problemList" class="problem-list"></div>
+      </div>
+    </section>
+  </div>
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     const input = document.getElementById('lessonId');
     const customTests = document.getElementById('customTests');
-    const currentProblemEl = document.getElementById('currentProblem');
-    const reviewList = document.getElementById('reviewList');
-    const allList = document.getElementById('allList');
-    const showReviewList = document.getElementById('showReviewList');
-    const showAllList = document.getElementById('showAllList');
+    const problemList = document.getElementById('problemList');
     const status = document.getElementById('status');
+    const app = document.querySelector('.app');
+    const testsPane = document.getElementById('testsPane');
+    const listPane = document.getElementById('listPane');
+    const testsSummary = document.getElementById('testsSummary');
+    const listSummary = document.getElementById('listSummary');
     let testCount = 0;
     let problems = [];
-    let currentProblem = null;
+
+    function setPaneCollapsed(pane, button, className, collapsed) {
+      pane.classList.toggle('collapsed', collapsed);
+      app.classList.toggle(className, collapsed);
+      button.setAttribute('aria-expanded', String(!collapsed));
+      button.querySelector('.toggle-icon').textContent = collapsed ? '▸' : '▾';
+      updatePaneSummaries();
+    }
+
+    function togglePane(pane, button, className) {
+      setPaneCollapsed(pane, button, className, !pane.classList.contains('collapsed'));
+    }
 
     function escapeHtml(value) {
       return String(value).replace(/[&<>"']/g, (ch) => ({
@@ -178,24 +227,16 @@ class ProgrammersSidebarProvider {
       })[ch]);
     }
 
-    function renderCurrentProblem() {
-      if (!currentProblem) {
-        currentProblemEl.innerHTML = '<div class="empty">열린 문제가 없습니다.</div>';
-        return;
-      }
+    function updatePaneSummaries() {
+      const customCount = document.querySelectorAll('.test-card').length;
+      testsSummary.textContent = testsPane.classList.contains('collapsed') ? '샘플 · 커스텀 ' + customCount + '개' : '';
 
-      currentProblemEl.innerHTML =
-        '<div class="current-title">' + escapeHtml(currentProblem.title) + '</div>' +
-        '<div class="problem-id">#' + escapeHtml(currentProblem.lessonId || '-') + '</div>' +
-        '<label class="current-option"><input id="currentReview" type="checkbox" ' + (currentProblem.review ? 'checked' : '') + ' /> 다시 풀어보기</label>';
-
-      document.getElementById('currentReview').addEventListener('change', (event) => {
-        vscode.postMessage({
-          type: 'toggleReview',
-          problemDir: currentProblem.problemDir,
-          review: event.currentTarget.checked
-        });
-      });
+      const filter = document.querySelector('input[name="problemFilter"]:checked')?.value || 'all';
+      const reviewCount = problems.filter((problem) => problem.review).length;
+      const visibleCount = filter === 'review' ? reviewCount : problems.length;
+      listSummary.textContent = listPane.classList.contains('collapsed')
+        ? (filter === 'review' ? '다시풀 ' + visibleCount + '개' : '전체 ' + visibleCount + '개')
+        : '';
     }
 
     function renderList(container, visible, emptyText) {
@@ -206,8 +247,9 @@ class ProgrammersSidebarProvider {
 
       container.innerHTML = visible.map((problem, index) => (
         '<div class="problem-row" data-index="' + index + '">' +
-          '<div class="problem-title">' + escapeHtml(problem.title) + '</div>' +
-          '<div class="problem-id">#' + escapeHtml(problem.lessonId || '-') + (problem.review ? ' · 다시풀' : '') + '</div>' +
+          '<div><div class="problem-title">' + escapeHtml(problem.title) + '</div>' +
+          '<div class="problem-id">#' + escapeHtml(problem.lessonId || '-') + '</div></div>' +
+          '<label class="review-toggle"><input class="review-check" type="checkbox" ' + (problem.review ? 'checked' : '') + ' /> 다시풀</label>' +
         '</div>'
       )).join('');
 
@@ -216,22 +258,22 @@ class ProgrammersSidebarProvider {
         row.addEventListener('click', () => {
           vscode.postMessage({ type: 'openProblem', problemDir: problem.problemDir });
         });
+        row.querySelector('.review-check').addEventListener('click', (event) => {
+          event.stopPropagation();
+          vscode.postMessage({
+            type: 'toggleReview',
+            problemDir: problem.problemDir,
+            review: event.currentTarget.checked
+          });
+        });
       });
     }
 
     function renderProblems() {
-      if (showReviewList.checked) {
-        renderList(reviewList, problems.filter((problem) => problem.review), '다시 풀 문제가 없습니다.');
-      } else {
-        reviewList.innerHTML = '';
-      }
-
-      if (!showAllList.checked) {
-        allList.innerHTML = '';
-        return;
-      }
-
-      renderList(allList, problems, 'Programmers 폴더에 문제가 없습니다.');
+      const filter = document.querySelector('input[name="problemFilter"]:checked')?.value || 'all';
+      const visible = filter === 'review' ? problems.filter((problem) => problem.review) : problems;
+      renderList(problemList, visible, filter === 'review' ? '다시 풀 문제가 없습니다.' : 'Programmers 폴더에 문제가 없습니다.');
+      updatePaneSummaries();
     }
 
     function addTest(inputValue = '', expectedValue = '') {
@@ -246,8 +288,12 @@ class ProgrammersSidebarProvider {
         '<textarea class="test-expected" spellcheck="false" placeholder="[0,0]"></textarea>';
       card.querySelector('.test-input').value = inputValue;
       card.querySelector('.test-expected').value = expectedValue;
-      card.querySelector('.remove').addEventListener('click', () => card.remove());
+      card.querySelector('.remove').addEventListener('click', () => {
+        card.remove();
+        updatePaneSummaries();
+      });
       customTests.appendChild(card);
+      updatePaneSummaries();
     }
 
     function setCustomTests(tests) {
@@ -285,8 +331,18 @@ class ProgrammersSidebarProvider {
     document.getElementById('open').addEventListener('click', () => {
       vscode.postMessage({ type: 'openLast' });
     });
-    showReviewList.addEventListener('change', renderProblems);
-    showAllList.addEventListener('change', renderProblems);
+    document.getElementById('toggleTests').addEventListener('click', (event) => {
+      togglePane(testsPane, event.currentTarget, 'tests-collapsed');
+    });
+    document.getElementById('toggleList').addEventListener('click', (event) => {
+      togglePane(listPane, event.currentTarget, 'list-collapsed');
+    });
+    document.querySelectorAll('input[name="problemFilter"]').forEach((filter) => {
+      filter.addEventListener('change', () => {
+        renderProblems();
+        updatePaneSummaries();
+      });
+    });
     document.getElementById('refreshProblems').addEventListener('click', () => {
       vscode.postMessage({ type: 'refreshProblems' });
     });
@@ -297,17 +353,14 @@ class ProgrammersSidebarProvider {
       }
       if (event.data.type === 'customTests') {
         setCustomTests(event.data.tests || []);
+        updatePaneSummaries();
       }
       if (event.data.type === 'problems') {
         problems = event.data.problems || [];
         renderProblems();
       }
-      if (event.data.type === 'currentProblem') {
-        currentProblem = event.data.problem || null;
-        renderCurrentProblem();
-      }
     });
-    renderCurrentProblem();
+    updatePaneSummaries();
     vscode.postMessage({ type: 'refreshProblems' });
   </script>
 </body>
@@ -430,7 +483,7 @@ async function showOpenedProblemState(context, problemDir) {
   sidebarProvider?.post({
     type: "status",
     kind: "ready",
-    text: `준비 완료\n\n${problem.folderName}\n\n왼쪽: problem.md Preview\n오른쪽: solution.cpp\n\n이제 샘플 테스트를 실행할 수 있습니다.`,
+    text: `준비 완료\n${problem.folderName}\n샘플 테스트를 실행할 수 있습니다.`,
   });
 }
 

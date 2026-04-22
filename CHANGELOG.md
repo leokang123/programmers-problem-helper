@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.0.3
+
+- Rework the sidebar into separate fixed, test, and problem-list areas.
+- Add collapsible test and problem-list sections.
+- Move review toggles into problem rows.
+- Reduce ready status text and spacing.
+
 ## 0.0.2
 
 - Add a current problem review checkbox backed by `.programmers-helper/review.json`.
