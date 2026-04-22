@@ -397,7 +397,7 @@ async function createProblemFromId(context, rawLessonId) {
   }
 
   try {
-    sidebarProvider?.post({ type: "status", kind: "running", text: `생성 중\n\nProgrammers ${lessonId} 페이지를 가져오고 있습니다...` });
+    sidebarProvider?.post({ type: "status", kind: "running", text: `생성 중\n\n기존 문제를 확인하고 있습니다...` });
     const result = await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
@@ -405,7 +405,7 @@ async function createProblemFromId(context, rawLessonId) {
         cancellable: false,
       },
       async (progress) => {
-        progress.report({ message: "문제 페이지를 가져오는 중..." });
+        progress.report({ message: "기존 문제를 확인하는 중..." });
         const created = await createProblem(workspaceFolder.uri, lessonId);
         progress.report({ message: "에디터를 여는 중..." });
         return created;
@@ -483,7 +483,7 @@ async function showOpenedProblemState(context, problemDir) {
   sidebarProvider?.post({
     type: "status",
     kind: "ready",
-    text: `준비 완료\n${problem.folderName}\n샘플 테스트를 실행할 수 있습니다.`,
+    text: `준비 완료\n\n${problem.folderName}`,
   });
 }
 
@@ -517,24 +517,17 @@ async function loadProblems(workspaceUri) {
     return [];
   }
 
-  const problems = [];
-  for (const [name, type] of entries) {
-    if (type !== vscode.FileType.Directory) {
-      continue;
-    }
-
-    const problemDir = vscode.Uri.joinPath(programmersDir, name);
-    const mdUri = vscode.Uri.joinPath(problemDir, "problem.md");
-    const cppUri = vscode.Uri.joinPath(problemDir, "solution.cpp");
-    try {
-      await vscode.workspace.fs.stat(mdUri);
-      await vscode.workspace.fs.stat(cppUri);
-    } catch {
-      continue;
-    }
-
-    problems.push(await loadProblemInfo(problemDir.fsPath));
-  }
+  const problems = (await Promise.all(
+    entries
+      .filter(([, type]) => type === vscode.FileType.Directory)
+      .map(async ([name]) => {
+        const problemDir = vscode.Uri.joinPath(programmersDir, name);
+        if (!(await hasProblemFiles(problemDir))) {
+          return undefined;
+        }
+        return loadProblemInfo(problemDir.fsPath);
+      })
+  )).filter(Boolean);
 
   return problems.sort((a, b) => {
     const left = /^\d+$/.test(a.lessonId) ? Number(a.lessonId) : undefined;
@@ -605,6 +598,11 @@ function parseProblemFolderName(folderName) {
 }
 
 async function createProblem(workspaceUri, lessonId) {
+  const existing = await findExistingProblem(workspaceUri, lessonId);
+  if (existing) {
+    return existing;
+  }
+
   const url = `https://school.programmers.co.kr/learn/courses/30/lessons/${lessonId}?language=cpp`;
   const html = await fetchText(url);
   const title = decodeHtml(
@@ -666,6 +664,58 @@ async function createProblem(workspaceUri, lessonId) {
   return { folderName, problemDir, mdUri, cppUri, examples: metadata.examples };
 }
 
+async function findExistingProblem(workspaceUri, lessonId) {
+  const programmersDir = vscode.Uri.joinPath(workspaceUri, "Programmers");
+  let entries = [];
+  try {
+    entries = await vscode.workspace.fs.readDirectory(programmersDir);
+  } catch {
+    return undefined;
+  }
+
+  for (const [name, type] of entries) {
+    if (type !== vscode.FileType.Directory) {
+      continue;
+    }
+
+    const problemDir = vscode.Uri.joinPath(programmersDir, name);
+    const fallback = parseProblemFolderName(name);
+    let matchesLesson = fallback.lessonId === lessonId;
+    if (!matchesLesson) {
+      const metadata = await readJson(vscode.Uri.joinPath(problemDir, ".programmers-helper", "programmers.json"));
+      matchesLesson = String(metadata?.lessonId || "") === lessonId;
+    }
+
+    if (!matchesLesson || !(await hasProblemFiles(problemDir))) {
+      continue;
+    }
+
+    const mdUri = vscode.Uri.joinPath(problemDir, "problem.md");
+    const cppUri = vscode.Uri.joinPath(problemDir, "solution.cpp");
+    return {
+      folderName: name,
+      problemDir,
+      mdUri,
+      cppUri,
+      examples: await loadProblemExamples(problemDir.fsPath),
+    };
+  }
+
+  return undefined;
+}
+
+async function hasProblemFiles(problemDir) {
+  try {
+    await Promise.all([
+      vscode.workspace.fs.stat(vscode.Uri.joinPath(problemDir, "problem.md")),
+      vscode.workspace.fs.stat(vscode.Uri.joinPath(problemDir, "solution.cpp")),
+    ]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function writeFileIfAbsent(uri, contents) {
   try {
     await vscode.workspace.fs.stat(uri);
@@ -688,7 +738,7 @@ async function runSamplesFromCommand(context, customTestsText = "") {
     sidebarProvider?.post({
       type: "status",
       kind: result.failed === 0 ? "ready" : "error",
-      text: `${hasCustomTests ? "커스텀" : "샘플"} 테스트 완료\n\n${result.summary}\n\nOutput 패널에서 expected / actual을 확인하세요.`,
+      text: `${hasCustomTests ? "커스텀" : "샘플"} 테스트 완료\n\n${result.summary}`,
     });
     outputChannel.show(true);
   } catch (error) {
@@ -708,7 +758,11 @@ async function getProblemDir(context) {
 
   const last = context.workspaceState.get("lastProblemDir");
   if (typeof last === "string") {
-    return last;
+    const validLast = await validateProblemDir(last);
+    if (validLast) {
+      return validLast;
+    }
+    await context.workspaceState.update("lastProblemDir", undefined);
   }
 
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0];

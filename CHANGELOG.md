@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.0.4
+
+- Avoid crawling Programmers when an existing local problem already has `problem.md` and `solution.cpp`.
+- Speed up problem-list refresh by loading local problems in parallel.
+- Ignore stale last-problem paths that no longer contain problem files.
+- Simplify ready and test completion sidebar feedback.
+
 ## 0.0.3
 
 - Rework the sidebar into separate fixed, test, and problem-list areas.
