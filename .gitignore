@@ -9,5 +9,6 @@ programmers-problem-helper
 !.vscode/tasks.json
 !.vscode/extensions.json
 .programmers-helper/
+Programmers/
 out/
 dist/

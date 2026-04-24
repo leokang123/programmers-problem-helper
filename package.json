@@ -30,7 +30,7 @@
   },
   "homepage": "https://github.com/leokang123/programmers-problem-helper#readme",
   "scripts": {
-    "check": "node --check extension.js",
+    "check": "node --check extension.js && node --check src/*.js",
     "package": "npx @vscode/vsce package"
   },
   "activationEvents": [

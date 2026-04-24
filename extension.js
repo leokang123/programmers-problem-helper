@@ -1,26 +1,53 @@
 const vscode = require("vscode");
 const path = require("path");
-const https = require("https");
 const cp = require("child_process");
+const {
+  COMPILE_TIMEOUT_MS,
+  DOCKER_DEBUG_COMPILE_FLAGS,
+  DOCKER_FAST_COMPILE_FLAGS,
+  DOCKER_IMAGE,
+  TEST_TIMEOUT_MS,
+} = require("./src/config");
+const {
+  buildRunner,
+  parseCustomTests,
+  parseSolutionSignature,
+} = require("./src/cppRunnerBuilder");
+const {
+  ensureDockerRuntimeReady: ensureDockerRuntimeReadyModule,
+  prepareDockerRuntimeOnOpen: prepareDockerRuntimeOnOpenModule,
+} = require("./src/dockerRuntime");
+const {
+  buildProcessFailureError,
+  formatTestErrorForPanel,
+  formatTestErrorForStatus,
+  limitStatusText,
+  parseCompilerDiagnostics,
+} = require("./src/errorFormatting");
+const {
+  decodeHtml,
+  extractExamplesFromMarkdown,
+  fetchText,
+  htmlToMarkdown,
+  matchFirst,
+  slugify,
+} = require("./src/problemParsing");
 
 let sidebarProvider;
 let outputChannel;
+let diagnosticCollection;
 let activeTestProcess;
 let testRunInProgress = false;
 let stopRequested = false;
 
-const COMPILE_TIMEOUT_MS = 15000;
-const TEST_TIMEOUT_MS = 5000;
-const PROGRAMMERS_HOST = "school.programmers.co.kr";
-const MAX_FETCH_BYTES = 5 * 1024 * 1024;
-const MAX_REDIRECTS = 5;
-
 function activate(context) {
   outputChannel = vscode.window.createOutputChannel("Programmers Helper");
+  diagnosticCollection = vscode.languages.createDiagnosticCollection("programmers-helper");
   sidebarProvider = new ProgrammersSidebarProvider(context);
 
   context.subscriptions.push(
     outputChannel,
+    diagnosticCollection,
     vscode.window.registerWebviewViewProvider("programmersHelper.sidebar", sidebarProvider),
     vscode.commands.registerCommand("programmersHelper.createProblem", async () => {
       await createProblemFromInput(context);
@@ -522,7 +549,8 @@ async function openProblemFromDir(context, problemDir) {
 
   await context.workspaceState.update("lastProblemDir", safeDir);
   await openProblem(vscode.Uri.file(path.join(safeDir, "problem.md")), vscode.Uri.file(path.join(safeDir, "solution.cpp")));
-  await showOpenedProblemState(context, safeDir);
+  const runtimeStatus = await prepareDockerRuntimeOnOpen(context, safeDir);
+  await showOpenedProblemState(context, safeDir, runtimeStatus);
 }
 
 async function toggleReview(context, problemDir, review) {
@@ -595,7 +623,7 @@ async function runCustomTestsFromMessage(context, tests) {
   await runSamplesFromCommand(context, JSON.stringify(tests || []), problemDir);
 }
 
-async function showOpenedProblemState(context, problemDir) {
+async function showOpenedProblemState(context, problemDir, runtimeStatus = { kind: "ready", detail: "" }) {
   const problem = await loadProblemInfo(problemDir);
   const examples = await loadProblemExamples(problemDir);
   const savedCustomTests = await loadSavedCustomTests(problemDir);
@@ -606,8 +634,8 @@ async function showOpenedProblemState(context, problemDir) {
   await sidebarProvider?.refreshProblems();
   sidebarProvider?.post({
     type: "status",
-    kind: "ready",
-    text: `준비 완료\n\n${problem.folderName}`,
+    kind: runtimeStatus.kind || "ready",
+    text: `준비 완료\n\n${problem.folderName}${runtimeStatus.detail ? `\n${runtimeStatus.detail}` : ""}`,
   });
 }
 
@@ -680,7 +708,7 @@ async function resolveProgrammersDir(context, workspaceUri, options = {}) {
     }
   }
 
-  const fallback = getDefaultProgrammersDir(context);
+  const fallback = getDefaultProgrammersDir(context, workspaceUri);
   if (options.create) {
     await vscode.workspace.fs.createDirectory(fallback);
     return fallback;
@@ -691,10 +719,10 @@ async function resolveProgrammersDir(context, workspaceUri, options = {}) {
 
 function getProgrammersDirCandidates(context, workspaceUri) {
   const candidates = [];
-  if (workspaceUri) {
+  if (workspaceUri && vscode.env.remoteName === "dev-container") {
     candidates.push(path.basename(workspaceUri.fsPath) === "Programmers" ? workspaceUri : vscode.Uri.joinPath(workspaceUri, "Programmers"));
   }
-  candidates.push(getDefaultProgrammersDir(context));
+  candidates.push(getDefaultProgrammersDir(context, workspaceUri));
 
   const seen = new Set();
   return candidates.filter((candidate) => {
@@ -707,7 +735,12 @@ function getProgrammersDirCandidates(context, workspaceUri) {
   });
 }
 
-function getDefaultProgrammersDir(context) {
+function getDefaultProgrammersDir(context, workspaceUri) {
+  if (workspaceUri && vscode.env.remoteName === "dev-container") {
+    return path.basename(workspaceUri.fsPath) === "Programmers"
+      ? workspaceUri
+      : vscode.Uri.joinPath(workspaceUri, "Programmers");
+  }
   return vscode.Uri.joinPath(context.globalStorageUri, "Programmers");
 }
 
@@ -958,9 +991,9 @@ async function runSamplesFromCommand(context, customTestsText = "", providedProb
     });
     outputChannel.show(true);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const panelMessage = formatTestErrorForPanel(error);
     outputChannel.appendLine("");
-    outputChannel.appendLine(`[Programmers Helper] ${message}`);
+    outputChannel.appendLine(`[Programmers Helper] ${panelMessage}`);
     outputChannel.show(true);
     sidebarProvider?.post({ type: "status", kind: "error", text: `테스트 실행 오류\n\n${formatTestErrorForStatus(error)}` });
     vscode.window.showErrorMessage(formatTestErrorForStatus(error));
@@ -972,63 +1005,21 @@ async function runSamplesFromCommand(context, customTestsText = "", providedProb
   }
 }
 
-function formatTestErrorForStatus(error) {
+function clearProblemDiagnostics(problemDir) {
+  diagnosticCollection?.delete(vscode.Uri.file(path.join(problemDir, "solution.cpp")));
+}
+
+function applyCompilerDiagnostics(problemDir, error) {
   const message = error instanceof Error ? error.message : String(error);
-  if (!message.trim()) {
-    return "알 수 없는 오류";
+  if (!message.startsWith("clang++ 실패")) {
+    return;
   }
 
-  if (message.startsWith("clang++ 실패")) {
-    return summarizeCompilerError(message);
+  const solutionUri = vscode.Uri.file(path.join(problemDir, "solution.cpp"));
+  const diagnostics = parseCompilerDiagnostics(vscode, message, solutionUri);
+  if (diagnostics.length > 0) {
+    diagnosticCollection?.set(solutionUri, diagnostics);
   }
-
-  if (message.startsWith("런타임 에러")) {
-    return summarizeRuntimeError(message);
-  }
-
-  return limitStatusText(message);
-}
-
-function summarizeCompilerError(message) {
-  const lines = message.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  const errorLine = lines.find((line) => /\b(fatal )?error:/.test(line));
-  if (!errorLine) {
-    return "컴파일 실패";
-  }
-
-  return limitStatusText(`컴파일 실패\n${shortenCompilerPaths(errorLine)}`);
-}
-
-function summarizeRuntimeError(message) {
-  const lines = message.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  const header = lines[0] || "런타임 에러";
-  const detail = lines[1];
-  if (!detail) {
-    return header;
-  }
-  return limitStatusText(`${header}\n${detail}`);
-}
-
-function shortenCompilerPaths(line) {
-  const sourceMatch = line.match(/([^/\\:\s]+\.cpp:\d+:\d+:\s+(?:fatal\s+)?error:\s+.*)$/);
-  if (sourceMatch) {
-    return sourceMatch[1];
-  }
-
-  const includedMatch = line.match(/([^/\\:\s]+\.cpp:\d+:\d+:)$/);
-  if (includedMatch) {
-    return includedMatch[1];
-  }
-
-  return line.replace(/.*[\/\\]([^\/\\:]+:\d+:\d+:)/, "$1");
-}
-
-function limitStatusText(text, maxLength = 180) {
-  const trimmed = text.trim();
-  if (trimmed.length <= maxLength) {
-    return trimmed;
-  }
-  return `${trimmed.slice(0, maxLength - 1)}…`;
 }
 
 function stopTestRun() {
@@ -1074,7 +1065,7 @@ async function getProblemDir(context) {
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
   const programmersDir = await resolveProgrammersDir(context, workspaceFolder?.uri);
   if (!programmersDir) {
-    vscode.window.showErrorMessage(`Programmers 폴더를 찾지 못했습니다: ${getDefaultProgrammersDir(context).fsPath}`);
+    vscode.window.showErrorMessage(`Programmers 폴더를 찾지 못했습니다: ${getDefaultProgrammersDir(context, workspaceFolder?.uri).fsPath}`);
     return undefined;
   }
 
@@ -1124,51 +1115,78 @@ async function runSamples(problemDir, customTestsText = "") {
   const runnerDir = path.join(problemDir, ".programmers-helper");
   await vscode.workspace.fs.createDirectory(vscode.Uri.file(runnerDir));
   const runnerPath = path.join(runnerDir, "test_runner.cpp");
-  const binaryPath = path.join(runnerDir, "test_runner");
+  const fastBinaryPath = ".programmers-helper/test_runner_fast";
+  const debugBinaryPath = ".programmers-helper/test_runner_debug";
   const runnerCode = buildRunner(signature, examples);
   await vscode.workspace.fs.writeFile(vscode.Uri.file(runnerPath), Buffer.from(runnerCode, "utf8"));
 
   outputChannel.clear();
   outputChannel.appendLine(`[Programmers Helper] ${path.basename(problemDir)} ${customTestsText.trim() ? "커스텀" : "샘플"} 테스트`);
+  outputChannel.appendLine(`[Programmers Helper] Docker runtime: ${DOCKER_IMAGE}`);
   outputChannel.appendLine("");
 
-  ensureClangAvailable();
-  await execFile("clang++", ["-std=c++17", runnerPath, "-o", binaryPath], problemDir, {
-    timeoutMs: COMPILE_TIMEOUT_MS,
-    label: "컴파일",
-  });
+  const runtime = await ensureDockerRuntimeReady(problemDir);
+  clearProblemDiagnostics(problemDir);
+  try {
+    await compileRunner(runtime, problemDir, runnerPath, fastBinaryPath, DOCKER_FAST_COMPILE_FLAGS, "컴파일");
+  } catch (error) {
+    applyCompilerDiagnostics(problemDir, error);
+    throw error;
+  }
   if (stopRequested) {
     throw new Error("테스트 실행이 중지되었습니다.");
   }
 
   let output = "";
-  let timedOut = 0;
+  let debugBinaryReady = false;
   for (let index = 0; index < examples.length; index++) {
     if (stopRequested) {
       throw new Error("테스트 실행이 중지되었습니다.");
     }
 
     try {
-      output += await execFile(binaryPath, [String(index + 1)], problemDir, {
-        timeoutMs: TEST_TIMEOUT_MS,
+      output += await runTestBinary(runtime, problemDir, fastBinaryPath, index + 1, {
         label: `테스트 #${index + 1}`,
+        timeoutMs: TEST_TIMEOUT_MS,
         streamOutput: true,
+        streamStderr: false,
+        streamSanitizedRuntime: false,
       });
     } catch (error) {
-      if (error?.code === "ETIMEOUT") {
-        timedOut += 1;
-        const seconds = Math.round(TEST_TIMEOUT_MS / 1000);
-        const line = `[TIMEOUT] #${index + 1} limit=${seconds}s`;
-        output += line + "\n";
-        outputChannel.appendLine(line);
-        continue;
+      if (!shouldRetryWithSanitizer(error)) {
+        throw error;
       }
-      throw error;
+
+      if (!debugBinaryReady) {
+        try {
+          await compileRunner(runtime, problemDir, runnerPath, debugBinaryPath, DOCKER_DEBUG_COMPILE_FLAGS, "디버그 컴파일");
+          debugBinaryReady = true;
+        } catch (compileError) {
+          applyCompilerDiagnostics(problemDir, compileError);
+          throw compileError;
+        }
+      }
+
+      try {
+        const debugOutput = await runTestBinary(runtime, problemDir, debugBinaryPath, index + 1, {
+          label: `테스트 #${index + 1}`,
+          timeoutMs: TEST_TIMEOUT_MS,
+          streamOutput: false,
+          streamSanitizedRuntime: true,
+          debugEnv: true,
+        });
+        if (hasSanitizerOutput(debugOutput)) {
+          throw buildProcessFailureError("docker", { label: `테스트 #${index + 1}` }, 1, undefined, debugOutput, "", 0);
+        }
+        throw error;
+      } catch (debugError) {
+        throw debugError;
+      }
     }
   }
 
   const passed = (output.match(/\[PASS\]/g) || []).length;
-  const failed = (output.match(/\[FAIL\]/g) || []).length + timedOut;
+  const failed = (output.match(/\[FAIL\]/g) || []).length;
   const summary = `테스트 완료: ${passed} 통과, ${failed} 실패`;
   outputChannel.appendLine("");
   outputChannel.appendLine(summary);
@@ -1176,29 +1194,123 @@ async function runSamples(problemDir, customTestsText = "") {
   return { summary, passed, failed };
 }
 
+async function compileRunner(runtime, problemDir, runnerPath, outputBinaryPath, compileFlags, label) {
+  await execFile("docker", [
+    "exec",
+    "-w",
+    runtime.problemPath,
+    runtime.containerName,
+    "clang++",
+    ...compileFlags,
+    path.posix.relative(runtime.problemPath, path.posix.join(runtime.problemPath, ".programmers-helper", "test_runner.cpp")),
+    "-o",
+    outputBinaryPath,
+  ], problemDir, {
+    timeoutMs: COMPILE_TIMEOUT_MS,
+    label,
+  });
+
+  return execFile("docker", [
+    "exec",
+    "-w",
+    runtime.problemPath,
+    runtime.containerName,
+    "chmod",
+    "+x",
+    outputBinaryPath,
+  ], problemDir, {
+    timeoutMs: COMPILE_TIMEOUT_MS,
+    label: `${label} 권한 설정`,
+  });
+}
+
+async function runTestBinary(runtime, problemDir, binaryPath, testIndex, options = {}) {
+  const command = [
+    "exec",
+    "-w",
+    runtime.problemPath,
+    runtime.containerName,
+  ];
+
+  if (options.debugEnv) {
+    command.push(
+      "env",
+      "ASAN_OPTIONS=symbolize=1:external_symbolizer_path=/usr/bin/llvm-symbolizer:halt_on_error=1",
+      "UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1"
+    );
+  }
+
+  command.push(binaryPath.startsWith(".") ? binaryPath : `./${binaryPath}`, String(testIndex));
+  return execFile("docker", command, problemDir, options);
+}
+
+function shouldRetryWithSanitizer(error) {
+  if (!error) {
+    return false;
+  }
+
+  if (typeof error.signal === "string" && error.signal) {
+    return true;
+  }
+
+  return typeof error.exitCode === "number" && error.exitCode !== 0;
+}
+
+function hasSanitizerOutput(output) {
+  return /AddressSanitizer|UndefinedBehaviorSanitizer|runtime error:/i.test(String(output || ""));
+}
+
 async function readText(uri) {
   const bytes = await vscode.workspace.fs.readFile(uri);
   return Buffer.from(bytes).toString("utf8");
 }
 
-function ensureClangAvailable() {
-  const result = cp.spawnSync("clang++", ["--version"], {
-    encoding: "utf8",
-    timeout: 3000,
+async function ensureDockerRuntimeReady(problemDir) {
+  return ensureDockerRuntimeReadyModule({
+    vscode,
+    extensionDir: __dirname,
+    problemDir,
+    execCommand,
   });
+}
 
-  if (result.error?.code === "ENOENT") {
-    throw new Error("clang++를 찾지 못했습니다.\nXcode Command Line Tools 또는 clang을 설치한 뒤 다시 시도해주세요.");
-  }
+async function prepareDockerRuntimeOnOpen(context, problemDir) {
+  return prepareDockerRuntimeOnOpenModule({
+    vscode,
+    extensionDir: __dirname,
+    problemDir,
+    execCommand,
+    limitStatusText,
+    postStatus: (message) => sidebarProvider?.post(message),
+  });
+}
 
-  if (result.error) {
-    throw result.error;
-  }
+function execCommand(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = cp.spawn(command, args, { cwd: options.cwd });
+    let stdout = "";
+    let stderr = "";
 
-  if (typeof result.status === "number" && result.status !== 0) {
-    const detail = (result.stderr || result.stdout || "").trim();
-    throw new Error(`clang++ 실행을 확인하지 못했습니다.${detail ? `\n${detail}` : ""}`);
-  }
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", (error) => {
+      reject(error);
+    });
+    child.on("close", (code, signal) => {
+      const result = { code, signal, stdout, stderr };
+      if (options.allowNonZeroExit || code === 0) {
+        resolve(result);
+        return;
+      }
+
+      const detail = (stderr || stdout || "").trim();
+      reject(new Error(`${command} ${args.join(" ")} 실패${detail ? `\n${detail}` : ""}`));
+    });
+  });
 }
 
 function execFile(command, args, cwd, options = {}) {
@@ -1208,6 +1320,7 @@ function execFile(command, args, cwd, options = {}) {
       return;
     }
 
+    const startedAt = Date.now();
     const child = cp.spawn(command, args, { cwd });
     activeTestProcess = child;
     let stdout = "";
@@ -1237,7 +1350,7 @@ function execFile(command, args, cwd, options = {}) {
     child.stderr.on("data", (chunk) => {
       const text = chunk.toString();
       stderr += text;
-      if (options.streamOutput) {
+      if (options.streamStderr && !options.streamSanitizedRuntime) {
         outputChannel.append(text);
       }
     });
@@ -1261,448 +1374,19 @@ function execFile(command, args, cwd, options = {}) {
       }
       if (timedOut) {
         const seconds = Math.round((options.timeoutMs || 0) / 1000);
-        const error = new Error(`${options.label || command} 시간이 초과되었습니다. (${seconds}초)\n무한루프를 확인해주세요.`);
+        const elapsedMs = Date.now() - startedAt;
+        const error = new Error(`${options.label || command} 시간이 초과되었습니다. (${seconds}초, ${elapsedMs}ms)\n무한루프를 확인해주세요.`);
         error.code = "ETIMEOUT";
         reject(error);
         return;
       }
       if (code !== 0) {
-        reject(buildProcessFailureError(command, options, code, signal, stderr, stdout));
+        reject(buildProcessFailureError(command, options, code, signal, stderr, stdout, Date.now() - startedAt));
         return;
       }
       resolve(stdout + stderr);
     });
   });
-}
-
-function buildProcessFailureError(command, options, code, signal, stderr, stdout) {
-  const output = (stderr || stdout || "").trim();
-  const label = options.label || path.basename(command);
-  const commandName = path.basename(command);
-
-  if (commandName === "clang++") {
-    const detail = output ? `\n${output}` : "";
-    return new Error(`${command} 실패${detail}`);
-  }
-
-  const reason = signal
-    ? `시그널 ${signal}`
-    : typeof code === "number"
-      ? `종료 코드 ${code}`
-      : "비정상 종료";
-  const outputBlock = output ? `\n${output}` : "";
-  return new Error(`런타임 에러\n${label} 실행 중 ${reason}로 종료되었습니다.${outputBlock}`);
-}
-
-function parseSolutionSignature(cpp) {
-  const match = cpp.match(/([A-Za-z_][\w:<>,\s&*]*?)\s+solution\s*\(([\s\S]*?)\)\s*\{/);
-  if (!match) {
-    return undefined;
-  }
-
-  const returnType = normalizeType(match[1]);
-  const params = splitTopLevel(match[2], ",")
-    .map((param) => param.trim())
-    .filter(Boolean)
-    .map((param, index) => {
-      const cleaned = param.replace(/\s*=\s*.*$/, "").trim();
-      const nameMatch = cleaned.match(/([A-Za-z_]\w*)\s*$/);
-      const name = nameMatch ? nameMatch[1] : `arg${index}`;
-      const type = normalizeType(cleaned.slice(0, cleaned.length - name.length));
-      return { type, name };
-    });
-
-  return { returnType, params };
-}
-
-function buildRunner(signature, examples) {
-  const testBlocks = examples.map((example, index) => {
-    if (example.inputs.length !== signature.params.length) {
-      throw new Error(`입출력 예 #${index + 1}의 인자 수가 solution 시그니처와 다릅니다.`);
-    }
-
-    const declarations = signature.params.map((param, paramIndex) => {
-      return `    ${param.type} arg${paramIndex} = ${toCppLiteral(param.type, example.inputs[paramIndex])};`;
-    });
-    const expected = `    ${signature.returnType} expected = ${toCppLiteral(signature.returnType, example.expected)};`;
-    const callArgs = signature.params.map((_, paramIndex) => `arg${paramIndex}`).join(", ");
-
-    return `  if (target == 0 || target == ${index + 1}) {
-${declarations.join("\n")}
-${expected}
-    auto actual = solution(${callArgs});
-    if (actual == expected) {
-      cout << "[PASS] #" << ${index + 1} << " expected=" << repr(expected) << " actual=" << repr(actual) << endl;
-    } else {
-      cout << "[FAIL] #" << ${index + 1} << " expected=" << repr(expected) << " actual=" << repr(actual) << endl;
-      failed++;
-    }
-  }`;
-  });
-
-  return `#include "../solution.cpp"
-
-#include <algorithm>
-#include <cmath>
-#include <iostream>
-#include <map>
-#include <queue>
-#include <set>
-#include <sstream>
-#include <string>
-#include <type_traits>
-#include <unordered_map>
-#include <unordered_set>
-#include <utility>
-#include <vector>
-using namespace std;
-
-string repr(const string& value) { return string("\\"") + value + "\\""; }
-string repr(const char* value) { return repr(string(value)); }
-string repr(bool value) { return value ? "true" : "false"; }
-
-template <typename T>
-typename enable_if<is_arithmetic<T>::value && !is_same<T, bool>::value, string>::type repr(T value) {
-  return to_string(value);
-}
-
-template <typename T>
-string repr(const vector<T>& value) {
-  string out = "[";
-  for (size_t i = 0; i < value.size(); ++i) {
-    if (i) out += ", ";
-    out += repr(value[i]);
-  }
-  out += "]";
-  return out;
-}
-
-int main(int argc, char** argv) {
-  int target = argc > 1 ? stoi(argv[1]) : 0;
-  int failed = 0;
-${testBlocks.join("\n")}
-  if (target == 0 && failed == 0) {
-    cout << "All sample tests passed." << endl;
-  }
-  return 0;
-}
-`;
-}
-
-function toCppLiteral(type, rawValue) {
-  const value = rawValue.trim().replace(/^`|`$/g, "");
-  if (/^vector\s*</.test(type)) {
-    return value.replace(/\[/g, "{").replace(/\]/g, "}");
-  }
-  if (type === "string") {
-    return /^".*"$/.test(value) ? value : JSON.stringify(value);
-  }
-  if (type === "bool") {
-    return value.toLowerCase();
-  }
-  return value;
-}
-
-function parseCustomTests(customTestsText) {
-  let parsed;
-  try {
-    parsed = JSON.parse(customTestsText);
-  } catch (error) {
-    throw new Error(`커스텀 테스트 JSON 형식이 올바르지 않습니다.\n${error instanceof Error ? error.message : String(error)}`);
-  }
-
-  const tests = Array.isArray(parsed) ? parsed : [parsed];
-  return tests.map((test, index) => {
-    if (test && typeof test.inputsText === "string") {
-      if (!test.inputsText.trim() || !String(test.expectedText || "").trim()) {
-        throw new Error(`커스텀 테스트 #${index + 1}의 Input과 Expected Output을 모두 입력해주세요.`);
-      }
-
-      return {
-        inputs: splitTopLevel(test.inputsText, ",").map((value) => value.trim()).filter(Boolean),
-        expected: String(test.expectedText).trim(),
-      };
-    }
-
-    if (!test || !Array.isArray(test.inputs) || !Object.prototype.hasOwnProperty.call(test, "expected")) {
-      throw new Error(`커스텀 테스트 #${index + 1}은 Input과 Expected Output이 필요합니다.`);
-    }
-
-    return {
-      inputs: test.inputs.map(valueToRawLiteral),
-      expected: valueToRawLiteral(test.expected),
-    };
-  });
-}
-
-function valueToRawLiteral(value) {
-  if (typeof value === "string") {
-    return JSON.stringify(value);
-  }
-  return JSON.stringify(value);
-}
-
-function normalizeType(type) {
-  return type
-    .replace(/\bconst\b/g, "")
-    .replace(/[&*]/g, "")
-    .replace(/\s+/g, " ")
-    .replace(/\s*<\s*/g, "<")
-    .replace(/\s*>\s*/g, ">")
-    .replace(/\s*,\s*/g, ", ")
-    .trim();
-}
-
-function splitTopLevel(value, delimiter) {
-  const parts = [];
-  let current = "";
-  let angle = 0;
-  let bracket = 0;
-  let quote = false;
-
-  for (let i = 0; i < value.length; i++) {
-    const ch = value[i];
-    const prev = value[i - 1];
-    if (ch === '"' && prev !== "\\") quote = !quote;
-    if (!quote) {
-      if (ch === "<") angle++;
-      if (ch === ">") angle--;
-      if (ch === "[") bracket++;
-      if (ch === "]") bracket--;
-      if (ch === delimiter && angle === 0 && bracket === 0) {
-        parts.push(current);
-        current = "";
-        continue;
-      }
-    }
-    current += ch;
-  }
-  parts.push(current);
-  return parts;
-}
-
-function extractExamplesFromMarkdown(markdown) {
-  const lines = markdown.split(/\r?\n/);
-  const tableStart = lines.findIndex((line, index) => {
-    return /입출력 예/.test(lines.slice(Math.max(0, index - 3), index + 1).join("\n")) && line.trim().startsWith("|");
-  });
-
-  if (tableStart < 0) {
-    return [];
-  }
-
-  const tableLines = [];
-  for (let i = tableStart; i < lines.length; i++) {
-    if (!lines[i].trim().startsWith("|")) break;
-    tableLines.push(lines[i]);
-  }
-
-  if (tableLines.length < 3) {
-    return [];
-  }
-
-  const header = parseMarkdownRow(tableLines[0]);
-  return tableLines.slice(2).map((line) => {
-    const row = parseMarkdownRow(line);
-    return {
-      inputs: row.slice(0, header.length - 1).map(cleanCell),
-      expected: cleanCell(row[header.length - 1] || ""),
-    };
-  });
-}
-
-function parseMarkdownRow(line) {
-  const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
-  const cells = [];
-  let current = "";
-  let escaped = false;
-  let code = false;
-
-  for (const ch of trimmed) {
-    if (ch === "`" && !escaped) code = !code;
-    if (ch === "|" && !escaped && !code) {
-      cells.push(current.trim());
-      current = "";
-    } else {
-      current += ch;
-    }
-    escaped = ch === "\\" && !escaped;
-    if (ch !== "\\") escaped = false;
-  }
-  cells.push(current.trim());
-  return cells;
-}
-
-function cleanCell(value) {
-  return decodeHtml(value).replace(/^`|`$/g, "").replace(/\\\|/g, "|").trim();
-}
-
-function fetchText(targetUrl, redirects = 0) {
-  return new Promise((resolve, reject) => {
-    const parsedUrl = new URL(targetUrl);
-    if (parsedUrl.hostname !== PROGRAMMERS_HOST) {
-      reject(new Error(`허용되지 않은 프로그래머스 URL입니다: ${targetUrl}`));
-      return;
-    }
-
-    const request = https.get(
-      targetUrl,
-      {
-        headers: {
-          "user-agent": "Mozilla/5.0 problem-template-generator",
-          "accept-language": "ko-KR,ko;q=0.9,en;q=0.8",
-        },
-      },
-      (response) => {
-        if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-          if (redirects >= MAX_REDIRECTS) {
-            reject(new Error("프로그래머스 페이지 redirect가 너무 많습니다."));
-            response.resume();
-            return;
-          }
-
-          const redirectUrl = new URL(response.headers.location, targetUrl);
-          if (redirectUrl.hostname !== PROGRAMMERS_HOST) {
-            reject(new Error(`허용되지 않은 redirect URL입니다: ${redirectUrl.toString()}`));
-            response.resume();
-            return;
-          }
-
-          resolve(fetchText(redirectUrl.toString(), redirects + 1));
-          return;
-        }
-
-        if (response.statusCode !== 200) {
-          reject(new Error(`HTTP ${response.statusCode}: ${targetUrl}`));
-          response.resume();
-          return;
-        }
-
-        response.setEncoding("utf8");
-        let body = "";
-        let bytes = 0;
-        response.on("data", (chunk) => {
-          bytes += Buffer.byteLength(chunk, "utf8");
-          if (bytes > MAX_FETCH_BYTES) {
-            request.destroy(new Error("프로그래머스 페이지 응답이 너무 큽니다."));
-            return;
-          }
-          body += chunk;
-        });
-        response.on("end", () => resolve(body));
-      }
-    );
-
-    request.on("error", reject);
-    request.setTimeout(15000, () => {
-      request.destroy(new Error("프로그래머스 페이지 요청 시간이 초과되었습니다."));
-    });
-  });
-}
-
-function matchFirst(source, ...patterns) {
-  for (const pattern of patterns) {
-    const match = source.match(pattern);
-    if (match?.[1]) {
-      return match[1];
-    }
-  }
-  return "";
-}
-
-function slugify(text) {
-  return text
-    .normalize("NFC")
-    .replace(/[\\/:*?"<>|]/g, "")
-    .replace(/\s+/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_+|_+$/g, "");
-}
-
-function htmlToMarkdown(htmlText) {
-  let text = htmlText.replace(/\u001d/g, "");
-
-  text = text.replace(/<hr\s*\/?>/gi, "\n---\n");
-
-  text = text.replace(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi, (_m, level, inner) => {
-    const depth = Math.max(2, Number(level));
-    return `\n${"#".repeat(depth)} ${inline(inner)}\n`;
-  });
-
-  text = text.replace(/<p>\s*<img[^>]*src="([^"]+)"[^>]*alt="([^"]*)"[^>]*>\s*<\/p>/gi, (_m, src, alt) => {
-    return `\n![${decodeHtml(alt || "image")}](${decodeHtml(src)})\n`;
-  });
-
-  text = text.replace(/<table[^>]*>([\s\S]*?)<\/table>/gi, (_m, table) => tableToMarkdown(table));
-  text = text.replace(/<ul>\s*([\s\S]*?)\s*<\/ul>/gi, (_m, list) => listToMarkdown(list));
-  text = text.replace(/<p[^>]*>([\s\S]*?)<\/p>/gi, (_m, inner) => `\n${inline(inner)}\n`);
-
-  return decodeHtml(text)
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-function tableToMarkdown(table) {
-  const rows = [...table.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)].map((row) => {
-    return [...row[1].matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/gi)].map((cell) => inline(cell[1]).replace(/\|/g, "\\|"));
-  });
-
-  if (rows.length === 0) {
-    return "";
-  }
-
-  const [head, ...body] = rows;
-  return [
-    "",
-    `| ${head.join(" | ")} |`,
-    `| ${head.map(() => "---").join(" | ")} |`,
-    ...body.map((row) => `| ${row.join(" | ")} |`),
-    "",
-  ].join("\n");
-}
-
-function listToMarkdown(list) {
-  const items = [...list.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)].map((item) => {
-    const nested = item[1].match(/<ul>\s*([\s\S]*?)\s*<\/ul>/i)?.[1];
-    const itemText = inline(item[1].replace(/<ul>[\s\S]*<\/ul>/i, "")).trim();
-    const lines = [`- ${itemText}`];
-
-    if (nested) {
-      for (const nestedItem of [...nested.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)]) {
-        lines.push(`  - ${inline(nestedItem[1]).trim()}`);
-      }
-    }
-
-    return lines.join("\n");
-  });
-
-  return `\n${items.join("\n")}\n`;
-}
-
-function inline(value) {
-  return decodeHtml(
-    value
-      .replace(/\s+/g, " ")
-      .replace(/<code[^>]*>([\s\S]*?)<\/code>/gi, "`$1`")
-      .replace(/<strong[^>]*>([\s\S]*?)<\/strong>/gi, "**$1**")
-      .replace(/<em[^>]*>([\s\S]*?)<\/em>/gi, "*$1*")
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<[^>]+>/g, "")
-  ).trim();
-}
-
-function decodeHtml(value) {
-  return value
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&apos;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&")
-    .replace(/&nbsp;/g, " ");
 }
 
 module.exports = {

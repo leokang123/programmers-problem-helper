@@ -21,17 +21,17 @@
 ## 필요 조건
 
 - VS Code 1.85.0 이상
-- C++ 테스트 실행용 `clang++`
+- Docker
 
-macOS에서는 보통 Xcode Command Line Tools를 설치하면 `clang++`를 사용할 수 있습니다.
+테스트 실행 시 확장이 Docker 실행 컨테이너를 자동으로 준비하고, 그 안에서 `clang++`로 컴파일 및 실행합니다.
 
 ```sh
-xcode-select --install
+docker version
 ```
 
 ## 보안 안내
 
-샘플/커스텀 테스트 실행은 `solution.cpp`를 로컬에서 컴파일한 뒤 현재 사용자 권한으로 실행합니다. 신뢰할 수 없는 C++ 코드는 실행하지 마세요.
+샘플/커스텀 테스트 실행은 Docker 컨테이너 안에서 `solution.cpp`를 컴파일하고 실행합니다. 신뢰할 수 없는 C++ 코드는 실행하지 마세요.
 
 ## GitHub에서 설치하기
 
@@ -123,8 +123,9 @@ git push origin v0.0.2
 2. 왼쪽 Activity Bar의 `Programmers` 아이콘을 엽니다.
 3. 프로그래머스 문제 번호를 입력합니다.
 4. `문제 생성 및 열기`를 누릅니다.
-5. 오른쪽 `solution.cpp`에 풀이를 작성합니다.
-6. `샘플 테스트 실행` 또는 `커스텀 테스트 실행`을 누릅니다.
+5. 문제를 열면 컴파일 및 실행용 Docker 컨테이너가 자동으로 준비됩니다.
+6. 오른쪽 `solution.cpp`에 풀이를 작성합니다.
+7. `샘플 테스트 실행` 또는 `커스텀 테스트 실행`을 누릅니다.
 
 커스텀 테스트의 Input은 `solution(...)` 인자 순서대로 씁니다.
 
@@ -155,6 +156,8 @@ npm run check
 이 저장소에는 Dev Container 설정이 포함되어 있습니다.
 
 - 컨테이너 안에서는 현재 워크스페이스를 `~/.vscode-server/extensions/local.programmers-problem-helper`로 자동 symlink합니다.
+- 개발판은 Dev Container 안에서 확장을 개발하고, 컴파일 및 실행은 호스트 Docker daemon에 붙는 별도의 sibling 실행 컨테이너가 담당합니다.
+- 즉 개발판은 "개발용 Dev Container 1개 + 실행용 컨테이너 1개" 구조이며, 실행용 컨테이너를 Dev Container 내부에 중첩 생성하지 않습니다.
 - 로컬 macOS VS Code에는 배포판 `.vsix` 또는 마켓 설치본을 그대로 사용하면 됩니다.
 - 즉 개발용 확장은 컨테이너 쪽 VS Code Server에서만 보이고, 로컬 배포판과 분리됩니다.
 
@@ -162,9 +165,10 @@ npm run check
 
 1. VS Code에서 이 저장소를 엽니다.
 2. `Dev Containers: Reopen in Container`를 실행합니다.
-3. 컨테이너가 올라오면 `Developer: Reload Window`를 한 번 실행합니다.
-4. 컨테이너 안에서 확장 코드를 수정하고 테스트합니다.
-5. `Run and Debug`에서 `Run Extension`을 실행하면 개발용 Extension Host 창으로 바로 확인할 수 있습니다.
+3. Docker 기능이 포함된 설정을 반영하려면 `Dev Containers: Rebuild Container`를 한 번 실행합니다.
+4. 컨테이너가 올라오면 `Developer: Reload Window`를 한 번 실행합니다.
+5. 컨테이너 안에서 확장 코드를 수정하고 테스트합니다.
+6. `Run and Debug`에서 `Run Extension`을 실행하면 개발용 Extension Host 창으로 바로 확인할 수 있습니다.
 
 확인용 명령:
 
@@ -174,8 +178,8 @@ ls -l ~/.vscode-server/extensions/local.programmers-problem-helper
 
 주의:
 
-- 컨테이너 안 확장이 사용하는 `globalStorage`는 컨테이너 쪽 VS Code Server 기준입니다.
-- 로컬에 설치된 배포판 확장의 `globalStorage`와 자동 공유되지 않습니다.
+- 개발판은 문제 폴더를 현재 워크스페이스 아래 `Programmers/`에 저장합니다.
+- 배포판은 문제 폴더를 확장의 `globalStorage/Programmers`에 저장합니다.
 
 개발 편의:
 
