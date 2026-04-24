@@ -1,0 +1,23 @@
+{
+  "name": "programmers-problem-helper",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "remoteUser": "node",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "postCreateCommand": "npm install",
+  "postStartCommand": "bash .devcontainer/link-extension.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools"
+      ],
+      "settings": {
+        "files.watcherExclude": {
+          "**/.git/objects/**": true,
+          "**/.git/subtree-cache/**": true
+        }
+      }
+    }
+  }
+}

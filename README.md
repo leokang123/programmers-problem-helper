@@ -150,6 +150,38 @@ npm run check
 
 배포는 `v*.*.*` 태그를 push하면 GitHub Actions가 `.vsix`를 만들고 Release에 첨부합니다.
 
+## Dev Container 개발
+
+이 저장소에는 Dev Container 설정이 포함되어 있습니다.
+
+- 컨테이너 안에서는 현재 워크스페이스를 `~/.vscode-server/extensions/local.programmers-problem-helper`로 자동 symlink합니다.
+- 로컬 macOS VS Code에는 배포판 `.vsix` 또는 마켓 설치본을 그대로 사용하면 됩니다.
+- 즉 개발용 확장은 컨테이너 쪽 VS Code Server에서만 보이고, 로컬 배포판과 분리됩니다.
+
+사용 순서:
+
+1. VS Code에서 이 저장소를 엽니다.
+2. `Dev Containers: Reopen in Container`를 실행합니다.
+3. 컨테이너가 올라오면 `Developer: Reload Window`를 한 번 실행합니다.
+4. 컨테이너 안에서 확장 코드를 수정하고 테스트합니다.
+5. `Run and Debug`에서 `Run Extension`을 실행하면 개발용 Extension Host 창으로 바로 확인할 수 있습니다.
+
+확인용 명령:
+
+```sh
+ls -l ~/.vscode-server/extensions/local.programmers-problem-helper
+```
+
+주의:
+
+- 컨테이너 안 확장이 사용하는 `globalStorage`는 컨테이너 쪽 VS Code Server 기준입니다.
+- 로컬에 설치된 배포판 확장의 `globalStorage`와 자동 공유되지 않습니다.
+
+개발 편의:
+
+- `package.json`에 `extensionKind: ["workspace"]`를 지정해 이 확장이 원격/컨테이너 쪽에서 실행되도록 명시했습니다.
+- `.vscode/launch.json`의 `Run Extension`으로 개발용 확장 창을 바로 띄울 수 있습니다.
+
 ## 참고
 
 테스트 러너는 프로그래머스 C++ 함수형 문제에서 자주 쓰이는 타입을 지원합니다.

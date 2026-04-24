@@ -53,7 +53,7 @@ class ProgrammersSidebarProvider {
         await runSamplesFromCommand(this.context);
       }
       if (message.type === "runCustom") {
-        await runSamplesFromCommand(this.context, JSON.stringify(message.tests || []));
+        await runCustomTestsFromMessage(this.context, message.tests || []);
       }
       if (message.type === "stopTests") {
         stopTestRun();
@@ -121,7 +121,10 @@ class ProgrammersSidebarProvider {
     .collapsed-badge { display: none; flex: 0 0 auto; padding: 1px 5px; border: 1px solid var(--vscode-panel-border); border-radius: 2px; font-size: 10px; font-weight: 400; color: var(--vscode-descriptionForeground); }
     .pane-body { min-height: 0; flex: 1 1 auto; overflow: auto; padding: 2px; box-sizing: border-box; }
     .top-pane .pane-body { overflow: visible; }
+    #testsPane .pane-body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+    .pane.collapsed { overflow: hidden; }
     .pane.collapsed .pane-body { display: none; }
+    .pane-body[hidden] { display: none !important; }
     .pane.collapsed .collapsed-badge { display: inline-block; }
     .section-title { margin-bottom: 5px; font-size: 12px; font-weight: 600; color: var(--vscode-foreground); }
     .section { margin-bottom: 8px; }
@@ -131,6 +134,7 @@ class ProgrammersSidebarProvider {
     .list-actions { display: flex; gap: 8px; align-items: center; margin-bottom: 5px; flex-wrap: wrap; }
     .filter { display: flex; gap: 6px; align-items: center; margin: 0; font-size: 12px; color: var(--vscode-foreground); }
     .filter input { width: auto; margin: 0; }
+    .search { flex: 1 1 100%; min-width: 0; }
     .refresh { width: auto; min-width: 30px; margin: 0 0 0 auto; padding: 3px 7px; }
     button:disabled { opacity: 0.55; cursor: default; }
     .problem-list { border-top: 1px solid var(--vscode-panel-border); }
@@ -144,10 +148,14 @@ class ProgrammersSidebarProvider {
     .delete-problem { width: auto; margin: 0; padding: 2px 6px; background: transparent; color: var(--vscode-descriptionForeground); font-size: 12px; }
     .delete-problem:hover { background: var(--vscode-list-hoverBackground); color: var(--vscode-errorForeground); }
     .empty { padding: 9px 0; font-size: 12px; color: var(--vscode-descriptionForeground); line-height: 1.4; }
+    .test-actions { flex: 0 0 auto; padding: 2px; border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBar-background); }
+    .test-actions-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 6px; }
+    .test-actions-grid button { margin-top: 0; }
+    .tests-content { min-height: 0; flex: 1 1 auto; overflow: auto; padding: 8px 2px 2px; box-sizing: border-box; }
     .test-card { margin-top: 8px; padding: 8px; border: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); }
     .test-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; font-size: 12px; color: var(--vscode-descriptionForeground); }
     .remove { width: auto; margin: 0; padding: 3px 7px; background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
-    .status { margin-top: 5px; padding: 5px 6px; border: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBarSectionHeader-background); white-space: pre-wrap; font-size: 12px; color: var(--vscode-foreground); line-height: 1.25; }
+    .status { margin-top: 5px; padding: 5px 6px; border: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBarSectionHeader-background); white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; font-size: 12px; color: var(--vscode-foreground); line-height: 1.25; }
     .status.ready { border-color: var(--vscode-testing-iconPassed); }
     .status.error { border-color: var(--vscode-testing-iconFailed); }
     .status.running { border-color: var(--vscode-progressBar-background); }
@@ -161,7 +169,7 @@ class ProgrammersSidebarProvider {
       <div class="pane-body">
         <div class="section">
           <label for="lessonId">Programmers 문제 번호</label>
-          <input id="lessonId" value="468379" inputmode="numeric" />
+          <input id="lessonId" placeholder="468379" inputmode="numeric" />
           <div class="open-actions">
             <button id="create">생성 및 열기</button>
             <button id="open" class="secondary">마지막 열기</button>
@@ -181,17 +189,21 @@ class ProgrammersSidebarProvider {
         <span class="collapsed-badge">닫힘</span>
       </button>
       <div class="pane-body">
-        <div class="section">
-          <button id="run">샘플 테스트 실행</button>
-          <button id="stopRun" class="secondary" disabled>실행 중지</button>
+        <div class="test-actions">
+          <div class="test-actions-grid">
+            <button id="run">샘플 테스트 실행</button>
+            <button id="stopRun" class="secondary" disabled>실행 중지</button>
+          </div>
         </div>
-        <div class="section">
-          <label>커스텀 테스트케이스</label>
-          <div id="customTests"></div>
-          <button id="addTest" class="secondary">+ 테스트 추가</button>
-          <button id="runCustom">커스텀 테스트 실행</button>
-          <div class="hint">Input은 solution 인자 순서대로 쉼표로 구분합니다. 예: 4, 5, 2, 2, [[0,0]]</div>
-          <div class="hint">테스트는 현재 사용자 권한으로 solution.cpp를 컴파일하고 실행합니다.</div>
+        <div class="tests-content">
+          <div class="section">
+            <label>커스텀 테스트케이스</label>
+            <div id="customTests"></div>
+            <button id="addTest" class="secondary">+ 테스트 추가</button>
+            <button id="runCustom">커스텀 테스트 실행</button>
+            <div class="hint">Input은 solution 인자 순서대로 쉼표로 구분합니다. 예: 4, 5, 2, 2, [[0,0]]</div>
+            <div class="hint">테스트는 현재 사용자 권한으로 solution.cpp를 컴파일하고 실행합니다.</div>
+          </div>
         </div>
       </div>
     </section>
@@ -208,6 +220,7 @@ class ProgrammersSidebarProvider {
           <label class="filter"><input name="problemFilter" type="radio" value="all" checked /> 전체</label>
           <label class="filter"><input name="problemFilter" type="radio" value="review" /> 다시풀</label>
           <button id="refreshProblems" class="secondary refresh" title="새로고침">↻</button>
+          <input id="problemSearch" class="search" type="text" placeholder="문제 번호 또는 제목 검색" />
         </div>
         <div id="problemList" class="problem-list"></div>
       </div>
@@ -224,11 +237,16 @@ class ProgrammersSidebarProvider {
     const listPane = document.getElementById('listPane');
     const testsSummary = document.getElementById('testsSummary');
     const listSummary = document.getElementById('listSummary');
+    const problemSearch = document.getElementById('problemSearch');
     let testCount = 0;
     let problems = [];
 
     function setPaneCollapsed(pane, button, className, collapsed) {
+      const body = pane.querySelector('.pane-body');
       pane.classList.toggle('collapsed', collapsed);
+      if (body) {
+        body.hidden = collapsed;
+      }
       app.classList.toggle(className, collapsed);
       button.setAttribute('aria-expanded', String(!collapsed));
       button.querySelector('.toggle-icon').textContent = collapsed ? '▸' : '▾';
@@ -254,8 +272,12 @@ class ProgrammersSidebarProvider {
       testsSummary.textContent = testsPane.classList.contains('collapsed') ? '샘플 · 커스텀 ' + customCount + '개' : '';
 
       const filter = document.querySelector('input[name="problemFilter"]:checked')?.value || 'all';
-      const reviewCount = problems.filter((problem) => problem.review).length;
-      const visibleCount = filter === 'review' ? reviewCount : problems.length;
+      const query = problemSearch.value.trim().toLowerCase();
+      const matched = problems.filter((problem) => {
+        if (!query) return true;
+        return (problem.title || '').toLowerCase().includes(query) || String(problem.lessonId || '').includes(query);
+      });
+      const visibleCount = (filter === 'review' ? matched.filter((problem) => problem.review) : matched).length;
       listSummary.textContent = listPane.classList.contains('collapsed')
         ? (filter === 'review' ? '다시풀 ' + visibleCount + '개' : '전체 ' + visibleCount + '개')
         : '';
@@ -303,8 +325,18 @@ class ProgrammersSidebarProvider {
 
     function renderProblems() {
       const filter = document.querySelector('input[name="problemFilter"]:checked')?.value || 'all';
-      const visible = filter === 'review' ? problems.filter((problem) => problem.review) : problems;
-      renderList(problemList, visible, filter === 'review' ? '다시 풀 문제가 없습니다.' : 'Programmers 폴더에 문제가 없습니다.');
+      const query = problemSearch.value.trim().toLowerCase();
+      const matched = problems.filter((problem) => {
+        if (!query) return true;
+        return (problem.title || '').toLowerCase().includes(query) || String(problem.lessonId || '').includes(query);
+      });
+      const visible = filter === 'review' ? matched.filter((problem) => problem.review) : matched;
+      const emptyText = query
+        ? '검색 결과가 없습니다.'
+        : filter === 'review'
+          ? '다시 풀 문제가 없습니다.'
+          : 'Programmers 폴더에 문제가 없습니다.';
+      renderList(problemList, visible, emptyText);
       updatePaneSummaries();
     }
 
@@ -315,9 +347,9 @@ class ProgrammersSidebarProvider {
       card.innerHTML =
         '<div class="test-head"><span>테스트 #' + testCount + '</span><button class="remove" type="button">삭제</button></div>' +
         '<label>Input</label>' +
-        '<textarea class="test-input" spellcheck="false" placeholder="4, 5, 2, 2, [[0,0]]"></textarea>' +
+        '<textarea class="test-input" spellcheck="false" placeholder="solution 인자를 쉼표로 입력"></textarea>' +
         '<label>Expected Output</label>' +
-        '<textarea class="test-expected" spellcheck="false" placeholder="[0,0]"></textarea>';
+        '<textarea class="test-expected" spellcheck="false" placeholder="기대 결과를 C++ 리터럴 형태로 입력"></textarea>';
       card.querySelector('.test-input').value = inputValue;
       card.querySelector('.test-expected').value = expectedValue;
       card.querySelector('.remove').addEventListener('click', () => {
@@ -336,7 +368,9 @@ class ProgrammersSidebarProvider {
         return;
       }
       for (const test of tests) {
-        addTest((test.inputs || []).join(', '), test.expected || '');
+        const inputValue = typeof test.inputsText === 'string' ? test.inputsText : (test.inputs || []).join(', ');
+        const expectedValue = typeof test.expectedText === 'string' ? test.expectedText : (test.expected || '');
+        addTest(inputValue, expectedValue);
       }
     }
 
@@ -377,6 +411,10 @@ class ProgrammersSidebarProvider {
         renderProblems();
         updatePaneSummaries();
       });
+    });
+    problemSearch.addEventListener('input', () => {
+      renderProblems();
+      updatePaneSummaries();
     });
     document.getElementById('refreshProblems').addEventListener('click', () => {
       vscode.postMessage({ type: 'refreshProblems' });
@@ -524,7 +562,17 @@ async function deleteProblem(context, problemDir) {
     return;
   }
 
-  await vscode.workspace.fs.delete(vscode.Uri.file(safeDir), { recursive: true, useTrash: true });
+  try {
+    await vscode.workspace.fs.delete(vscode.Uri.file(safeDir), { recursive: true, useTrash: true });
+  } catch (error) {
+    try {
+      await vscode.workspace.fs.delete(vscode.Uri.file(safeDir), { recursive: true, useTrash: false });
+    } catch (fallbackError) {
+      const detail = fallbackError instanceof Error ? fallbackError.message : String(fallbackError || error);
+      vscode.window.showErrorMessage(`문제 폴더를 삭제하지 못했습니다.\n${detail}`);
+      return;
+    }
+  }
 
   const last = context.workspaceState.get("lastProblemDir");
   if (typeof last === "string" && path.resolve(last) === path.resolve(safeDir)) {
@@ -537,13 +585,24 @@ async function deleteProblem(context, problemDir) {
   vscode.window.showInformationMessage(`${folderName} 삭제 완료`);
 }
 
+async function runCustomTestsFromMessage(context, tests) {
+  const problemDir = await getProblemDir(context);
+  if (!problemDir) {
+    return;
+  }
+
+  await saveCustomTests(problemDir, tests);
+  await runSamplesFromCommand(context, JSON.stringify(tests || []), problemDir);
+}
+
 async function showOpenedProblemState(context, problemDir) {
   const problem = await loadProblemInfo(problemDir);
   const examples = await loadProblemExamples(problemDir);
+  const savedCustomTests = await loadSavedCustomTests(problemDir);
 
   await context.workspaceState.update("lastProblemDir", problemDir);
   sidebarProvider?.post({ type: "currentProblem", problem });
-  sidebarProvider?.post({ type: "customTests", tests: examples.length > 0 ? [examples[0]] : [] });
+  sidebarProvider?.post({ type: "customTests", tests: savedCustomTests.length > 0 ? savedCustomTests : examples.length > 0 ? [examples[0]] : [] });
   await sidebarProvider?.refreshProblems();
   sidebarProvider?.post({
     type: "status",
@@ -689,6 +748,42 @@ async function loadProblemExamples(problemDir) {
   } catch {
     return [];
   }
+}
+
+function getCustomTestsUri(problemDir) {
+  return vscode.Uri.file(path.join(problemDir, ".programmers-helper", "custom-tests.json"));
+}
+
+async function loadSavedCustomTests(problemDir) {
+  const saved = await readJson(getCustomTestsUri(problemDir));
+  if (!Array.isArray(saved)) {
+    return [];
+  }
+
+  return saved
+    .filter((test) => test && typeof test.inputsText === "string" && typeof test.expectedText === "string")
+    .map((test) => ({
+      inputsText: test.inputsText,
+      expectedText: test.expectedText,
+    }));
+}
+
+async function saveCustomTests(problemDir, tests) {
+  const helperDir = vscode.Uri.file(path.join(problemDir, ".programmers-helper"));
+  const customTests = Array.isArray(tests)
+    ? tests
+      .filter((test) => test && (String(test.inputsText || "").trim() || String(test.expectedText || "").trim()))
+      .map((test) => ({
+        inputsText: String(test.inputsText || "").trim(),
+        expectedText: String(test.expectedText || "").trim(),
+      }))
+    : [];
+
+  await vscode.workspace.fs.createDirectory(helperDir);
+  await vscode.workspace.fs.writeFile(
+    getCustomTestsUri(problemDir),
+    Buffer.from(JSON.stringify(customTests, null, 2) + "\n", "utf8")
+  );
 }
 
 async function readJson(uri) {
@@ -837,13 +932,13 @@ async function writeFileIfAbsent(uri, contents) {
   }
 }
 
-async function runSamplesFromCommand(context, customTestsText = "") {
+async function runSamplesFromCommand(context, customTestsText = "", providedProblemDir) {
   if (testRunInProgress) {
     vscode.window.showInformationMessage("이미 테스트가 실행 중입니다.");
     return;
   }
 
-  const problemDir = await getProblemDir(context);
+  const problemDir = providedProblemDir || await getProblemDir(context);
   if (!problemDir) {
     return;
   }
@@ -887,6 +982,10 @@ function formatTestErrorForStatus(error) {
     return summarizeCompilerError(message);
   }
 
+  if (message.startsWith("런타임 에러")) {
+    return summarizeRuntimeError(message);
+  }
+
   return limitStatusText(message);
 }
 
@@ -898,6 +997,16 @@ function summarizeCompilerError(message) {
   }
 
   return limitStatusText(`컴파일 실패\n${shortenCompilerPaths(errorLine)}`);
+}
+
+function summarizeRuntimeError(message) {
+  const lines = message.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const header = lines[0] || "런타임 에러";
+  const detail = lines[1];
+  if (!detail) {
+    return header;
+  }
+  return limitStatusText(`${header}\n${detail}`);
 }
 
 function shortenCompilerPaths(line) {
@@ -1023,6 +1132,7 @@ async function runSamples(problemDir, customTestsText = "") {
   outputChannel.appendLine(`[Programmers Helper] ${path.basename(problemDir)} ${customTestsText.trim() ? "커스텀" : "샘플"} 테스트`);
   outputChannel.appendLine("");
 
+  ensureClangAvailable();
   await execFile("clang++", ["-std=c++17", runnerPath, "-o", binaryPath], problemDir, {
     timeoutMs: COMPILE_TIMEOUT_MS,
     label: "컴파일",
@@ -1069,6 +1179,26 @@ async function runSamples(problemDir, customTestsText = "") {
 async function readText(uri) {
   const bytes = await vscode.workspace.fs.readFile(uri);
   return Buffer.from(bytes).toString("utf8");
+}
+
+function ensureClangAvailable() {
+  const result = cp.spawnSync("clang++", ["--version"], {
+    encoding: "utf8",
+    timeout: 3000,
+  });
+
+  if (result.error?.code === "ENOENT") {
+    throw new Error("clang++를 찾지 못했습니다.\nXcode Command Line Tools 또는 clang을 설치한 뒤 다시 시도해주세요.");
+  }
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  if (typeof result.status === "number" && result.status !== 0) {
+    const detail = (result.stderr || result.stdout || "").trim();
+    throw new Error(`clang++ 실행을 확인하지 못했습니다.${detail ? `\n${detail}` : ""}`);
+  }
 }
 
 function execFile(command, args, cwd, options = {}) {
@@ -1119,7 +1249,7 @@ function execFile(command, args, cwd, options = {}) {
       }
       reject(error);
     });
-    child.on("close", (code) => {
+    child.on("close", (code, signal) => {
       if (timeout) clearTimeout(timeout);
       if (killTimer) clearTimeout(killTimer);
       if (activeTestProcess === child) {
@@ -1137,12 +1267,31 @@ function execFile(command, args, cwd, options = {}) {
         return;
       }
       if (code !== 0) {
-        reject(new Error(`${command} 실패\n${stderr || stdout}`));
+        reject(buildProcessFailureError(command, options, code, signal, stderr, stdout));
         return;
       }
       resolve(stdout + stderr);
     });
   });
+}
+
+function buildProcessFailureError(command, options, code, signal, stderr, stdout) {
+  const output = (stderr || stdout || "").trim();
+  const label = options.label || path.basename(command);
+  const commandName = path.basename(command);
+
+  if (commandName === "clang++") {
+    const detail = output ? `\n${output}` : "";
+    return new Error(`${command} 실패${detail}`);
+  }
+
+  const reason = signal
+    ? `시그널 ${signal}`
+    : typeof code === "number"
+      ? `종료 코드 ${code}`
+      : "비정상 종료";
+  const outputBlock = output ? `\n${output}` : "";
+  return new Error(`런타임 에러\n${label} 실행 중 ${reason}로 종료되었습니다.${outputBlock}`);
 }
 
 function parseSolutionSignature(cpp) {

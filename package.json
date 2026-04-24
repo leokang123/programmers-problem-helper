@@ -2,12 +2,15 @@
   "name": "programmers-problem-helper",
   "displayName": "Programmers Problem Helper",
   "description": "Create Programmers problem files, open a preview/solution split view, and run sample or custom C++ tests.",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "publisher": "local",
   "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"
   },
+  "extensionKind": [
+    "workspace"
+  ],
   "categories": [
     "Other"
   ],

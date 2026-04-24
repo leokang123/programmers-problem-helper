@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.0.7
+
+- Add a Dev Container workflow for isolated extension development while keeping the local installed build separate.
+- Mark the extension to run in the workspace extension host for remote and container sessions.
+- Add container-friendly debug tasks and launch settings for extension development.
+- Save custom test cases per problem and restore them when reopening a problem.
+- Add problem search in the sidebar and improve test action layout.
+- Distinguish runtime errors from compile failures and show clearer `clang++` missing guidance.
+- Wrap long sidebar status messages so long URLs do not break the layout.
+- Improve problem deletion fallback when trash is unavailable.
+
 ## 0.0.6
 
 - Use VS Code global storage as the default problem store when no local `Programmers` folder is available.

@@ -1,0 +1,17 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "npm",
+      "script": "check",
+      "label": "npm: check",
+      "problemMatcher": []
+    },
+    {
+      "type": "npm",
+      "script": "package",
+      "label": "npm: package",
+      "problemMatcher": []
+    }
+  ]
+}

@@ -2,7 +2,12 @@
 node_modules/
 *.vsix
 *.log
+programmers-problem-helper
 .vscode/
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/extensions.json
 .programmers-helper/
 out/
 dist/
