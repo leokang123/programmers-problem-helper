@@ -1,5 +1,6 @@
 const path = require("path");
 
+// 상태 영역에 보여줄 테스트 오류 문구를 만듭니다.
 function formatTestErrorForStatus(error) {
   const message = error instanceof Error ? error.message : String(error);
   if (!message.trim()) {
@@ -17,6 +18,7 @@ function formatTestErrorForStatus(error) {
   return limitStatusText(message);
 }
 
+// 출력 패널에 보여줄 테스트 오류 문구를 만듭니다.
 function formatTestErrorForPanel(error) {
   const message = error instanceof Error ? error.message : String(error);
   if (!message.trim()) {
@@ -34,6 +36,7 @@ function formatTestErrorForPanel(error) {
   return message.trim();
 }
 
+// clang++ 오류를 VS Code 진단 목록으로 바꿉니다.
 function parseCompilerDiagnostics(vscode, message, solutionUri) {
   const diagnostics = [];
   const targetName = path.basename(solutionUri.fsPath);
@@ -66,6 +69,7 @@ function parseCompilerDiagnostics(vscode, message, solutionUri) {
   return diagnostics;
 }
 
+// 컴파일 오류를 짧게 요약합니다.
 function summarizeCompilerError(message) {
   const lines = message.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const errorLine = lines.find((line) => /\b(fatal )?error:/.test(line));
@@ -76,6 +80,7 @@ function summarizeCompilerError(message) {
   return limitStatusText(`컴파일 실패\n${shortenCompilerPaths(errorLine)}`);
 }
 
+// 런타임 오류를 상태 영역용으로 요약합니다.
 function summarizeRuntimeError(message) {
   const lines = message.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const header = lines[0] || "런타임 에러";
@@ -94,6 +99,7 @@ function summarizeRuntimeError(message) {
   return limitStatusText(`${header}\n${translateRuntimeDiagnosticLine(shortenRuntimeDiagnosticLine(detail))}`);
 }
 
+// 런타임 오류를 패널용으로 정리합니다.
 function summarizeRuntimeErrorForPanel(message) {
   const lines = message.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const header = lines[0] || "런타임 에러";
@@ -105,6 +111,7 @@ function summarizeRuntimeErrorForPanel(message) {
   return uniqueLines([header, reason, ...detailLines].filter(Boolean)).join("\n");
 }
 
+// 컴파일 오류의 긴 경로를 짧게 줄입니다.
 function shortenCompilerPaths(line) {
   const sourceMatch = line.match(/([^/\\:\s]+\.cpp:\d+:\d+:\s+(?:fatal\s+)?error:\s+.*)$/);
   if (sourceMatch) {
@@ -119,6 +126,7 @@ function shortenCompilerPaths(line) {
   return line.replace(/.*[\/\\]([^\/\\:]+:\d+:\d+:)/, "$1");
 }
 
+// 상태 메시지 길이를 제한합니다.
 function limitStatusText(text, maxLength = 180) {
   const trimmed = text.trim();
   if (trimmed.length <= maxLength) {
@@ -127,6 +135,7 @@ function limitStatusText(text, maxLength = 180) {
   return `${trimmed.slice(0, maxLength - 1)}...`;
 }
 
+// 프로세스 실패를 사용자 친화적 Error로 만듭니다.
 function buildProcessFailureError(command, options, code, signal, stderr, stdout, elapsedMs = 0) {
   const output = (stderr || stdout || "").trim();
   const label = options.label || path.basename(command);
@@ -150,6 +159,7 @@ function buildProcessFailureError(command, options, code, signal, stderr, stdout
   return error;
 }
 
+// 긴 런타임 출력을 핵심 줄 위주로 줄입니다.
 function condenseRuntimeOutput(text) {
   const lines = String(text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   if (lines.length === 0) {
@@ -189,6 +199,7 @@ function condenseRuntimeOutput(text) {
   ]).slice(0, 2).join("\n");
 }
 
+// 런타임 출력에서 사용자 코드 위치를 찾습니다.
 function extractUserRuntimeFrame(lines) {
   const frame = lines.find((line) => /solution\.cpp:\d+:\d+/.test(line));
   if (!frame) {
@@ -203,6 +214,7 @@ function extractUserRuntimeFrame(lines) {
   return `사용자 코드 위치(user code): ${match[0]}`;
 }
 
+// 런타임 진단 한 줄을 짧게 줄입니다.
 function shortenRuntimeDiagnosticLine(line) {
   let next = String(line || "").trim();
   next = next.replace(/\s*\(BuildId: [^)]+\)/g, "");
@@ -212,6 +224,7 @@ function shortenRuntimeDiagnosticLine(line) {
   return next;
 }
 
+// 런타임 진단 문구를 일부 한국어로 바꿉니다.
 function translateRuntimeDiagnosticLine(line) {
   let next = String(line || "").trim();
   if (!next) {
@@ -232,6 +245,7 @@ function translateRuntimeDiagnosticLine(line) {
   return next;
 }
 
+// 중복 줄을 제거합니다.
 function uniqueLines(lines) {
   const seen = new Set();
   return lines.filter((line) => {

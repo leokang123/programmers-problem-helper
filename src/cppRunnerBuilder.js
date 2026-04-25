@@ -1,3 +1,4 @@
+// solution 함수의 반환 타입과 인자 목록을 읽습니다.
 function parseSolutionSignature(cpp) {
   const match = cpp.match(/([A-Za-z_][\w:<>,\s&*]*?)\s+solution\s*\(([\s\S]*?)\)\s*\{/);
   if (!match) {
@@ -19,6 +20,7 @@ function parseSolutionSignature(cpp) {
   return { returnType, params };
 }
 
+// 예제들을 실행하는 C++ 테스트 러너 코드를 만듭니다.
 function buildRunner(signature, examples) {
   const testBlocks = examples.map((example, index) => {
     if (example.inputs.length !== signature.params.length) {
@@ -36,11 +38,12 @@ ${declarations.join("\n")}
 ${expected}
     auto started_at = chrono::steady_clock::now();
     auto actual = solution(${callArgs});
-    auto elapsed_ms = chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - started_at).count();
+    double elapsed_ms = chrono::duration<double, milli>(chrono::steady_clock::now() - started_at).count();
+    double memory_mb = currentJudgeMemoryMb();
     if (actual == expected) {
-      cout << "[PASS] #" << ${index + 1} << " time=" << elapsed_ms << "ms expected=" << repr(expected) << " actual=" << repr(actual) << endl;
+      cerr << fixed << setprecision(2) << "[PASS] #" << ${index + 1} << " time=" << elapsed_ms << "ms memory=" << memory_mb << "MB expected=" << repr(expected) << " actual=" << repr(actual) << endl;
     } else {
-      cout << "[FAIL] #" << ${index + 1} << " time=" << elapsed_ms << "ms expected=" << repr(expected) << " actual=" << repr(actual) << endl;
+      cerr << fixed << setprecision(2) << "[FAIL] #" << ${index + 1} << " time=" << elapsed_ms << "ms memory=" << memory_mb << "MB expected=" << repr(expected) << " actual=" << repr(actual) << endl;
       failed++;
     }
   }`;
@@ -51,6 +54,8 @@ ${expected}
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <map>
 #include <queue>
@@ -62,11 +67,44 @@ ${expected}
 #include <unordered_set>
 #include <utility>
 #include <vector>
+#include <sys/resource.h>
 using namespace std;
 
 string repr(const string& value) { return string("\\"") + value + "\\""; }
 string repr(const char* value) { return repr(string(value)); }
 string repr(bool value) { return value ? "true" : "false"; }
+
+long long readProcStatusKb(const string& key) {
+  ifstream status("/proc/self/status");
+  string line;
+  const string prefix = key + ":";
+  while (getline(status, line)) {
+    if (line.rfind(prefix, 0) == 0) {
+      istringstream value(line.substr(prefix.size()));
+      long long kb = 0;
+      value >> kb;
+      return kb;
+    }
+  }
+  return 0;
+}
+
+double currentJudgeMemoryMb() {
+  rusage usage {};
+#if defined(__APPLE__) && defined(__MACH__)
+  if (getrusage(RUSAGE_SELF, &usage) != 0) {
+    return 0.0;
+  }
+  return static_cast<double>(usage.ru_maxrss) / 1024.0 / 1024.0;
+#else
+  long long peak_rss_kb = 0;
+  if (getrusage(RUSAGE_SELF, &usage) == 0) {
+    peak_rss_kb = usage.ru_maxrss;
+  }
+  const long long data_stack_kb = readProcStatusKb("VmData") + readProcStatusKb("VmStk");
+  return static_cast<double>(max(peak_rss_kb, data_stack_kb)) / 1024.0;
+#endif
+}
 
 template <typename T>
 typename enable_if<is_arithmetic<T>::value && !is_same<T, bool>::value, string>::type repr(T value) {
@@ -89,13 +127,14 @@ int main(int argc, char** argv) {
   int failed = 0;
 ${testBlocks.join("\n")}
   if (target == 0 && failed == 0) {
-    cout << "All sample tests passed." << endl;
+    cerr << "All sample tests passed." << endl;
   }
   return 0;
 }
 `;
 }
 
+// 입력 값을 C++ 리터럴 형태로 바꿉니다.
 function toCppLiteral(type, rawValue) {
   const value = rawValue.trim().replace(/^`|`$/g, "");
   if (/^vector\s*</.test(type)) {
@@ -110,6 +149,7 @@ function toCppLiteral(type, rawValue) {
   return value;
 }
 
+// 커스텀 테스트 JSON을 내부 테스트 형식으로 바꿉니다.
 function parseCustomTests(customTestsText) {
   let parsed;
   try {
@@ -142,6 +182,7 @@ function parseCustomTests(customTestsText) {
   });
 }
 
+// JS 값을 원본 C++ 리터럴 문자열로 바꿉니다.
 function valueToRawLiteral(value) {
   if (typeof value === "string") {
     return JSON.stringify(value);
@@ -149,6 +190,7 @@ function valueToRawLiteral(value) {
   return JSON.stringify(value);
 }
 
+// 타입 문자열의 공백과 꺾쇠 표기를 정리합니다.
 function normalizeType(type) {
   return type
     .replace(/\bconst\b/g, "")
@@ -160,6 +202,7 @@ function normalizeType(type) {
     .trim();
 }
 
+// 중첩 구조를 고려해 최상위 구분자로만 나눕니다.
 function splitTopLevel(value, delimiter) {
   const parts = [];
   let current = "";

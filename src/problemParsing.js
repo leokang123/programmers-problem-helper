@@ -5,6 +5,7 @@ const {
   PROGRAMMERS_HOST,
 } = require("./config");
 
+// problem.md에서 입출력 예 테이블을 추출합니다.
 function extractExamplesFromMarkdown(markdown) {
   const lines = markdown.split(/\r?\n/);
   const tableStart = lines.findIndex((line, index) => {
@@ -35,6 +36,7 @@ function extractExamplesFromMarkdown(markdown) {
   });
 }
 
+// Markdown 테이블 한 줄을 셀 배열로 나눕니다.
 function parseMarkdownRow(line) {
   const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
   const cells = [];
@@ -57,10 +59,12 @@ function parseMarkdownRow(line) {
   return cells;
 }
 
+// Markdown 셀 값을 실행 가능한 텍스트로 정리합니다.
 function cleanCell(value) {
   return decodeHtml(value).replace(/^`|`$/g, "").replace(/\\\|/g, "|").trim();
 }
 
+// URL의 텍스트 응답을 가져옵니다.
 function fetchText(targetUrl, redirects = 0) {
   return new Promise((resolve, reject) => {
     const parsedUrl = new URL(targetUrl);
@@ -124,6 +128,7 @@ function fetchText(targetUrl, redirects = 0) {
   });
 }
 
+// 여러 정규식 중 처음 매칭된 값을 반환합니다.
 function matchFirst(source, ...patterns) {
   for (const pattern of patterns) {
     const match = source.match(pattern);
@@ -134,6 +139,7 @@ function matchFirst(source, ...patterns) {
   return "";
 }
 
+// 제목을 폴더명에 안전한 slug로 바꿉니다.
 function slugify(text) {
   return text
     .normalize("NFC")
@@ -143,6 +149,7 @@ function slugify(text) {
     .replace(/^_+|_+$/g, "");
 }
 
+// Programmers HTML 본문을 Markdown으로 바꿉니다.
 function htmlToMarkdown(htmlText) {
   let text = htmlText.replace(/\u001d/g, "");
 
@@ -169,6 +176,7 @@ function htmlToMarkdown(htmlText) {
     .trim();
 }
 
+// HTML 테이블을 Markdown 테이블로 바꿉니다.
 function tableToMarkdown(table) {
   const rows = [...table.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)].map((row) => {
     return [...row[1].matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/gi)].map((cell) => inline(cell[1]).replace(/\|/g, "\\|"));
@@ -188,6 +196,7 @@ function tableToMarkdown(table) {
   ].join("\n");
 }
 
+// HTML 리스트를 Markdown 리스트로 바꿉니다.
 function listToMarkdown(list) {
   const items = [...list.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)].map((item) => {
     const nested = item[1].match(/<ul>\s*([\s\S]*?)\s*<\/ul>/i)?.[1];
@@ -206,6 +215,7 @@ function listToMarkdown(list) {
   return `\n${items.join("\n")}\n`;
 }
 
+// HTML 인라인 태그와 엔티티를 정리합니다.
 function inline(value) {
   return decodeHtml(
     value
@@ -218,6 +228,7 @@ function inline(value) {
   ).trim();
 }
 
+// 자주 쓰는 HTML 엔티티를 디코딩합니다.
 function decodeHtml(value) {
   return value
     .replace(/&quot;/g, '"')

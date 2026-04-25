@@ -33,11 +33,6 @@
     "check": "node --check extension.js && node --check src/*.js",
     "package": "npx @vscode/vsce package"
   },
-  "activationEvents": [
-    "onCommand:programmersHelper.createProblem",
-    "onCommand:programmersHelper.runSamples",
-    "onView:programmersHelper.sidebar"
-  ],
   "main": "./extension.js",
   "contributes": {
     "viewsContainers": {
@@ -54,7 +49,8 @@
         {
           "id": "programmersHelper.sidebar",
           "type": "webview",
-          "name": "Problem Helper"
+          "name": "Problem Helper",
+          "icon": "media/icon.svg"
         }
       ]
     },

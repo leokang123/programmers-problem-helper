@@ -7,6 +7,7 @@ const {
   getDockerfilePath,
 } = require("./config");
 
+// 문제를 열 때 Docker 런타임을 준비하고 상태 메시지를 만듭니다.
 async function prepareDockerRuntimeOnOpen({ vscode, extensionDir, problemDir, execCommand, limitStatusText, postStatus }) {
   postStatus?.({
     type: "status",
@@ -24,6 +25,7 @@ async function prepareDockerRuntimeOnOpen({ vscode, extensionDir, problemDir, ex
   }
 }
 
+// Docker 이미지와 실행 컨테이너를 사용할 수 있게 보장합니다.
 async function ensureDockerRuntimeReady({ vscode, extensionDir, problemDir, execCommand }) {
   const programmersDir = path.dirname(problemDir);
   const containerName = getDockerContainerName(programmersDir);
@@ -60,6 +62,32 @@ async function ensureDockerRuntimeReady({ vscode, extensionDir, problemDir, exec
   return { containerName, problemPath, mountSource };
 }
 
+// 실행 중인 helper 컨테이너들을 모두 멈춥니다.
+async function stopDockerRuntimeContainers({ execCommand }) {
+  const list = await execCommand("docker", [
+    "ps",
+    "--filter",
+    `name=^/${DOCKER_CONTAINER_PREFIX}`,
+    "--filter",
+    "status=running",
+    "--format",
+    "{{.Names}}",
+  ], {
+    allowNonZeroExit: true,
+  });
+
+  const names = list.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (names.length === 0) {
+    return [];
+  }
+
+  await execCommand("docker", ["stop", ...names], {
+    allowNonZeroExit: true,
+  });
+  return names;
+}
+
+// Docker CLI가 실행 가능한지 확인합니다.
 function ensureDockerAvailable(vscode) {
   const result = cp.spawnSync("docker", ["version", "--format", "{{.Server.Version}}"], {
     encoding: "utf8",
@@ -82,6 +110,7 @@ function ensureDockerAvailable(vscode) {
   }
 }
 
+// Dev Container 환경에서 필요한 Docker 안내 문구를 만듭니다.
 function getRemoteDockerHint(vscode) {
   if (vscode.env.remoteName !== "dev-container") {
     return "";
@@ -89,6 +118,7 @@ function getRemoteDockerHint(vscode) {
   return "현재 개발판은 Dev Container 안에서 실행되지만, 컴파일 및 실행은 호스트 Docker daemon에 붙는 sibling 실행 컨테이너에서 진행됩니다. Dev Container를 다시 빌드한 뒤 다시 시도해주세요.";
 }
 
+// 런타임 이미지가 없으면 Dockerfile로 빌드합니다.
 async function ensureDockerImageAvailable({ extensionDir, execCommand }) {
   const inspect = await execCommand("docker", ["image", "inspect", DOCKER_IMAGE], {
     allowNonZeroExit: true,
@@ -102,10 +132,12 @@ async function ensureDockerImageAvailable({ extensionDir, execCommand }) {
   });
 }
 
+// Programmers 폴더별 고정 컨테이너 이름을 만듭니다.
 function getDockerContainerName(programmersDir) {
   return `${DOCKER_CONTAINER_PREFIX}${hashText(path.resolve(programmersDir))}`;
 }
 
+// Docker 마운트에 사용할 호스트 경로를 구합니다.
 function getDockerMountSource(vscode, programmersDir) {
   if (vscode.env.remoteName === "dev-container") {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
@@ -126,11 +158,13 @@ function getDockerMountSource(vscode, programmersDir) {
   return programmersDir;
 }
 
+// 컨테이너 안에서의 문제 폴더 경로를 계산합니다.
 function getDockerProblemPath(programmersDir, problemDir) {
   const relative = path.relative(programmersDir, problemDir).split(path.sep).join(path.posix.sep);
   return path.posix.join(DOCKER_WORKSPACE_ROOT, relative);
 }
 
+// 짧은 해시 문자열을 만듭니다.
 function hashText(value) {
   let hash = 0;
   for (let index = 0; index < value.length; index++) {
@@ -143,4 +177,5 @@ function hashText(value) {
 module.exports = {
   ensureDockerRuntimeReady,
   prepareDockerRuntimeOnOpen,
+  stopDockerRuntimeContainers,
 };
