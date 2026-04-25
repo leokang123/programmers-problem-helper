@@ -135,8 +135,13 @@ function buildSidebarHtml(nonce) {
 </head>
 <body>
   <div class="app">
-    <section class="pane top-pane">
-      <div class="pane-title">문제 열기 / 현재 상태</div>
+    <section id="topPane" class="pane top-pane collapsible-pane">
+      <button id="toggleTop" class="pane-title toggle-title" type="button" aria-expanded="true">
+        <span class="toggle-icon">▾</span>
+        <span class="toggle-label">문제 열기 / 현재 상태</span>
+        <span id="topSummary" class="toggle-summary"></span>
+        <span class="collapsed-badge">닫힘</span>
+      </button>
       <div class="pane-body">
         <div class="section">
           <label for="lessonId">Programmers 문제 번호</label>
@@ -209,8 +214,10 @@ function buildSidebarHtml(nonce) {
     const problemList = document.getElementById('problemList');
     const status = document.getElementById('status');
     const app = document.querySelector('.app');
+    const topPane = document.getElementById('topPane');
     const testsPane = document.getElementById('testsPane');
     const listPane = document.getElementById('listPane');
+    const topSummary = document.getElementById('topSummary');
     const testsSummary = document.getElementById('testsSummary');
     const listSummary = document.getElementById('listSummary');
     const problemSearch = document.getElementById('problemSearch');
@@ -252,6 +259,9 @@ function buildSidebarHtml(nonce) {
     }
 
     function updatePaneSummaries() {
+      const statusTitle = status.textContent.split('\\n').find((line) => line.trim()) || '대기 중';
+      topSummary.textContent = topPane.classList.contains('collapsed') ? statusTitle : '';
+
       const customCount = document.querySelectorAll('.test-card').length;
       testsSummary.textContent = testsPane.classList.contains('collapsed') ? '샘플 · 커스텀 ' + customCount + '개' : '';
 
@@ -484,6 +494,9 @@ function buildSidebarHtml(nonce) {
         problemDir: currentProblemDir
       });
     });
+    document.getElementById('toggleTop').addEventListener('click', (event) => {
+      togglePane(topPane, event.currentTarget, 'top-collapsed');
+    });
     document.getElementById('toggleTests').addEventListener('click', (event) => {
       togglePane(testsPane, event.currentTarget, 'tests-collapsed');
     });
@@ -507,6 +520,7 @@ function buildSidebarHtml(nonce) {
       if (event.data.type === 'status') {
         status.textContent = event.data.text;
         status.className = 'status ' + (event.data.kind || '');
+        updatePaneSummaries();
       }
       if (event.data.type === 'testRunning') {
         document.getElementById('stopRun').disabled = !event.data.running;

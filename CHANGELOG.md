@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.9
+
+- Make the problem open / current status sidebar section collapsible and show a status summary while collapsed.
+
 ## 0.0.8
 
 - Show test execution time with two decimal places and include memory usage in result lines.
