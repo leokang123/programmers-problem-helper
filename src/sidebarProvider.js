@@ -61,7 +61,7 @@ function buildSidebarHtml(nonce) {
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    html, body { height: 100%; margin: 0; overflow: hidden; }
+    html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
     body { color: var(--vscode-foreground); font-family: var(--vscode-font-family); }
     label { display: block; margin-bottom: 6px; font-size: 12px; color: var(--vscode-descriptionForeground); }
     input, textarea { width: 100%; box-sizing: border-box; padding: 6px 7px; border: 1px solid var(--vscode-input-border); background: var(--vscode-input-background); color: var(--vscode-input-foreground); }
