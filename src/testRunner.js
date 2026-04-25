@@ -54,8 +54,8 @@ class TestRunner {
       return;
     }
 
-    const problemDir = providedProblemDir || await getProblemDir(context);
-    if (!problemDir) {
+    const target = normalizeRunTarget(providedProblemDir || await getProblemDir(context));
+    if (!target) {
       return;
     }
 
@@ -66,7 +66,7 @@ class TestRunner {
     try {
       const hasCustomTests = customTestsText.trim().length > 0;
       this.postStatus?.({ type: "status", kind: "running", text: `${hasCustomTests ? "커스텀" : "샘플"} 테스트 실행 중...` });
-      const result = await this.runSamples(problemDir, customTestsText);
+      const result = await this.runSamples(target.problemDir, customTestsText, target.cppPath);
       this.postStatus?.({
         type: "status",
         kind: result.failed === 0 ? "ready" : "error",
@@ -110,9 +110,9 @@ class TestRunner {
   }
 
   // 테스트 러너를 생성하고 각 예제를 실행합니다.
-  async runSamples(problemDir, customTestsText = "") {
+  async runSamples(problemDir, customTestsText = "", selectedCppPath) {
     const mdPath = path.join(problemDir, "problem.md");
-    const cppPath = path.join(problemDir, "solution.cpp");
+    const cppPath = selectedCppPath || path.join(problemDir, "solution.cpp");
     const md = await readText(vscode.Uri.file(mdPath));
     const cpp = await readText(vscode.Uri.file(cppPath));
     const examples = customTestsText.trim() ? parseCustomTests(customTestsText) : extractExamplesFromMarkdown(md);
@@ -122,7 +122,7 @@ class TestRunner {
       throw new Error(customTestsText.trim() ? "커스텀 테스트케이스가 비어 있습니다." : "problem.md에서 입출력 예를 찾지 못했습니다.");
     }
     if (!signature) {
-      throw new Error("solution.cpp에서 solution 함수 시그니처를 찾지 못했습니다.");
+      throw new Error(`${path.basename(cppPath)}에서 solution 함수 시그니처를 찾지 못했습니다.`);
     }
 
     const runnerDir = path.join(problemDir, ".programmers-helper");
@@ -130,11 +130,13 @@ class TestRunner {
     const runnerPath = path.join(runnerDir, "test_runner.cpp");
     const fastBinaryPath = ".programmers-helper/test_runner_fast";
     const debugBinaryPath = ".programmers-helper/test_runner_debug";
-    const runnerCode = buildRunner(signature, examples);
+    const includePath = path.relative(runnerDir, cppPath).split(path.sep).join(path.posix.sep);
+    const runnerCode = buildRunner(signature, examples, includePath);
     await vscode.workspace.fs.writeFile(vscode.Uri.file(runnerPath), Buffer.from(runnerCode, "utf8"));
 
     this.outputChannel.clear();
     this.outputChannel.appendLine(`[Programmers Helper] ${path.basename(problemDir)} ${customTestsText.trim() ? "커스텀" : "샘플"} 테스트`);
+    this.outputChannel.appendLine(`[Programmers Helper] Source: ${path.relative(problemDir, cppPath) || "solution.cpp"}`);
     this.outputChannel.appendLine(`[Programmers Helper] Docker runtime: ${DOCKER_IMAGE}`);
     this.outputChannel.appendLine("");
 
@@ -471,6 +473,26 @@ function shouldRetryWithSanitizer(error) {
 // sanitizer 출력이 포함됐는지 확인합니다.
 function hasSanitizerOutput(output) {
   return /AddressSanitizer|UndefinedBehaviorSanitizer|runtime error:/i.test(String(output || ""));
+}
+
+// 실행 대상을 problemDir과 cppPath로 정규화합니다.
+function normalizeRunTarget(target) {
+  if (!target) {
+    return undefined;
+  }
+  if (typeof target === "string") {
+    return {
+      problemDir: target,
+      cppPath: path.join(target, "solution.cpp"),
+    };
+  }
+  if (typeof target.problemDir === "string") {
+    return {
+      problemDir: target.problemDir,
+      cppPath: typeof target.cppPath === "string" ? target.cppPath : path.join(target.problemDir, "solution.cpp"),
+    };
+  }
+  return undefined;
 }
 
 module.exports = {

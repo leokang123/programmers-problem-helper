@@ -92,22 +92,13 @@ function getDefaultProgrammersDir(context, workspaceUri) {
   return vscode.Uri.joinPath(context.globalStorageUri, "Programmers");
 }
 
-// 마지막으로 연 문제를 목록에서 찾습니다.
-function getCurrentProblemFromList(context, problems) {
-  const last = context.workspaceState.get("lastProblemDir");
-  if (typeof last !== "string") {
-    return undefined;
-  }
-  const normalizedLast = path.resolve(last);
-  return problems.find((problem) => path.resolve(problem.problemDir) === normalizedLast);
-}
-
 // 문제 폴더의 표시 정보를 읽습니다.
 async function loadProblemInfo(problemDir) {
   const folderName = path.basename(problemDir);
   const helperDir = vscode.Uri.file(path.join(problemDir, ".programmers-helper"));
   const metadata = await readJson(vscode.Uri.joinPath(helperDir, "programmers.json"));
   const reviewData = await readJson(vscode.Uri.joinPath(helperDir, "review.json"));
+  const history = await readSolutionHistory(problemDir);
   const fallback = parseProblemFolderName(folderName);
   return {
     problemDir,
@@ -115,6 +106,9 @@ async function loadProblemInfo(problemDir) {
     lessonId: String(metadata?.lessonId || fallback.lessonId || ""),
     title: String(metadata?.title || fallback.title || folderName),
     review: Boolean(reviewData?.review),
+    solutionHistoryCount: history.attempts.length,
+    solutionHistory: history.attempts,
+    latestSolutionSnapshot: history.attempts[0]?.path || "",
     updatedAt: typeof reviewData?.updatedAt === "string" ? reviewData.updatedAt : "",
   };
 }
@@ -203,6 +197,7 @@ async function createProblem(programmersDir, lessonId) {
   const cppUri = vscode.Uri.joinPath(problemDir, "solution.cpp");
   const helperDir = vscode.Uri.joinPath(problemDir, ".programmers-helper");
   const metadataUri = vscode.Uri.joinPath(helperDir, "programmers.json");
+  const initialCppUri = vscode.Uri.joinPath(helperDir, "initial-solution.cpp");
 
   await vscode.workspace.fs.createDirectory(problemDir);
   await vscode.workspace.fs.createDirectory(helperDir);
@@ -228,12 +223,16 @@ async function createProblem(programmersDir, lessonId) {
     throw new Error("C++ 기본 코드 템플릿을 찾지 못했습니다.");
   }
 
-  await writeFileIfAbsent(cppUri, code.trimEnd() + "\n");
+  const initialCode = code.trimEnd() + "\n";
+  await writeFileIfAbsent(cppUri, initialCode);
+  await writeFileIfAbsent(initialCppUri, initialCode);
 
   const metadata = {
     lessonId,
     title,
     url,
+    initialCode,
+    initialCodePath: ".programmers-helper/initial-solution.cpp",
     examples: extractExamplesFromMarkdown(problemMd),
   };
   await vscode.workspace.fs.writeFile(metadataUri, Buffer.from(JSON.stringify(metadata, null, 2) + "\n", "utf8"));
@@ -279,6 +278,126 @@ async function findExistingProblem(programmersDir, lessonId) {
   }
 
   return undefined;
+}
+
+// 현재 solution.cpp를 풀이 기록으로 저장하고 새 풀이 상태를 준비합니다.
+async function createSolutionAttempt(problemDir) {
+  const solutionUri = vscode.Uri.file(path.join(problemDir, "solution.cpp"));
+  const helperDir = vscode.Uri.file(path.join(problemDir, ".programmers-helper"));
+  const solutionsDir = vscode.Uri.joinPath(helperDir, "solutions");
+  const currentCode = await readText(solutionUri);
+  const timestamp = formatTimestamp(new Date());
+  const snapshotName = `solution-${timestamp}.cpp`;
+  const snapshotUri = vscode.Uri.joinPath(solutionsDir, snapshotName);
+
+  await vscode.workspace.fs.createDirectory(solutionsDir);
+  await vscode.workspace.fs.writeFile(snapshotUri, Buffer.from(currentCode, "utf8"));
+
+  const history = await readSolutionHistory(problemDir);
+  const nextHistory = {
+    attempts: [
+      {
+        path: path.posix.join(".programmers-helper", "solutions", snapshotName),
+        createdAt: new Date().toISOString(),
+        label: `풀이 ${history.attempts.length + 1}`,
+      },
+      ...history.attempts,
+    ],
+  };
+  await writeJson(vscode.Uri.joinPath(helperDir, "solution-history.json"), nextHistory);
+
+  const initialCode = await loadInitialSolutionCode(problemDir);
+  const resetToInitialCode = Boolean(initialCode);
+  if (resetToInitialCode) {
+    await vscode.workspace.fs.writeFile(solutionUri, Buffer.from(initialCode, "utf8"));
+  }
+
+  return {
+    snapshotPath: snapshotUri.fsPath,
+    resetToInitialCode,
+  };
+}
+
+// 지정한 C++ 파일을 처음 받아온 원본 코드로 되돌립니다.
+async function resetSolutionToInitial(problemDir, cppPath = path.join(problemDir, "solution.cpp")) {
+  const initialCode = await loadInitialSolutionCode(problemDir);
+  if (!initialCode) {
+    return false;
+  }
+
+  const root = path.resolve(problemDir);
+  const target = path.resolve(cppPath);
+  if ((target !== root && !target.startsWith(root + path.sep)) || path.extname(target) !== ".cpp") {
+    return false;
+  }
+
+  await vscode.workspace.fs.writeFile(
+    vscode.Uri.file(target),
+    Buffer.from(initialCode, "utf8")
+  );
+  return true;
+}
+
+// 처음 받아온 solution.cpp 원본 코드를 읽습니다.
+async function loadInitialSolutionCode(problemDir) {
+  try {
+    return await readText(vscode.Uri.file(path.join(problemDir, ".programmers-helper", "initial-solution.cpp")));
+  } catch {
+    const metadata = await readJson(vscode.Uri.file(path.join(problemDir, ".programmers-helper", "programmers.json")));
+    return typeof metadata?.initialCode === "string" && metadata.initialCode.trim()
+      ? metadata.initialCode
+      : "";
+  }
+}
+
+// 특정 풀이 기록 파일 경로를 찾습니다.
+async function getSolutionSnapshotPath(problemDir, snapshotPath) {
+  const history = await readSolutionHistory(problemDir);
+  const found = history.attempts.find((attempt) => attempt.path === snapshotPath);
+  return found ? path.join(problemDir, found.path) : undefined;
+}
+
+// 풀이 기록 하나를 삭제합니다.
+async function deleteSolutionSnapshot(problemDir, snapshotPath) {
+  const helperDir = vscode.Uri.file(path.join(problemDir, ".programmers-helper"));
+  const historyUri = vscode.Uri.joinPath(helperDir, "solution-history.json");
+  const history = await readSolutionHistory(problemDir);
+  const target = history.attempts.find((attempt) => attempt.path === snapshotPath);
+  if (!target) {
+    return false;
+  }
+
+  try {
+    await vscode.workspace.fs.delete(vscode.Uri.file(path.join(problemDir, target.path)), { useTrash: true });
+  } catch {
+    try {
+      await vscode.workspace.fs.delete(vscode.Uri.file(path.join(problemDir, target.path)), { useTrash: false });
+    } catch {
+      // Metadata still gets cleaned up if the file is already gone.
+    }
+  }
+
+  await writeJson(historyUri, {
+    attempts: history.attempts.filter((attempt) => attempt.path !== snapshotPath),
+  });
+  return true;
+}
+
+// 풀이 기록 메타데이터를 읽습니다.
+async function readSolutionHistory(problemDir) {
+  const history = await readJson(vscode.Uri.file(path.join(problemDir, ".programmers-helper", "solution-history.json")));
+  return {
+    attempts: Array.isArray(history?.attempts)
+      ? history.attempts
+        .filter((attempt) => attempt && typeof attempt.path === "string")
+        .map((attempt) => ({
+          path: attempt.path,
+          createdAt: typeof attempt.createdAt === "string" ? attempt.createdAt : "",
+          label: typeof attempt.label === "string" ? attempt.label : path.basename(attempt.path),
+        }))
+        .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+      : [],
+  };
 }
 
 // 문제 폴더에 필수 파일이 있는지 확인합니다.
@@ -331,9 +450,33 @@ async function writeFileIfAbsent(uri, contents) {
   }
 }
 
+// JSON 파일을 보기 좋게 씁니다.
+async function writeJson(uri, value) {
+  await vscode.workspace.fs.writeFile(uri, Buffer.from(JSON.stringify(value, null, 2) + "\n", "utf8"));
+}
+
+// 파일명에 사용할 timestamp를 만듭니다.
+function formatTimestamp(date) {
+  const pad = (value) => String(value).padStart(2, "0");
+  const padMs = (value) => String(value).padStart(3, "0");
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+    "-",
+    pad(date.getHours()),
+    pad(date.getMinutes()),
+    pad(date.getSeconds()),
+    "-",
+    padMs(date.getMilliseconds()),
+  ].join("");
+}
+
 module.exports = {
   createProblem,
-  getCurrentProblemFromList,
+  createSolutionAttempt,
+  deleteSolutionSnapshot,
+  getSolutionSnapshotPath,
   getDefaultProgrammersDir,
   hasProblemFiles,
   loadProblemExamples,
@@ -341,6 +484,7 @@ module.exports = {
   loadProblems,
   loadSavedCustomTests,
   readText,
+  resetSolutionToInitial,
   resolveProgrammersDir,
   saveCustomTests,
 };

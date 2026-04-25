@@ -47,6 +47,10 @@ function activate(context) {
     stopTests: async () => testRunner.stop(),
     openLast: async () => problemCommands.openLastProblem(),
     toggleReview: async (message) => problemCommands.toggleReview(String(message.problemDir || ""), Boolean(message.review)),
+    resetCurrentSolution: async (message) => problemCommands.resetCurrentSolution(String(message.problemDir || "")),
+    startReviewAttempt: async (message) => problemCommands.startReviewAttempt(String(message.problemDir || "")),
+    openSolutionSnapshot: async (message) => problemCommands.openSolutionSnapshot(String(message.problemDir || ""), String(message.snapshotPath || "")),
+    deleteSolutionSnapshot: async (message) => problemCommands.deleteSolutionSnapshot(String(message.problemDir || ""), String(message.snapshotPath || "")),
     openProblem: async (message) => problemCommands.openProblemFromDir(String(message.problemDir || "")),
     deleteProblem: async (message) => problemCommands.deleteProblem(String(message.problemDir || "")),
   });

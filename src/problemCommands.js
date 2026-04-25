@@ -8,11 +8,15 @@ const {
 } = require("./errorFormatting");
 const {
   createProblem,
+  createSolutionAttempt,
+  deleteSolutionSnapshot,
+  getSolutionSnapshotPath,
   getDefaultProgrammersDir,
   hasProblemFiles,
   loadProblemExamples,
   loadProblemInfo,
   loadSavedCustomTests,
+  resetSolutionToInitial,
   resolveProgrammersDir,
   saveCustomTests,
 } = require("./problemStore");
@@ -83,11 +87,11 @@ class ProblemCommands {
 
   // 마지막으로 사용한 문제를 엽니다.
   async openLastProblem() {
-    const dir = await this.getProblemDir();
-    if (!dir) {
+    const target = await this.getProblemDir();
+    if (!target) {
       return;
     }
-    await this.openProblemFromDir(dir);
+    await this.openProblemFromDir(target.problemDir);
   }
 
   // 검증된 문제 폴더를 에디터에 엽니다.
@@ -104,6 +108,104 @@ class ProblemCommands {
     await this.showOpenedProblemState(safeDir, runtimeStatus);
   }
 
+  // 현재 풀이를 보관하고 새 풀이 파일을 엽니다.
+  async startReviewAttempt(problemDir) {
+    const safeDir = await this.validateProblemDir(problemDir);
+    if (!safeDir) {
+      vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다.");
+      return;
+    }
+
+    await vscode.workspace.saveAll(false);
+    const result = await createSolutionAttempt(safeDir);
+    await writeReviewState(safeDir, true);
+    await this.context.workspaceState.update("lastProblemDir", safeDir);
+    await openProblem(vscode.Uri.file(path.join(safeDir, "problem.md")), vscode.Uri.file(path.join(safeDir, "solution.cpp")));
+    const runtimeStatus = await this.prepareDockerRuntimeOnOpen(safeDir);
+    await this.showOpenedProblemState(safeDir, runtimeStatus);
+
+    if (result.resetToInitialCode) {
+      vscode.window.showInformationMessage("이전 풀이를 보관하고 새 풀이 템플릿을 열었습니다.");
+    } else {
+      vscode.window.showWarningMessage("이전 풀이를 보관했습니다. 이 문제에는 초기 템플릿 기록이 없어 solution.cpp는 그대로 두었습니다.");
+    }
+  }
+
+  // 현재 보고 있는 C++ 파일을 기록하지 않고 초기 템플릿으로 되돌립니다.
+  async resetCurrentSolution(problemDir) {
+    const target = await this.getActiveCodeTarget(problemDir);
+    if (!target) {
+      vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다.");
+      return;
+    }
+
+    const relativeCppPath = path.relative(target.problemDir, target.cppPath) || "solution.cpp";
+    const picked = await vscode.window.showWarningMessage(
+      `${relativeCppPath} 파일을 초기 코드로 되돌릴까요?`,
+      { modal: true, detail: "현재 작성 중인 내용은 풀이기록에 저장되지 않습니다. 보관하려면 새풀이를 먼저 사용하세요." },
+      "초기화"
+    );
+    if (picked !== "초기화") {
+      return;
+    }
+
+    await vscode.workspace.saveAll(false);
+    const reset = await resetSolutionToInitial(target.problemDir, target.cppPath);
+    if (!reset) {
+      vscode.window.showWarningMessage("이 문제에는 초기 템플릿 기록이 없어 초기화할 수 없습니다.");
+      return;
+    }
+
+    await this.context.workspaceState.update("lastProblemDir", target.problemDir);
+    await openProblem(vscode.Uri.file(path.join(target.problemDir, "problem.md")), vscode.Uri.file(target.cppPath));
+    await this.showOpenedProblemState(target.problemDir);
+    vscode.window.showInformationMessage(`${relativeCppPath} 파일을 초기 코드로 되돌렸습니다.`);
+  }
+
+  // 선택한 이전 풀이 기록을 엽니다.
+  async openSolutionSnapshot(problemDir, snapshotPath) {
+    const safeDir = await this.validateProblemDir(problemDir);
+    if (!safeDir) {
+      vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다.");
+      return;
+    }
+
+    const filePath = await getSolutionSnapshotPath(safeDir, snapshotPath);
+    if (!filePath) {
+      vscode.window.showInformationMessage("선택한 이전 풀이를 찾지 못했습니다.");
+      return;
+    }
+
+    await openProblem(vscode.Uri.file(path.join(safeDir, "problem.md")), vscode.Uri.file(filePath));
+  }
+
+  // 선택한 이전 풀이 기록을 삭제합니다.
+  async deleteSolutionSnapshot(problemDir, snapshotPath) {
+    const safeDir = await this.validateProblemDir(problemDir);
+    if (!safeDir) {
+      vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다.");
+      return;
+    }
+
+    const picked = await vscode.window.showWarningMessage(
+      "선택한 이전 풀이 기록을 삭제할까요?",
+      { modal: true, detail: "저장된 이전 풀이 파일과 기록에서 제거됩니다." },
+      "삭제"
+    );
+    if (picked !== "삭제") {
+      return;
+    }
+
+    const deleted = await deleteSolutionSnapshot(safeDir, snapshotPath);
+    if (!deleted) {
+      vscode.window.showInformationMessage("선택한 이전 풀이를 찾지 못했습니다.");
+      return;
+    }
+
+    await this.refreshProblems?.();
+    vscode.window.showInformationMessage("이전 풀이 기록을 삭제했습니다.");
+  }
+
   // 다시풀 상태를 저장합니다.
   async toggleReview(problemDir, review) {
     const safeDir = await this.validateProblemDir(problemDir);
@@ -112,15 +214,7 @@ class ProblemCommands {
       return;
     }
 
-    const helperDir = vscode.Uri.file(path.join(safeDir, ".programmers-helper"));
-    const reviewUri = vscode.Uri.joinPath(helperDir, "review.json");
-    const payload = {
-      review,
-      updatedAt: new Date().toISOString(),
-    };
-
-    await vscode.workspace.fs.createDirectory(helperDir);
-    await vscode.workspace.fs.writeFile(reviewUri, Buffer.from(JSON.stringify(payload, null, 2) + "\n", "utf8"));
+    await writeReviewState(safeDir, review);
     await this.context.workspaceState.update("lastProblemDir", safeDir);
     await this.refreshProblems?.();
   }
@@ -168,13 +262,13 @@ class ProblemCommands {
 
   // Webview에서 받은 커스텀 테스트를 저장하고 실행합니다.
   async runCustomTestsFromMessage(tests) {
-    const problemDir = await this.getProblemDir();
-    if (!problemDir) {
+    const target = await this.getProblemDir();
+    if (!target) {
       return;
     }
 
-    await saveCustomTests(problemDir, tests);
-    await this.runTests(JSON.stringify(tests || []), problemDir);
+    await saveCustomTests(target.problemDir, tests);
+    await this.runTests(JSON.stringify(tests || []), target);
   }
 
   // 열린 문제 상태를 사이드바에 반영합니다.
@@ -221,12 +315,15 @@ class ProblemCommands {
   // 현재 실행 대상 문제 폴더를 결정합니다.
   async getProblemDir() {
     const activeFile = vscode.window.activeTextEditor?.document.uri.fsPath;
-    const fromActive = activeFile ? findProblemDirFromPath(activeFile) : undefined;
+    const fromActive = activeFile ? getRunTargetFromPath(activeFile) : undefined;
     if (fromActive) {
-      const validActive = await this.validateProblemDir(fromActive);
+      const validActive = await this.validateProblemDir(fromActive.problemDir);
       if (validActive) {
         await this.context.workspaceState.update("lastProblemDir", validActive);
-        return validActive;
+        return {
+          problemDir: validActive,
+          cppPath: fromActive.cppPath,
+        };
       }
     }
 
@@ -234,7 +331,10 @@ class ProblemCommands {
     if (typeof last === "string") {
       const validLast = await this.validateProblemDir(last);
       if (validLast) {
-        return validLast;
+        return {
+          problemDir: validLast,
+          cppPath: path.join(validLast, "solution.cpp"),
+        };
       }
       await this.context.workspaceState.update("lastProblemDir", undefined);
     }
@@ -261,7 +361,37 @@ class ProblemCommands {
     }
 
     const picked = await vscode.window.showQuickPick(folders, { title: "샘플 테스트를 실행할 문제를 선택하세요." });
-    return picked ? path.join(programmersDir.fsPath, picked) : undefined;
+    if (!picked) {
+      return undefined;
+    }
+    const problemDir = path.join(programmersDir.fsPath, picked);
+    return {
+      problemDir,
+      cppPath: path.join(problemDir, "solution.cpp"),
+    };
+  }
+
+  // 현재 에디터의 C++ 파일을 우선하고, 없으면 전달된 문제의 solution.cpp를 사용합니다.
+  async getActiveCodeTarget(problemDir) {
+    const activeFile = vscode.window.activeTextEditor?.document.uri.fsPath;
+    const fromActive = activeFile ? getRunTargetFromPath(activeFile) : undefined;
+    if (fromActive) {
+      const validActive = await this.validateProblemDir(fromActive.problemDir);
+      if (validActive) {
+        return {
+          problemDir: validActive,
+          cppPath: fromActive.cppPath,
+        };
+      }
+    }
+
+    const safeDir = await this.validateProblemDir(problemDir);
+    return safeDir
+      ? {
+        problemDir: safeDir,
+        cppPath: path.join(safeDir, "solution.cpp"),
+      }
+      : undefined;
   }
 
   // 문제를 열 때 Docker 런타임을 준비합니다.
@@ -289,15 +419,34 @@ async function openProblem(mdUri, cppUri) {
   });
 }
 
-// 파일 경로에서 문제 폴더를 추정합니다.
-function findProblemDirFromPath(filePath) {
+// 다시풀 상태 파일을 저장합니다.
+async function writeReviewState(problemDir, review) {
+  const helperDir = vscode.Uri.file(path.join(problemDir, ".programmers-helper"));
+  const reviewUri = vscode.Uri.joinPath(helperDir, "review.json");
+  const payload = {
+    review,
+    updatedAt: new Date().toISOString(),
+  };
+
+  await vscode.workspace.fs.createDirectory(helperDir);
+  await vscode.workspace.fs.writeFile(reviewUri, Buffer.from(JSON.stringify(payload, null, 2) + "\n", "utf8"));
+}
+
+// 파일 경로에서 문제 폴더와 실행 cpp를 추정합니다.
+function getRunTargetFromPath(filePath) {
   const normalized = path.normalize(filePath);
+  if (path.extname(normalized) !== ".cpp") {
+    return undefined;
+  }
   const parts = normalized.split(path.sep);
   const index = parts.lastIndexOf("Programmers");
   if (index < 0 || index + 1 >= parts.length) {
     return undefined;
   }
-  return parts.slice(0, index + 2).join(path.sep);
+  return {
+    problemDir: parts.slice(0, index + 2).join(path.sep),
+    cppPath: normalized,
+  };
 }
 
 module.exports = {

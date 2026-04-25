@@ -1,6 +1,5 @@
 const vscode = require("vscode");
 const {
-  getCurrentProblemFromList,
   loadProblems,
   resolveProgrammersDir,
 } = require("./problemStore");
@@ -45,8 +44,6 @@ class ProgrammersSidebarProvider {
     const programmersDir = await resolveProgrammersDir(this.context, workspaceFolder?.uri);
     const problems = programmersDir ? await loadProblems(programmersDir) : [];
     this.post({ type: "problems", problems });
-    const currentProblem = getCurrentProblemFromList(this.context, problems);
-    this.post({ type: "currentProblem", problem: currentProblem });
   }
 
   // 사이드바 HTML을 생성합니다.
@@ -97,6 +94,8 @@ function buildSidebarHtml(nonce) {
     .section:last-child { margin-bottom: 0; }
     .open-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
     .open-actions button { margin-top: 6px; }
+    .current-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+    .current-actions button { margin-top: 0; }
     .list-actions { display: flex; gap: 8px; align-items: center; margin-bottom: 5px; flex-wrap: wrap; }
     .filter { display: flex; gap: 6px; align-items: center; margin: 0; font-size: 12px; color: var(--vscode-foreground); }
     .filter input { width: auto; margin: 0; }
@@ -111,6 +110,12 @@ function buildSidebarHtml(nonce) {
     .problem-actions { display: flex; gap: 6px; align-items: center; }
     .review-toggle { display: flex; gap: 4px; align-items: center; margin: 0; font-size: 11px; color: var(--vscode-descriptionForeground); }
     .review-toggle input { width: auto; margin: 0; }
+    .solution-action { width: auto; margin: 0; padding: 2px 6px; background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); font-size: 11px; }
+    .solution-action:hover { background: var(--vscode-button-hoverBackground); color: var(--vscode-button-foreground); }
+    .snapshot-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--vscode-panel-border); cursor: pointer; }
+    .snapshot-row:hover { background: var(--vscode-list-hoverBackground); }
+    .snapshot-title { font-size: 12px; line-height: 1.35; color: var(--vscode-foreground); word-break: break-word; }
+    .snapshot-meta { margin-top: 2px; font-size: 11px; color: var(--vscode-descriptionForeground); }
     .delete-problem { width: auto; margin: 0; padding: 2px 6px; background: transparent; color: var(--vscode-descriptionForeground); font-size: 12px; }
     .delete-problem:hover { background: var(--vscode-list-hoverBackground); color: var(--vscode-errorForeground); }
     .empty { padding: 9px 0; font-size: 12px; color: var(--vscode-descriptionForeground); line-height: 1.4; }
@@ -144,6 +149,10 @@ function buildSidebarHtml(nonce) {
         <div id="status" class="status">대기 중
 
 문제 번호를 입력하고 생성 버튼을 누르세요.</div>
+        <div class="current-actions">
+          <button id="resetCurrentSolution" class="secondary" disabled>초기화</button>
+          <button id="startCurrentReview" class="secondary" disabled>현재 문제 새풀이</button>
+        </div>
       </div>
     </section>
 
@@ -185,6 +194,7 @@ function buildSidebarHtml(nonce) {
         <div class="list-actions">
           <label class="filter"><input name="problemFilter" type="radio" value="all" checked /> 전체</label>
           <label class="filter"><input name="problemFilter" type="radio" value="review" /> 다시풀</label>
+          <label class="filter"><input name="problemFilter" type="radio" value="solutions" /> 풀이기록</label>
           <button id="refreshProblems" class="secondary refresh" title="새로고침">↻</button>
           <input id="problemSearch" class="search" type="text" placeholder="문제 번호 또는 제목 검색" />
         </div>
@@ -204,8 +214,11 @@ function buildSidebarHtml(nonce) {
     const testsSummary = document.getElementById('testsSummary');
     const listSummary = document.getElementById('listSummary');
     const problemSearch = document.getElementById('problemSearch');
+    const resetCurrentSolution = document.getElementById('resetCurrentSolution');
+    const startCurrentReview = document.getElementById('startCurrentReview');
     let testCount = 0;
     let problems = [];
+    let currentProblemDir = '';
 
     function setPaneCollapsed(pane, button, className, collapsed) {
       const body = pane.querySelector('.pane-body');
@@ -233,6 +246,11 @@ function buildSidebarHtml(nonce) {
       })[ch]);
     }
 
+    function updateCurrentActions() {
+      resetCurrentSolution.disabled = !currentProblemDir;
+      startCurrentReview.disabled = !currentProblemDir;
+    }
+
     function updatePaneSummaries() {
       const customCount = document.querySelectorAll('.test-card').length;
       testsSummary.textContent = testsPane.classList.contains('collapsed') ? '샘플 · 커스텀 ' + customCount + '개' : '';
@@ -243,10 +261,38 @@ function buildSidebarHtml(nonce) {
         if (!query) return true;
         return (problem.title || '').toLowerCase().includes(query) || String(problem.lessonId || '').includes(query);
       });
-      const visibleCount = (filter === 'review' ? matched.filter((problem) => problem.review) : matched).length;
+      const currentProblem = problems.find((problem) => currentProblemDir && problem.problemDir === currentProblemDir);
+      const currentMatchesQuery = currentProblem && (!query
+        || (currentProblem.title || '').toLowerCase().includes(query)
+        || String(currentProblem.lessonId || '').includes(query));
+      const visibleCount = filter === 'solutions'
+        ? (currentMatchesQuery ? buildSolutionRows([currentProblem]).length : 0)
+        : (filter === 'review' ? matched.filter((problem) => problem.review) : matched).length;
       listSummary.textContent = listPane.classList.contains('collapsed')
-        ? (filter === 'review' ? '다시풀 ' + visibleCount + '개' : '전체 ' + visibleCount + '개')
+        ? (filter === 'solutions' ? '풀이기록 ' + visibleCount + '개' : filter === 'review' ? '다시풀 ' + visibleCount + '개' : '전체 ' + visibleCount + '개')
         : '';
+    }
+
+    function formatSnapshotTime(value) {
+      if (!value) return '-';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value;
+      return date.toLocaleString('ko-KR', {
+        year: '2-digit',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    }
+
+    function buildSolutionRows(sourceProblems) {
+      return sourceProblems.flatMap((problem) => (
+        Array.isArray(problem.solutionHistory) ? problem.solutionHistory : []
+      ).map((snapshot) => ({ problem, snapshot })))
+        .sort((a, b) => {
+          return String(b.snapshot.createdAt || '').localeCompare(String(a.snapshot.createdAt || ''));
+        });
     }
 
     function renderList(container, visible, emptyText) {
@@ -258,7 +304,7 @@ function buildSidebarHtml(nonce) {
       container.innerHTML = visible.map((problem, index) => (
         '<div class="problem-row" data-index="' + index + '">' +
           '<div><div class="problem-title">' + escapeHtml(problem.title) + '</div>' +
-          '<div class="problem-id">#' + escapeHtml(problem.lessonId || '-') + '</div></div>' +
+          '<div class="problem-id">#' + escapeHtml(problem.lessonId || '-') + (problem.solutionHistoryCount ? ' · 이전풀이 ' + escapeHtml(problem.solutionHistoryCount) + '개' : '') + '</div></div>' +
           '<div class="problem-actions">' +
             '<label class="review-toggle"><input class="review-check" type="checkbox" ' + (problem.review ? 'checked' : '') + ' /> 다시풀</label>' +
             '<button class="delete-problem" type="button" title="문제 삭제">삭제</button>' +
@@ -289,6 +335,48 @@ function buildSidebarHtml(nonce) {
       });
     }
 
+    function renderSolutionList(container, rows, emptyText) {
+      if (rows.length === 0) {
+        container.innerHTML = '<div class="empty">' + escapeHtml(emptyText) + '</div>';
+        return;
+      }
+
+      container.innerHTML = rows.map(({ problem, snapshot }, index) => (
+        '<div class="snapshot-row" data-index="' + index + '">' +
+          '<div><div class="snapshot-title">' + escapeHtml(problem.title) + '</div>' +
+          '<div class="snapshot-meta">#' + escapeHtml(problem.lessonId || '-') + ' · ' + escapeHtml(snapshot.label || '이전 풀이') + ' · ' + escapeHtml(formatSnapshotTime(snapshot.createdAt)) + '</div></div>' +
+          '<div class="problem-actions">' +
+            '<button class="solution-action open-snapshot" type="button">열기</button>' +
+            '<button class="delete-problem delete-snapshot" type="button">삭제</button>' +
+          '</div>' +
+        '</div>'
+      )).join('');
+
+      Array.from(container.querySelectorAll('.snapshot-row')).forEach((row, index) => {
+        const { problem, snapshot } = rows[index];
+        const open = () => {
+          vscode.postMessage({
+            type: 'openSolutionSnapshot',
+            problemDir: problem.problemDir,
+            snapshotPath: snapshot.path
+          });
+        };
+        row.addEventListener('click', open);
+        row.querySelector('.open-snapshot').addEventListener('click', (event) => {
+          event.stopPropagation();
+          open();
+        });
+        row.querySelector('.delete-snapshot').addEventListener('click', (event) => {
+          event.stopPropagation();
+          vscode.postMessage({
+            type: 'deleteSolutionSnapshot',
+            problemDir: problem.problemDir,
+            snapshotPath: snapshot.path
+          });
+        });
+      });
+    }
+
     function renderProblems() {
       const filter = document.querySelector('input[name="problemFilter"]:checked')?.value || 'all';
       const query = problemSearch.value.trim().toLowerCase();
@@ -296,6 +384,22 @@ function buildSidebarHtml(nonce) {
         if (!query) return true;
         return (problem.title || '').toLowerCase().includes(query) || String(problem.lessonId || '').includes(query);
       });
+      if (filter === 'solutions') {
+        const currentProblem = problems.find((problem) => currentProblemDir && problem.problemDir === currentProblemDir);
+        const currentMatchesQuery = currentProblem && (!query
+          || (currentProblem.title || '').toLowerCase().includes(query)
+          || String(currentProblem.lessonId || '').includes(query));
+        const rows = currentMatchesQuery ? buildSolutionRows([currentProblem]) : [];
+        const emptyText = !currentProblem
+          ? '현재 열린 문제가 없습니다.'
+          : query
+            ? '현재 문제와 검색어가 일치하지 않습니다.'
+            : '현재 문제에 저장된 풀이 기록이 없습니다.';
+        renderSolutionList(problemList, rows, emptyText);
+        updatePaneSummaries();
+        return;
+      }
+
       const visible = filter === 'review' ? matched.filter((problem) => problem.review) : matched;
       const emptyText = query
         ? '검색 결과가 없습니다.'
@@ -366,6 +470,20 @@ function buildSidebarHtml(nonce) {
     document.getElementById('open').addEventListener('click', () => {
       vscode.postMessage({ type: 'openLast' });
     });
+    resetCurrentSolution.addEventListener('click', () => {
+      if (!currentProblemDir) return;
+      vscode.postMessage({
+        type: 'resetCurrentSolution',
+        problemDir: currentProblemDir
+      });
+    });
+    startCurrentReview.addEventListener('click', () => {
+      if (!currentProblemDir) return;
+      vscode.postMessage({
+        type: 'startReviewAttempt',
+        problemDir: currentProblemDir
+      });
+    });
     document.getElementById('toggleTests').addEventListener('click', (event) => {
       togglePane(testsPane, event.currentTarget, 'tests-collapsed');
     });
@@ -401,7 +519,13 @@ function buildSidebarHtml(nonce) {
         problems = event.data.problems || [];
         renderProblems();
       }
+      if (event.data.type === 'currentProblem') {
+        currentProblemDir = event.data.problem?.problemDir || '';
+        updateCurrentActions();
+        renderProblems();
+      }
     });
+    updateCurrentActions();
     updatePaneSummaries();
     vscode.postMessage({ type: 'refreshProblems' });
   </script>

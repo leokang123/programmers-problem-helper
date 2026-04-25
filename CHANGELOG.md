@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.0.8
+
+- Show test execution time with two decimal places and include memory usage in result lines.
+- Refactor extension runtime code into focused modules.
+- Add per-problem solution history with new-attempt, open, delete, and reset flows.
+- Run tests against the currently viewed C++ file when a saved solution is open.
+- Clean up Docker runtime containers when the extension deactivates.
+- Move current-problem actions out of the problem list and improve sidebar release metadata.
+
 ## 0.0.7
 
 - Add a Dev Container workflow for isolated extension development while keeping the local installed build separate.

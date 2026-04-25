@@ -21,7 +21,8 @@ function parseSolutionSignature(cpp) {
 }
 
 // 예제들을 실행하는 C++ 테스트 러너 코드를 만듭니다.
-function buildRunner(signature, examples) {
+function buildRunner(signature, examples, solutionIncludePath = "../solution.cpp") {
+  const includePath = JSON.stringify(solutionIncludePath);
   const testBlocks = examples.map((example, index) => {
     if (example.inputs.length !== signature.params.length) {
       throw new Error(`입출력 예 #${index + 1}의 인자 수가 solution 시그니처와 다릅니다.`);
@@ -49,7 +50,7 @@ ${expected}
   }`;
   });
 
-  return `#include "../solution.cpp"
+  return `#include ${includePath}
 
 #include <algorithm>
 #include <chrono>
