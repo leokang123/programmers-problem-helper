@@ -136,6 +136,29 @@ class ProblemCommands {
     }
   }
 
+  // 현재 문제의 메모 파일을 옆 에디터 그룹에 토글합니다.
+  async openNotes(problemDir) {
+    const safeDir = await this.validateProblemDir(problemDir);
+    if (!safeDir) {
+      vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다.");
+      return;
+    }
+
+    const problem = await loadProblemInfo(safeDir);
+    const notesUri = vscode.Uri.file(path.join(safeDir, ".programmers-helper", "notes.md"));
+    await ensureNotesFile(notesUri, problem);
+    await this.context.workspaceState.update("lastProblemDir", safeDir);
+    if (await closeOpenTabsForUri(notesUri)) {
+      return;
+    }
+
+    await vscode.window.showTextDocument(notesUri, {
+      viewColumn: vscode.ViewColumn.Beside,
+      preserveFocus: false,
+      preview: false,
+    });
+  }
+
   // 현재 보고 있는 C++ 파일을 기록하지 않고 초기 템플릿으로 되돌립니다.
   async resetCurrentSolution(problemDir) {
     const target = await this.getActiveCodeTarget(problemDir);
@@ -422,12 +445,41 @@ class ProblemCommands {
 async function openProblem(mdUri, cppUri) {
   await vscode.workspace.saveAll(false);
   await vscode.commands.executeCommand("workbench.action.closeAllEditors");
-  await vscode.commands.executeCommand("markdown.showPreview", mdUri, vscode.ViewColumn.One);
+  await openLockedMarkdownPreview(mdUri, vscode.ViewColumn.One);
   await vscode.window.showTextDocument(cppUri, {
     viewColumn: vscode.ViewColumn.Two,
     preserveFocus: false,
     preview: false,
   });
+}
+
+// Markdown preview가 다른 Markdown 파일로 따라가지 않도록 잠급니다.
+async function openLockedMarkdownPreview(mdUri, viewColumn) {
+  await vscode.commands.executeCommand("markdown.showPreview", mdUri, viewColumn);
+  await vscode.commands.executeCommand("markdown.preview.toggleLock");
+}
+
+// 같은 파일이 이미 열려 있으면 해당 탭만 닫습니다.
+async function closeOpenTabsForUri(uri) {
+  const tabs = [];
+  for (const group of vscode.window.tabGroups?.all || []) {
+    for (const tab of group.tabs || []) {
+      if (tab.input?.uri && sameFsPath(tab.input.uri, uri)) {
+        tabs.push(tab);
+      }
+    }
+  }
+
+  if (tabs.length === 0) {
+    return false;
+  }
+
+  await vscode.window.tabGroups.close(tabs, true);
+  return true;
+}
+
+function sameFsPath(left, right) {
+  return path.resolve(left.fsPath) === path.resolve(right.fsPath);
 }
 
 // 다시풀 상태 파일을 저장합니다.
@@ -441,6 +493,37 @@ async function writeReviewState(problemDir, review) {
 
   await vscode.workspace.fs.createDirectory(helperDir);
   await vscode.workspace.fs.writeFile(reviewUri, Buffer.from(JSON.stringify(payload, null, 2) + "\n", "utf8"));
+}
+
+// 문제별 메모 파일이 없으면 기본 템플릿으로 생성합니다.
+async function ensureNotesFile(notesUri, problem) {
+  try {
+    await vscode.workspace.fs.stat(notesUri);
+    return;
+  } catch {
+    // 파일이 없을 때만 아래에서 생성합니다.
+  }
+
+  await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(notesUri.fsPath)));
+  const title = problem.title || problem.folderName || "Programmers 문제";
+  const lessonId = problem.lessonId ? `#${problem.lessonId}` : "";
+  const template = [
+    `# ${title}${lessonId ? ` (${lessonId})` : ""}`,
+    "",
+    "## 핵심 아이디어",
+    "",
+    "- ",
+    "",
+    "## 틀린 이유",
+    "",
+    "- ",
+    "",
+    "## 다시 풀 때 볼 것",
+    "",
+    "- ",
+    "",
+  ].join("\n");
+  await vscode.workspace.fs.writeFile(notesUri, Buffer.from(template, "utf8"));
 }
 
 // 파일 경로에서 문제 폴더와 실행 cpp를 추정합니다.

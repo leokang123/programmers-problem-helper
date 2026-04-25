@@ -94,7 +94,7 @@ function buildSidebarHtml(nonce) {
     .section:last-child { margin-bottom: 0; }
     .open-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
     .open-actions button { margin-top: 6px; }
-    .current-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+    .current-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
     .current-actions button { margin-top: 0; }
     .list-actions { display: flex; gap: 8px; align-items: center; margin-bottom: 5px; flex-wrap: wrap; }
     .filter { display: flex; gap: 6px; align-items: center; margin: 0; font-size: 12px; color: var(--vscode-foreground); }
@@ -156,7 +156,8 @@ function buildSidebarHtml(nonce) {
 문제 번호를 입력하고 생성 버튼을 누르세요.</div>
         <div class="current-actions">
           <button id="resetCurrentSolution" class="secondary" disabled>초기화</button>
-          <button id="startCurrentReview" class="secondary" disabled>현재 문제 새풀이</button>
+          <button id="startCurrentReview" class="secondary" disabled>새풀이</button>
+          <button id="openNotes" class="secondary" disabled>메모</button>
         </div>
       </div>
     </section>
@@ -223,6 +224,7 @@ function buildSidebarHtml(nonce) {
     const problemSearch = document.getElementById('problemSearch');
     const resetCurrentSolution = document.getElementById('resetCurrentSolution');
     const startCurrentReview = document.getElementById('startCurrentReview');
+    const openNotes = document.getElementById('openNotes');
     let testCount = 0;
     let problems = [];
     let currentProblemDir = '';
@@ -256,6 +258,7 @@ function buildSidebarHtml(nonce) {
     function updateCurrentActions() {
       resetCurrentSolution.disabled = !currentProblemDir;
       startCurrentReview.disabled = !currentProblemDir;
+      openNotes.disabled = !currentProblemDir;
     }
 
     function updatePaneSummaries() {
@@ -491,6 +494,13 @@ function buildSidebarHtml(nonce) {
       if (!currentProblemDir) return;
       vscode.postMessage({
         type: 'startReviewAttempt',
+        problemDir: currentProblemDir
+      });
+    });
+    openNotes.addEventListener('click', () => {
+      if (!currentProblemDir) return;
+      vscode.postMessage({
+        type: 'openNotes',
         problemDir: currentProblemDir
       });
     });

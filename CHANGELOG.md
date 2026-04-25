@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.10
+
+- Add a sidebar memo action that opens per-problem `notes.md` files.
+- Create new memo files with a problem-specific study note template.
+- Lock the problem Markdown preview so opening memo files does not replace it.
+
 ## 0.0.9
 
 - Make the problem open / current status sidebar section collapsible and show a status summary while collapsed.

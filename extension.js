@@ -49,6 +49,7 @@ function activate(context) {
     toggleReview: async (message) => problemCommands.toggleReview(String(message.problemDir || ""), Boolean(message.review)),
     resetCurrentSolution: async (message) => problemCommands.resetCurrentSolution(String(message.problemDir || "")),
     startReviewAttempt: async (message) => problemCommands.startReviewAttempt(String(message.problemDir || "")),
+    openNotes: async (message) => problemCommands.openNotes(String(message.problemDir || "")),
     openSolutionSnapshot: async (message) => problemCommands.openSolutionSnapshot(String(message.problemDir || ""), String(message.snapshotPath || "")),
     deleteSolutionSnapshot: async (message) => problemCommands.deleteSolutionSnapshot(String(message.problemDir || ""), String(message.snapshotPath || "")),
     openProblem: async (message) => problemCommands.openProblemFromDir(String(message.problemDir || "")),
