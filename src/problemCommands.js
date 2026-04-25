@@ -76,8 +76,12 @@ class ProblemCommands {
         }
       );
 
-      await this.openProblemFromDir(result.problemDir.fsPath);
-      vscode.window.showInformationMessage(`Programmers ${lessonId} 준비 완료`);
+      const runtimeStatus = await this.openProblemFromDir(result.problemDir.fsPath);
+      if (runtimeStatus?.kind === "ready") {
+        vscode.window.showInformationMessage(`Programmers ${lessonId} 준비 완료`);
+      } else {
+        vscode.window.showWarningMessage(`Programmers ${lessonId} 문제를 열었지만 실행 컨테이너는 준비되지 않았습니다.`);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.postMessage?.({ type: "status", kind: "error", text: `오류\n\n${message}` });
@@ -106,6 +110,7 @@ class ProblemCommands {
     await openProblem(vscode.Uri.file(path.join(safeDir, "problem.md")), vscode.Uri.file(path.join(safeDir, "solution.cpp")));
     const runtimeStatus = await this.prepareDockerRuntimeOnOpen(safeDir);
     await this.showOpenedProblemState(safeDir, runtimeStatus);
+    return runtimeStatus;
   }
 
   // 현재 풀이를 보관하고 새 풀이 파일을 엽니다.
@@ -272,7 +277,7 @@ class ProblemCommands {
   }
 
   // 열린 문제 상태를 사이드바에 반영합니다.
-  async showOpenedProblemState(problemDir, runtimeStatus = { kind: "ready", detail: "" }) {
+  async showOpenedProblemState(problemDir, runtimeStatus = { kind: "", detail: "" }) {
     const problem = await loadProblemInfo(problemDir);
     const examples = await loadProblemExamples(problemDir);
     const savedCustomTests = await loadSavedCustomTests(problemDir);
@@ -281,10 +286,16 @@ class ProblemCommands {
     this.postMessage?.({ type: "currentProblem", problem });
     this.postMessage?.({ type: "customTests", tests: savedCustomTests.length > 0 ? savedCustomTests : examples.length > 0 ? [examples[0]] : [] });
     await this.refreshProblems?.();
+    const statusKind = runtimeStatus.kind || "";
+    const statusTitle = statusKind === "ready"
+      ? "준비 완료"
+      : statusKind === "error"
+        ? "준비 실패"
+        : "문제 열림";
     this.postMessage?.({
       type: "status",
-      kind: runtimeStatus.kind || "ready",
-      text: `준비 완료\n\n${problem.folderName}${runtimeStatus.detail ? `\n${runtimeStatus.detail}` : ""}`,
+      kind: statusKind,
+      text: `${statusTitle}\n\n${problem.folderName}${runtimeStatus.detail ? `\n${runtimeStatus.detail}` : ""}`,
     });
   }
 

@@ -3,6 +3,7 @@
 ## 0.0.8
 
 - Show test execution time with two decimal places and include memory usage in result lines.
+- Run C++ compilation and test execution in a Docker runtime container.
 - Refactor extension runtime code into focused modules.
 - Add per-problem solution history with new-attempt, open, delete, and reset flows.
 - Run tests against the currently viewed C++ file when a saved solution is open.
