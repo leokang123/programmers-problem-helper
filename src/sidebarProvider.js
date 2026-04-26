@@ -1,5 +1,7 @@
 const vscode = require("vscode");
 
+const SIDEBAR_VIEW_ID = "programmersHelper.sidebar";
+
 // 사이드바 Webview와 메시지 핸들링을 관리합니다.
 class ProgrammersSidebarProvider {
   // 컨텍스트와 메시지 핸들러를 저장합니다.
@@ -16,11 +18,11 @@ class ProgrammersSidebarProvider {
     this.view = webviewView;
     webviewView.webview.options = { enableScripts: true };
     webviewView.webview.html = this.getHtml();
-    this.refreshProblems({ force: true });
+    this.refreshProblems({ force: true, progress: true });
 
     webviewView.webview.onDidReceiveMessage(async (message) => {
       if (message.type === "refreshProblems") {
-        await this.refreshProblems({ force: Boolean(message.force) });
+        await this.refreshProblems({ force: Boolean(message.force), progress: true });
         return;
       }
 
@@ -38,6 +40,16 @@ class ProgrammersSidebarProvider {
 
   // 문제 목록과 현재 문제 상태를 새로 보냅니다.
   async refreshProblems(options = {}) {
+    if (options.progress) {
+      return vscode.window.withProgress(
+        {
+          location: { viewId: SIDEBAR_VIEW_ID },
+          title: "문제 목록 불러오는 중...",
+        },
+        () => this.refreshProblems({ ...options, progress: false })
+      );
+    }
+
     await Promise.resolve();
     const {
       loadProblems,
