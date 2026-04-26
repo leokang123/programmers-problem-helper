@@ -458,8 +458,12 @@ function formatDisplayOutput(output, captureTruncated = false) {
 
 // 캡처 버퍼에 최대 길이까지만 추가합니다.
 function appendCapturedOutput(current, chunk, maxChars) {
-  if (!maxChars || current.length >= maxChars) {
-    return { text: current, truncated: Boolean(maxChars) };
+  if (!maxChars) {
+    return { text: current + chunk, truncated: false };
+  }
+
+  if (current.length >= maxChars) {
+    return { text: current, truncated: true };
   }
 
   const remaining = maxChars - current.length;
