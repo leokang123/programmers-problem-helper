@@ -115,14 +115,24 @@ async function loadProblemInfo(problemDir) {
 
 // 문제의 예제 테스트를 메타데이터나 markdown에서 읽습니다.
 async function loadProblemExamples(problemDir) {
-  const metadata = await readJson(vscode.Uri.file(path.join(problemDir, ".programmers-helper", "programmers.json")));
-  if (Array.isArray(metadata?.examples)) {
+  const helperDir = vscode.Uri.file(path.join(problemDir, ".programmers-helper"));
+  const metadataUri = vscode.Uri.joinPath(helperDir, "programmers.json");
+  const metadata = await readJson(metadataUri);
+  if (Array.isArray(metadata?.examples) && metadata.examples.length > 0) {
     return metadata.examples;
   }
 
   try {
     const markdown = await readText(vscode.Uri.file(path.join(problemDir, "problem.md")));
-    return extractExamplesFromMarkdown(markdown);
+    const examples = extractExamplesFromMarkdown(markdown);
+    if (examples.length > 0) {
+      await vscode.workspace.fs.createDirectory(helperDir);
+      await writeJson(metadataUri, {
+        ...(metadata && typeof metadata === "object" ? metadata : {}),
+        examples,
+      });
+    }
+    return examples;
   } catch {
     return [];
   }

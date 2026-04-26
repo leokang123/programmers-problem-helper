@@ -225,6 +225,8 @@ function buildSidebarHtml(nonce) {
     const resetCurrentSolution = document.getElementById('resetCurrentSolution');
     const startCurrentReview = document.getElementById('startCurrentReview');
     const openNotes = document.getElementById('openNotes');
+    const runSamples = document.getElementById('run');
+    const runCustom = document.getElementById('runCustom');
     let testCount = 0;
     let problems = [];
     let currentProblemDir = '';
@@ -259,6 +261,8 @@ function buildSidebarHtml(nonce) {
       resetCurrentSolution.disabled = !currentProblemDir;
       startCurrentReview.disabled = !currentProblemDir;
       openNotes.disabled = !currentProblemDir;
+      runSamples.disabled = !currentProblemDir;
+      runCustom.disabled = !currentProblemDir;
     }
 
     function updatePaneSummaries() {
@@ -468,14 +472,16 @@ function buildSidebarHtml(nonce) {
     document.getElementById('create').addEventListener('click', () => {
       vscode.postMessage({ type: 'create', lessonId: input.value.trim() });
     });
-    document.getElementById('run').addEventListener('click', () => {
-      vscode.postMessage({ type: 'runSamples' });
+    runSamples.addEventListener('click', () => {
+      if (!currentProblemDir) return;
+      vscode.postMessage({ type: 'runSamples', problemDir: currentProblemDir });
     });
     document.getElementById('addTest').addEventListener('click', () => {
       addTest();
     });
-    document.getElementById('runCustom').addEventListener('click', () => {
-      vscode.postMessage({ type: 'runCustom', tests: collectTests() });
+    runCustom.addEventListener('click', () => {
+      if (!currentProblemDir) return;
+      vscode.postMessage({ type: 'runCustom', problemDir: currentProblemDir, tests: collectTests() });
     });
     document.getElementById('stopRun').addEventListener('click', () => {
       vscode.postMessage({ type: 'stopTests' });

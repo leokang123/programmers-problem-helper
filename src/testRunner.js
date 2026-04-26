@@ -23,9 +23,7 @@ const {
   parseCompilerDiagnostics,
 } = require("./errorFormatting");
 const {
-  extractExamplesFromMarkdown,
-} = require("./problemParsing");
-const {
+  loadProblemExamples,
   readText,
 } = require("./problemStore");
 
@@ -111,11 +109,9 @@ class TestRunner {
 
   // 테스트 러너를 생성하고 각 예제를 실행합니다.
   async runSamples(problemDir, customTestsText = "", selectedCppPath) {
-    const mdPath = path.join(problemDir, "problem.md");
     const cppPath = selectedCppPath || path.join(problemDir, "solution.cpp");
-    const md = await readText(vscode.Uri.file(mdPath));
     const cpp = await readText(vscode.Uri.file(cppPath));
-    const examples = customTestsText.trim() ? parseCustomTests(customTestsText) : extractExamplesFromMarkdown(md);
+    const examples = customTestsText.trim() ? parseCustomTests(customTestsText) : await loadProblemExamples(problemDir);
     const signature = parseSolutionSignature(cpp);
 
     if (examples.length === 0) {

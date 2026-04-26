@@ -42,8 +42,15 @@ function activate(context) {
   });
   sidebarProvider = new ProgrammersSidebarProvider(context, {
     create: async (message) => problemCommands.createProblemFromId(String(message.lessonId || "")),
-    runSamples: async () => testRunner.runFromCommand(context, "", undefined, () => problemCommands.getProblemDir()),
-    runCustom: async (message) => problemCommands.runCustomTestsFromMessage(message.tests || []),
+    runSamples: async (message) => {
+      const problemDir = String(message.problemDir || "");
+      if (!problemDir) {
+        vscode.window.showInformationMessage("먼저 문제를 열어주세요.");
+        return;
+      }
+      await testRunner.runFromCommand(context, "", problemDir, () => undefined);
+    },
+    runCustom: async (message) => problemCommands.runCustomTestsFromMessage(message.tests || [], String(message.problemDir || "")),
     stopTests: async () => testRunner.stop(),
     openLast: async () => problemCommands.openLastProblem(),
     toggleReview: async (message) => problemCommands.toggleReview(String(message.problemDir || ""), Boolean(message.review)),

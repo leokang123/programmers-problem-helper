@@ -289,12 +289,17 @@ class ProblemCommands {
   }
 
   // Webview에서 받은 커스텀 테스트를 저장하고 실행합니다.
-  async runCustomTestsFromMessage(tests) {
-    const target = await this.getProblemDir();
-    if (!target) {
+  async runCustomTestsFromMessage(tests, problemDir) {
+    const safeDir = await this.validateProblemDir(problemDir);
+    if (!safeDir) {
+      vscode.window.showInformationMessage("먼저 문제를 열어주세요.");
       return;
     }
 
+    const target = {
+      problemDir: safeDir,
+      cppPath: path.join(safeDir, "solution.cpp"),
+    };
     await saveCustomTests(target.problemDir, tests);
     await this.runTests(JSON.stringify(tests || []), target);
   }

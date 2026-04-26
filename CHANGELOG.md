@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.0.11
+
+- Run sample tests from stored `programmers.json` examples, backfilling from `problem.md` only when needed.
+- Require an explicitly opened current problem before running sidebar sample or custom tests.
+
 ## 0.0.10
 
 - Add a sidebar memo action that opens per-problem `notes.md` files.
