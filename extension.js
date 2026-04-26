@@ -1,17 +1,8 @@
 const vscode = require("vscode");
 const cp = require("child_process");
 const {
-  ProblemCommands,
-} = require("./src/problemCommands");
-const {
-  stopDockerRuntimeContainers,
-} = require("./src/dockerRuntime");
-const {
   ProgrammersSidebarProvider,
 } = require("./src/sidebarProvider");
-const {
-  TestRunner,
-} = require("./src/testRunner");
 
 let sidebarProvider;
 let problemCommands;
@@ -23,6 +14,93 @@ let diagnosticCollection;
 function activate(context) {
   outputChannel = vscode.window.createOutputChannel("Programmers Helper");
   diagnosticCollection = vscode.languages.createDiagnosticCollection("programmers-helper");
+  sidebarProvider = new ProgrammersSidebarProvider(context, {
+    create: async (message) => {
+      const { problemCommands } = ensureServices(context);
+      await problemCommands.createProblemFromId(String(message.lessonId || ""));
+    },
+    runSamples: async (message) => {
+      const { testRunner } = ensureServices(context);
+      const problemDir = String(message.problemDir || "");
+      if (!problemDir) {
+        vscode.window.showInformationMessage("먼저 문제를 열어주세요.");
+        return;
+      }
+      await testRunner.runFromCommand(context, "", problemDir, () => undefined);
+    },
+    runCustom: async (message) => {
+      const { problemCommands } = ensureServices(context);
+      await problemCommands.runCustomTestsFromMessage(message.tests || [], String(message.problemDir || ""));
+    },
+    stopTests: async () => {
+      testRunner?.stop();
+    },
+    openLast: async () => {
+      const { problemCommands } = ensureServices(context);
+      await problemCommands.openLastProblem();
+    },
+    toggleReview: async (message) => {
+      const { problemCommands } = ensureServices(context);
+      await problemCommands.toggleReview(String(message.problemDir || ""), Boolean(message.review));
+    },
+    resetCurrentSolution: async (message) => {
+      const { problemCommands } = ensureServices(context);
+      await problemCommands.resetCurrentSolution(String(message.problemDir || ""));
+    },
+    startReviewAttempt: async (message) => {
+      const { problemCommands } = ensureServices(context);
+      await problemCommands.startReviewAttempt(String(message.problemDir || ""));
+    },
+    openNotes: async (message) => {
+      const { problemCommands } = ensureServices(context);
+      await problemCommands.openNotes(String(message.problemDir || ""));
+    },
+    openSolutionSnapshot: async (message) => {
+      const { problemCommands } = ensureServices(context);
+      await problemCommands.openSolutionSnapshot(String(message.problemDir || ""), String(message.snapshotPath || ""));
+    },
+    deleteSolutionSnapshot: async (message) => {
+      const { problemCommands } = ensureServices(context);
+      await problemCommands.deleteSolutionSnapshot(String(message.problemDir || ""), String(message.snapshotPath || ""));
+    },
+    openProblem: async (message) => {
+      const { problemCommands } = ensureServices(context);
+      await problemCommands.openProblemFromDir(String(message.problemDir || ""));
+    },
+    deleteProblem: async (message) => {
+      const { problemCommands } = ensureServices(context);
+      await problemCommands.deleteProblem(String(message.problemDir || ""));
+    },
+  });
+
+  context.subscriptions.push(
+    outputChannel,
+    diagnosticCollection,
+    vscode.window.registerWebviewViewProvider("programmersHelper.sidebar", sidebarProvider),
+    vscode.commands.registerCommand("programmersHelper.createProblem", async () => {
+      const { problemCommands } = ensureServices(context);
+      await problemCommands.createProblemFromInput();
+    }),
+    vscode.commands.registerCommand("programmersHelper.runSamples", async () => {
+      const { problemCommands, testRunner } = ensureServices(context);
+      await testRunner.runFromCommand(context, "", undefined, () => problemCommands.getProblemDir());
+    })
+  );
+}
+
+// Webview 표시 전 activation 경로를 가볍게 유지하기 위해 명령 구현은 실제 사용 시점에 로드합니다.
+function ensureServices(context) {
+  if (problemCommands && testRunner) {
+    return { problemCommands, testRunner };
+  }
+
+  const {
+    ProblemCommands,
+  } = require("./src/problemCommands");
+  const {
+    TestRunner,
+  } = require("./src/testRunner");
+
   testRunner = new TestRunner({
     outputChannel,
     diagnosticCollection,
@@ -40,46 +118,17 @@ function activate(context) {
       await testRunner.runFromCommand(context, customTestsText, providedProblemDir, () => problemCommands.getProblemDir());
     },
   });
-  sidebarProvider = new ProgrammersSidebarProvider(context, {
-    create: async (message) => problemCommands.createProblemFromId(String(message.lessonId || "")),
-    runSamples: async (message) => {
-      const problemDir = String(message.problemDir || "");
-      if (!problemDir) {
-        vscode.window.showInformationMessage("먼저 문제를 열어주세요.");
-        return;
-      }
-      await testRunner.runFromCommand(context, "", problemDir, () => undefined);
-    },
-    runCustom: async (message) => problemCommands.runCustomTestsFromMessage(message.tests || [], String(message.problemDir || "")),
-    stopTests: async () => testRunner.stop(),
-    openLast: async () => problemCommands.openLastProblem(),
-    toggleReview: async (message) => problemCommands.toggleReview(String(message.problemDir || ""), Boolean(message.review)),
-    resetCurrentSolution: async (message) => problemCommands.resetCurrentSolution(String(message.problemDir || "")),
-    startReviewAttempt: async (message) => problemCommands.startReviewAttempt(String(message.problemDir || "")),
-    openNotes: async (message) => problemCommands.openNotes(String(message.problemDir || "")),
-    openSolutionSnapshot: async (message) => problemCommands.openSolutionSnapshot(String(message.problemDir || ""), String(message.snapshotPath || "")),
-    deleteSolutionSnapshot: async (message) => problemCommands.deleteSolutionSnapshot(String(message.problemDir || ""), String(message.snapshotPath || "")),
-    openProblem: async (message) => problemCommands.openProblemFromDir(String(message.problemDir || "")),
-    deleteProblem: async (message) => problemCommands.deleteProblem(String(message.problemDir || "")),
-  });
 
-  context.subscriptions.push(
-    outputChannel,
-    diagnosticCollection,
-    vscode.window.registerWebviewViewProvider("programmersHelper.sidebar", sidebarProvider),
-    vscode.commands.registerCommand("programmersHelper.createProblem", async () => {
-      await problemCommands.createProblemFromInput();
-    }),
-    vscode.commands.registerCommand("programmersHelper.runSamples", async () => {
-      await testRunner.runFromCommand(context, "", undefined, () => problemCommands.getProblemDir());
-    })
-  );
+  return { problemCommands, testRunner };
 }
 
 // 확장 종료 시 실행 중인 프로세스와 컨테이너를 정리합니다.
 async function deactivate() {
   testRunner?.stop();
   try {
+    const {
+      stopDockerRuntimeContainers,
+    } = require("./src/dockerRuntime");
     const stopped = await stopDockerRuntimeContainers({ execCommand });
     if (stopped.length > 0) {
       outputChannel?.appendLine(`[Programmers Helper] Docker runtime stopped: ${stopped.join(", ")}`);

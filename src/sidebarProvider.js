@@ -1,8 +1,4 @@
 const vscode = require("vscode");
-const {
-  loadProblems,
-  resolveProgrammersDir,
-} = require("./problemStore");
 
 // 사이드바 Webview와 메시지 핸들링을 관리합니다.
 class ProgrammersSidebarProvider {
@@ -42,6 +38,11 @@ class ProgrammersSidebarProvider {
 
   // 문제 목록과 현재 문제 상태를 새로 보냅니다.
   async refreshProblems(options = {}) {
+    await Promise.resolve();
+    const {
+      loadProblems,
+      resolveProgrammersDir,
+    } = require("./problemStore");
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     const programmersDir = await resolveProgrammersDir(this.context, workspaceFolder?.uri);
     const cacheKey = programmersDir?.fsPath || "";
@@ -92,14 +93,7 @@ function buildSidebarHtml(nonce) {
     button { width: 100%; margin-top: 6px; padding: 6px 7px; border: 0; background: var(--vscode-button-background); color: var(--vscode-button-foreground); cursor: pointer; }
     button.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
     button:hover { background: var(--vscode-button-hoverBackground); }
-    .startup-progress { position: fixed; top: 0; left: 0; z-index: 10; width: 100%; height: 2px; overflow: hidden; opacity: 0; pointer-events: none; transition: opacity 120ms ease-out; }
-    .startup-progress::before { content: ""; position: absolute; top: 0; bottom: 0; left: -35%; width: 35%; background: var(--vscode-progressBar-background); animation: startup-progress-slide 1.1s ease-in-out infinite; }
-    body.loading .startup-progress { opacity: 1; }
-    @keyframes startup-progress-slide {
-      from { transform: translateX(0); }
-      to { transform: translateX(385%); }
-    }
-    .app { height: 100%; box-sizing: border-box; display: grid; grid-template-rows: auto minmax(0, 58fr) minmax(0, 42fr); gap: 4px; padding: 6px 4px 4px; overflow: hidden; }
+    .app { height: 100%; box-sizing: border-box; display: grid; grid-template-rows: auto minmax(0, 58fr) minmax(0, 42fr); gap: 4px; padding: 4px; overflow: hidden; }
     .app.tests-collapsed { grid-template-rows: auto auto minmax(0, 1fr); }
     .app.list-collapsed { grid-template-rows: auto minmax(0, 1fr) auto; }
     .app.tests-collapsed.list-collapsed { grid-template-rows: auto auto auto; align-content: start; }
@@ -163,8 +157,7 @@ function buildSidebarHtml(nonce) {
     .hint { margin-top: 6px; font-size: 11px; line-height: 1.4; color: var(--vscode-descriptionForeground); }
   </style>
 </head>
-<body class="loading">
-  <div class="startup-progress" aria-hidden="true"></div>
+<body>
   <div class="app">
     <section id="topPane" class="pane top-pane collapsible-pane">
       <button id="toggleTop" class="pane-title toggle-title" type="button" aria-expanded="true">
@@ -261,13 +254,6 @@ function buildSidebarHtml(nonce) {
     let testCount = 0;
     let problems = [];
     let currentProblemDir = '';
-    let initialLoadFinished = false;
-
-    function finishInitialLoad() {
-      if (initialLoadFinished) return;
-      initialLoadFinished = true;
-      document.body.classList.remove('loading');
-    }
 
     function setPaneCollapsed(pane, button, className, collapsed) {
       const body = pane.querySelector('.pane-body');
@@ -586,7 +572,6 @@ function buildSidebarHtml(nonce) {
       if (event.data.type === 'problems') {
         problems = event.data.problems || [];
         renderProblems();
-        finishInitialLoad();
       }
       if (event.data.type === 'currentProblem') {
         currentProblemDir = event.data.problem?.problemDir || '';
@@ -594,7 +579,6 @@ function buildSidebarHtml(nonce) {
         renderProblems();
       }
     });
-    setTimeout(finishInitialLoad, 5000);
     updateCurrentActions();
     updatePaneSummaries();
     vscode.postMessage({ type: 'refreshProblems' });
