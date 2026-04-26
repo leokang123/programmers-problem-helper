@@ -8,6 +8,7 @@
 - Reuse compiled test runner binaries when the solution, generated runner code, and compile flags have not changed.
 - Reduce test-run memory usage by counting results per test instead of accumulating all output.
 - Cache sidebar problem summaries in memory and force a full rescan only after explicit refreshes or file-changing actions.
+- Restore detailed `clang++` compile error output after the capture buffer fix.
 
 ## 0.0.10
 
