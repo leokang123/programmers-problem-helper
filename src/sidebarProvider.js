@@ -11,6 +11,8 @@ class ProgrammersSidebarProvider {
     this.context = context;
     this.handlers = handlers;
     this.view = undefined;
+    this.problemListCache = undefined;
+    this.problemListRefreshPromise = undefined;
   }
 
   // Webview가 열릴 때 HTML과 메시지 핸들러를 설정합니다.
@@ -18,11 +20,11 @@ class ProgrammersSidebarProvider {
     this.view = webviewView;
     webviewView.webview.options = { enableScripts: true };
     webviewView.webview.html = this.getHtml();
-    this.refreshProblems();
+    this.refreshProblems({ force: true });
 
     webviewView.webview.onDidReceiveMessage(async (message) => {
       if (message.type === "refreshProblems") {
-        await this.refreshProblems();
+        await this.refreshProblems({ force: Boolean(message.force) });
         return;
       }
 
@@ -39,11 +41,32 @@ class ProgrammersSidebarProvider {
   }
 
   // 문제 목록과 현재 문제 상태를 새로 보냅니다.
-  async refreshProblems() {
+  async refreshProblems(options = {}) {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     const programmersDir = await resolveProgrammersDir(this.context, workspaceFolder?.uri);
-    const problems = programmersDir ? await loadProblems(programmersDir) : [];
-    this.post({ type: "problems", problems });
+    const cacheKey = programmersDir?.fsPath || "";
+    if (!options.force && this.problemListCache?.cacheKey === cacheKey) {
+      this.post({ type: "problems", problems: this.problemListCache.problems });
+      return;
+    }
+
+    if (!options.force && this.problemListRefreshPromise?.cacheKey === cacheKey) {
+      const problems = await this.problemListRefreshPromise.promise;
+      this.post({ type: "problems", problems });
+      return;
+    }
+
+    const promise = programmersDir ? loadProblems(programmersDir) : Promise.resolve([]);
+    this.problemListRefreshPromise = { cacheKey, promise };
+    try {
+      const problems = await promise;
+      this.problemListCache = { cacheKey, problems };
+      this.post({ type: "problems", problems });
+    } finally {
+      if (this.problemListRefreshPromise?.promise === promise) {
+        this.problemListRefreshPromise = undefined;
+      }
+    }
   }
 
   // 사이드바 HTML을 생성합니다.
@@ -530,7 +553,7 @@ function buildSidebarHtml(nonce) {
       updatePaneSummaries();
     });
     document.getElementById('refreshProblems').addEventListener('click', () => {
-      vscode.postMessage({ type: 'refreshProblems' });
+      vscode.postMessage({ type: 'refreshProblems', force: true });
     });
     window.addEventListener('message', (event) => {
       if (event.data.type === 'status') {

@@ -1,4 +1,5 @@
 const cp = require("child_process");
+const crypto = require("crypto");
 const path = require("path");
 const vscode = require("vscode");
 const {
@@ -128,7 +129,9 @@ class TestRunner {
     const debugBinaryPath = ".programmers-helper/test_runner_debug";
     const includePath = path.relative(runnerDir, cppPath).split(path.sep).join(path.posix.sep);
     const runnerCode = buildRunner(signature, examples, includePath);
-    await vscode.workspace.fs.writeFile(vscode.Uri.file(runnerPath), Buffer.from(runnerCode, "utf8"));
+    const fastFingerprint = createRunnerFingerprint(runnerCode, cpp, DOCKER_FAST_COMPILE_FLAGS);
+    const debugFingerprint = createRunnerFingerprint(runnerCode, cpp, DOCKER_DEBUG_COMPILE_FLAGS);
+    await writeFileIfChanged(runnerPath, runnerCode);
 
     this.outputChannel.clear();
     this.outputChannel.appendLine(`[Programmers Helper] ${path.basename(problemDir)} ${customTestsText.trim() ? "커스텀" : "샘플"} 테스트`);
@@ -139,7 +142,7 @@ class TestRunner {
     const runtime = await this.ensureDockerRuntimeReady(problemDir);
     this.clearProblemDiagnostics(problemDir);
     try {
-      await this.compileRunner(runtime, problemDir, runnerPath, fastBinaryPath, DOCKER_FAST_COMPILE_FLAGS, "컴파일");
+      await this.compileRunner(runtime, problemDir, runnerPath, fastBinaryPath, DOCKER_FAST_COMPILE_FLAGS, "컴파일", fastFingerprint);
     } catch (error) {
       this.applyCompilerDiagnostics(problemDir, error);
       throw error;
@@ -148,7 +151,8 @@ class TestRunner {
       throw new Error("테스트 실행이 중지되었습니다.");
     }
 
-    let output = "";
+    let passed = 0;
+    let failed = 0;
     let debugBinaryReady = false;
     for (let index = 0; index < examples.length; index++) {
       if (this.stopRequested) {
@@ -156,13 +160,16 @@ class TestRunner {
       }
 
       try {
-        output += await this.runTestBinary(runtime, problemDir, fastBinaryPath, index + 1, {
+        const testOutput = await this.runTestBinary(runtime, problemDir, fastBinaryPath, index + 1, {
           label: `테스트 #${index + 1}`,
           timeoutMs: TEST_TIMEOUT_MS,
           streamOutput: true,
           streamStderr: false,
           streamSanitizedRuntime: false,
         });
+        const counts = countTestResultOutput(testOutput);
+        passed += counts.passed;
+        failed += counts.failed;
       } catch (error) {
         if (!shouldRetryWithSanitizer(error)) {
           throw error;
@@ -170,7 +177,7 @@ class TestRunner {
 
         if (!debugBinaryReady) {
           try {
-            await this.compileRunner(runtime, problemDir, runnerPath, debugBinaryPath, DOCKER_DEBUG_COMPILE_FLAGS, "디버그 컴파일");
+            await this.compileRunner(runtime, problemDir, runnerPath, debugBinaryPath, DOCKER_DEBUG_COMPILE_FLAGS, "디버그 컴파일", debugFingerprint);
             debugBinaryReady = true;
           } catch (compileError) {
             this.applyCompilerDiagnostics(problemDir, compileError);
@@ -196,8 +203,6 @@ class TestRunner {
       }
     }
 
-    const passed = (output.match(/\[PASS\]/g) || []).length;
-    const failed = (output.match(/\[FAIL\]/g) || []).length + (output.match(/\[TIMEOUT\]/g) || []).length;
     const summary = `테스트 완료: ${passed} 통과, ${failed} 실패`;
     this.outputChannel.appendLine("");
     this.outputChannel.appendLine(summary);
@@ -225,7 +230,12 @@ class TestRunner {
   }
 
   // 생성된 C++ 러너를 컴파일합니다.
-  async compileRunner(runtime, problemDir, runnerPath, outputBinaryPath, compileFlags, label) {
+  async compileRunner(runtime, problemDir, runnerPath, outputBinaryPath, compileFlags, label, fingerprint) {
+    if (fingerprint && await isCompiledRunnerFresh(problemDir, outputBinaryPath, fingerprint)) {
+      this.outputChannel.appendLine(`[Programmers Helper] ${label} 생략: 기존 바이너리를 재사용합니다.`);
+      return;
+    }
+
     await this.execFile("docker", [
       "exec",
       "-i",
@@ -242,7 +252,7 @@ class TestRunner {
       label,
     });
 
-    return this.execFile("docker", [
+    await this.execFile("docker", [
       "exec",
       "-i",
       "-w",
@@ -255,6 +265,13 @@ class TestRunner {
       timeoutMs: COMPILE_TIMEOUT_MS,
       label: `${label} 권한 설정`,
     });
+
+    if (fingerprint) {
+      await writeJsonFile(path.join(problemDir, `${outputBinaryPath}.meta.json`), {
+        fingerprint,
+        updatedAt: new Date().toISOString(),
+      });
+    }
   }
 
   // 컴파일된 테스트 바이너리를 한 케이스만 실행합니다.
@@ -451,6 +468,64 @@ function appendCapturedOutput(current, chunk, maxChars) {
   }
 
   return { text: current + chunk.slice(0, remaining), truncated: true };
+}
+
+function createRunnerFingerprint(runnerCode, solutionCode, compileFlags) {
+  return crypto
+    .createHash("sha256")
+    .update(JSON.stringify({
+      version: 1,
+      runnerCode,
+      solutionCode,
+      compileFlags,
+    }))
+    .digest("hex");
+}
+
+async function writeFileIfChanged(filePath, contents) {
+  try {
+    const current = await readText(vscode.Uri.file(filePath));
+    if (current === contents) {
+      return;
+    }
+  } catch {
+    // 파일이 없거나 읽을 수 없으면 아래에서 새로 씁니다.
+  }
+
+  await vscode.workspace.fs.writeFile(vscode.Uri.file(filePath), Buffer.from(contents, "utf8"));
+}
+
+async function isCompiledRunnerFresh(problemDir, binaryPath, fingerprint) {
+  try {
+    await vscode.workspace.fs.stat(vscode.Uri.file(path.join(problemDir, binaryPath)));
+    const metadata = await readJsonFile(path.join(problemDir, `${binaryPath}.meta.json`));
+    return metadata?.fingerprint === fingerprint;
+  } catch {
+    return false;
+  }
+}
+
+async function readJsonFile(filePath) {
+  try {
+    return JSON.parse(await readText(vscode.Uri.file(filePath)));
+  } catch {
+    return undefined;
+  }
+}
+
+async function writeJsonFile(filePath, value) {
+  await vscode.workspace.fs.writeFile(
+    vscode.Uri.file(filePath),
+    Buffer.from(JSON.stringify(value, null, 2) + "\n", "utf8")
+  );
+}
+
+function countTestResultOutput(output) {
+  const text = String(output || "");
+  return {
+    passed: (text.match(/\[PASS\]/g) || []).length,
+    failed: (text.match(/\[FAIL\]/g) || []).length + (text.match(/\[TIMEOUT\]/g) || []).length,
+  };
 }
 
 // 런타임 오류를 sanitizer로 재시도할지 판단합니다.

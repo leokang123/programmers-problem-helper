@@ -76,7 +76,7 @@ class ProblemCommands {
         }
       );
 
-      const runtimeStatus = await this.openProblemFromDir(result.problemDir.fsPath);
+      const runtimeStatus = await this.openProblemFromDir(result.problemDir.fsPath, { forceRefreshProblems: true });
       if (runtimeStatus?.kind === "ready") {
         vscode.window.showInformationMessage(`Programmers ${lessonId} 준비 완료`);
       } else {
@@ -99,7 +99,7 @@ class ProblemCommands {
   }
 
   // 검증된 문제 폴더를 에디터에 엽니다.
-  async openProblemFromDir(problemDir) {
+  async openProblemFromDir(problemDir, options = {}) {
     const safeDir = await this.validateProblemDir(problemDir);
     if (!safeDir) {
       vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다.");
@@ -109,7 +109,7 @@ class ProblemCommands {
     await this.context.workspaceState.update("lastProblemDir", safeDir);
     await openProblem(vscode.Uri.file(path.join(safeDir, "problem.md")), vscode.Uri.file(path.join(safeDir, "solution.cpp")));
     const runtimeStatus = await this.prepareDockerRuntimeOnOpen(safeDir);
-    await this.showOpenedProblemState(safeDir, runtimeStatus);
+    await this.showOpenedProblemState(safeDir, runtimeStatus, { forceRefreshProblems: Boolean(options.forceRefreshProblems) });
     return runtimeStatus;
   }
 
@@ -127,7 +127,7 @@ class ProblemCommands {
     await this.context.workspaceState.update("lastProblemDir", safeDir);
     await openProblem(vscode.Uri.file(path.join(safeDir, "problem.md")), vscode.Uri.file(path.join(safeDir, "solution.cpp")));
     const runtimeStatus = await this.prepareDockerRuntimeOnOpen(safeDir);
-    await this.showOpenedProblemState(safeDir, runtimeStatus);
+    await this.showOpenedProblemState(safeDir, runtimeStatus, { forceRefreshProblems: true });
 
     if (result.resetToInitialCode) {
       vscode.window.showInformationMessage("이전 풀이를 보관하고 새 풀이 템플릿을 열었습니다.");
@@ -230,7 +230,7 @@ class ProblemCommands {
       return;
     }
 
-    await this.refreshProblems?.();
+    await this.refreshProblems?.({ force: true });
     vscode.window.showInformationMessage("이전 풀이 기록을 삭제했습니다.");
   }
 
@@ -244,7 +244,7 @@ class ProblemCommands {
 
     await writeReviewState(safeDir, review);
     await this.context.workspaceState.update("lastProblemDir", safeDir);
-    await this.refreshProblems?.();
+    await this.refreshProblems?.({ force: true });
   }
 
   // 문제 폴더를 휴지통 또는 직접 삭제합니다.
@@ -284,7 +284,7 @@ class ProblemCommands {
       this.postMessage?.({ type: "status", kind: "", text: "대기 중\n\n문제 번호를 입력하고 생성 버튼을 누르세요." });
     }
 
-    await this.refreshProblems?.();
+    await this.refreshProblems?.({ force: true });
     vscode.window.showInformationMessage(`${folderName} 삭제 완료`);
   }
 
@@ -305,7 +305,7 @@ class ProblemCommands {
   }
 
   // 열린 문제 상태를 사이드바에 반영합니다.
-  async showOpenedProblemState(problemDir, runtimeStatus = { kind: "", detail: "" }) {
+  async showOpenedProblemState(problemDir, runtimeStatus = { kind: "", detail: "" }, options = {}) {
     const problem = await loadProblemInfo(problemDir);
     const examples = await loadProblemExamples(problemDir);
     const savedCustomTests = await loadSavedCustomTests(problemDir);
@@ -313,7 +313,7 @@ class ProblemCommands {
     await this.context.workspaceState.update("lastProblemDir", problemDir);
     this.postMessage?.({ type: "currentProblem", problem });
     this.postMessage?.({ type: "customTests", tests: savedCustomTests.length > 0 ? savedCustomTests : examples.length > 0 ? [examples[0]] : [] });
-    await this.refreshProblems?.();
+    await this.refreshProblems?.({ force: Boolean(options.forceRefreshProblems) });
     const statusKind = runtimeStatus.kind || "";
     const statusTitle = statusKind === "ready"
       ? "준비 완료"

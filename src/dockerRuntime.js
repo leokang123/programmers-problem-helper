@@ -1,11 +1,15 @@
 const path = require("path");
-const cp = require("child_process");
 const {
   DOCKER_CONTAINER_PREFIX,
   DOCKER_IMAGE,
   DOCKER_WORKSPACE_ROOT,
   getDockerfilePath,
 } = require("./config");
+
+const runtimeCache = {
+  dockerAvailable: false,
+  imageAvailable: false,
+};
 
 // 문제를 열 때 Docker 런타임을 준비하고 상태 메시지를 만듭니다.
 async function prepareDockerRuntimeOnOpen({ vscode, extensionDir, problemDir, execCommand, limitStatusText, postStatus }) {
@@ -27,12 +31,26 @@ async function prepareDockerRuntimeOnOpen({ vscode, extensionDir, problemDir, ex
 
 // Docker 이미지와 실행 컨테이너를 사용할 수 있게 보장합니다.
 async function ensureDockerRuntimeReady({ vscode, extensionDir, problemDir, execCommand }) {
+  const hadCachedReadiness = runtimeCache.dockerAvailable || runtimeCache.imageAvailable;
+  try {
+    return await ensureDockerRuntimeReadyOnce({ vscode, extensionDir, problemDir, execCommand });
+  } catch (error) {
+    if (!hadCachedReadiness) {
+      throw error;
+    }
+
+    invalidateRuntimeCache();
+    return ensureDockerRuntimeReadyOnce({ vscode, extensionDir, problemDir, execCommand });
+  }
+}
+
+async function ensureDockerRuntimeReadyOnce({ vscode, extensionDir, problemDir, execCommand }) {
   const programmersDir = path.dirname(problemDir);
   const containerName = getDockerContainerName(programmersDir);
   const mountSource = getDockerMountSource(vscode, programmersDir);
   const problemPath = getDockerProblemPath(programmersDir, problemDir);
 
-  ensureDockerAvailable(vscode);
+  await ensureDockerAvailable({ vscode, execCommand });
   await ensureDockerImageAvailable({ extensionDir, execCommand });
 
   const inspect = await execCommand("docker", ["inspect", "--format", "{{.State.Running}}", containerName], {
@@ -88,26 +106,32 @@ async function stopDockerRuntimeContainers({ execCommand }) {
 }
 
 // Docker CLI가 실행 가능한지 확인합니다.
-function ensureDockerAvailable(vscode) {
-  const result = cp.spawnSync("docker", ["version", "--format", "{{.Server.Version}}"], {
-    encoding: "utf8",
-    timeout: 5000,
-  });
-
-  if (result.error?.code === "ENOENT") {
-    const remoteHint = getRemoteDockerHint(vscode);
-    throw new Error(`Docker를 찾지 못했습니다.\nDocker Desktop 또는 docker 엔진을 설치한 뒤 다시 시도해주세요.${remoteHint ? `\n${remoteHint}` : ""}`);
+async function ensureDockerAvailable({ vscode, execCommand }) {
+  if (runtimeCache.dockerAvailable) {
+    return;
   }
 
-  if (result.error) {
-    throw result.error;
+  let result;
+  try {
+    result = await execCommand("docker", ["version", "--format", "{{.Server.Version}}"], {
+      allowNonZeroExit: true,
+      timeoutMs: 5000,
+    });
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      const remoteHint = getRemoteDockerHint(vscode);
+      throw new Error(`Docker를 찾지 못했습니다.\nDocker Desktop 또는 docker 엔진을 설치한 뒤 다시 시도해주세요.${remoteHint ? `\n${remoteHint}` : ""}`);
+    }
+    throw error;
   }
 
-  if (typeof result.status === "number" && result.status !== 0) {
+  if (result.code !== 0) {
     const detail = (result.stderr || result.stdout || "").trim();
     const remoteHint = getRemoteDockerHint(vscode);
     throw new Error(`Docker 실행을 확인하지 못했습니다.${detail ? `\n${detail}` : ""}${remoteHint ? `\n${remoteHint}` : ""}`);
   }
+
+  runtimeCache.dockerAvailable = true;
 }
 
 // Dev Container 환경에서 필요한 Docker 안내 문구를 만듭니다.
@@ -120,16 +144,27 @@ function getRemoteDockerHint(vscode) {
 
 // 런타임 이미지가 없으면 Dockerfile로 빌드합니다.
 async function ensureDockerImageAvailable({ extensionDir, execCommand }) {
+  if (runtimeCache.imageAvailable) {
+    return;
+  }
+
   const inspect = await execCommand("docker", ["image", "inspect", DOCKER_IMAGE], {
     allowNonZeroExit: true,
   });
   if (inspect.code === 0) {
+    runtimeCache.imageAvailable = true;
     return;
   }
 
   await execCommand("docker", ["build", "-t", DOCKER_IMAGE, "-f", getDockerfilePath(extensionDir), extensionDir], {
     cwd: extensionDir,
   });
+  runtimeCache.imageAvailable = true;
+}
+
+function invalidateRuntimeCache() {
+  runtimeCache.dockerAvailable = false;
+  runtimeCache.imageAvailable = false;
 }
 
 // Programmers 폴더별 고정 컨테이너 이름을 만듭니다.

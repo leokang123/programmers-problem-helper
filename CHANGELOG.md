@@ -4,6 +4,10 @@
 
 - Run sample tests from stored `programmers.json` examples, backfilling from `problem.md` only when needed.
 - Require an explicitly opened current problem before running sidebar sample or custom tests.
+- Cache Docker readiness checks during an extension session and retry with a fresh check if the cached path fails.
+- Reuse compiled test runner binaries when the solution, generated runner code, and compile flags have not changed.
+- Reduce test-run memory usage by counting results per test instead of accumulating all output.
+- Cache sidebar problem summaries in memory and force a full rescan only after explicit refreshes or file-changing actions.
 
 ## 0.0.10
 

@@ -35,7 +35,7 @@ function activate(context) {
     extensionDir: __dirname,
     execCommand,
     postMessage: (message) => sidebarProvider?.post(message),
-    refreshProblems: async () => sidebarProvider?.refreshProblems(),
+    refreshProblems: async (options) => sidebarProvider?.refreshProblems(options),
     runTests: async (customTestsText, providedProblemDir) => {
       await testRunner.runFromCommand(context, customTestsText, providedProblemDir, () => problemCommands.getProblemDir());
     },
@@ -96,6 +96,19 @@ function execCommand(command, args, options = {}) {
     const child = cp.spawn(command, args, { cwd: options.cwd });
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
+    let killTimer;
+    const timeout = options.timeoutMs ? setTimeout(() => {
+      timedOut = true;
+      if (!child.killed) {
+        child.kill("SIGTERM");
+        killTimer = setTimeout(() => {
+          if (!child.killed) {
+            child.kill("SIGKILL");
+          }
+        }, 1000);
+      }
+    }, options.timeoutMs) : undefined;
 
     child.stdout.on("data", (chunk) => {
       stdout += chunk.toString();
@@ -104,10 +117,18 @@ function execCommand(command, args, options = {}) {
       stderr += chunk.toString();
     });
     child.on("error", (error) => {
+      if (timeout) clearTimeout(timeout);
+      if (killTimer) clearTimeout(killTimer);
       reject(error);
     });
     child.on("close", (code, signal) => {
+      if (timeout) clearTimeout(timeout);
+      if (killTimer) clearTimeout(killTimer);
       const result = { code, signal, stdout, stderr };
+      if (timedOut) {
+        reject(new Error(`${command} ${args.join(" ")} 시간이 초과되었습니다.`));
+        return;
+      }
       if (options.allowNonZeroExit || code === 0) {
         resolve(result);
         return;
