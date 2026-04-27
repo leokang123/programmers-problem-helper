@@ -8,10 +8,12 @@
 ### 진입점
 
 - `extension.js`
-  - `activate(context)`에서 Output 채널, 진단 컬렉션, `TestRunner`, `ProblemCommands`, `ProgrammersSidebarProvider`를 생성한다.
+  - `activate(context)`에서 Output 채널, 진단 컬렉션, `ProgrammersSidebarProvider`를 생성한다.
+  - `TestRunner`와 `ProblemCommands`는 `ensureServices(context)`에서 명령이나 Webview 액션이 처음 실행될 때 lazy-load한다.
   - 사이드바 Webview 메시지를 실제 명령으로 연결한다.
   - VS Code 명령 `programmersHelper.createProblem`, `programmersHelper.runSamples`를 등록한다.
-  - `deactivate()`에서 실행 중인 테스트를 멈추고 helper Docker 컨테이너를 정리한다.
+  - `programmersHelper.executionMode` 설정 변경을 감지해 실행 모드 전환 피드백과 Docker 컨테이너 정리를 처리한다.
+  - `deactivate()`에서 실행 중인 테스트를 멈추고 helper Docker 컨테이너 정리를 백그라운드 프로세스에 맡긴다.
 
 ### 주요 모듈
 
@@ -215,10 +217,18 @@ Programmers/
 `openProblem(mdUri, cppUri)`:
 
 1. `vscode.workspace.saveAll(false)`
-2. `workbench.action.closeAllEditors`
-3. `markdown.showPreview`
-4. `markdown.preview.toggleLock`
-5. `solution.cpp`를 `ViewColumn.Two`에 연다.
+2. `openLockedMarkdownPreview(mdUri, ViewColumn.One)`로 문제 Markdown preview를 왼쪽에 연다.
+   - 우선 `vscode.openWith(..., "vscode.markdown.preview.editor")`를 사용한다.
+   - 실패하면 `markdown.showPreview`와 `markdown.preview.toggleLock` fallback을 사용한다.
+3. `closeInactiveProblemTabs(mdUri, cppUri)`로 같은 `Programmers` 루트의 비활성 `problem.md` 탭을 정리한다.
+4. `showSolution(cppUri)`로 현재 풀이 C++ 파일을 `ViewColumn.Two`에 연다.
+5. `closeStaleSolutionTabs(cppUri)`로 같은 `Programmers` 루트의 오래된 C++ 풀이 탭을 정리한다.
+6. `keepOnlyProblemLayoutTabs(mdUri, cppUri)`로 현재 문제 레이아웃에 맞지 않는 탭을 정리한다.
+
+주의:
+
+- 현재 구현은 전체 에디터를 닫지 않고 필요한 문제 탭만 선별 정리한다.
+- 저장된 풀이 스냅샷을 열 때는 오른쪽 C++ 파일이 `solution.cpp`가 아니라 `.programmers-helper/solutions/solution-*.cpp`일 수 있다.
 
 ### 사이드바 상태 갱신
 
@@ -665,8 +675,9 @@ Dev Container:
 `deactivate()`:
 
 1. `testRunner.stop()`
-2. `stopDockerRuntimeContainers({ execCommand })`
-3. 실행 중인 helper 컨테이너 목록을 찾아 `docker stop`한다.
+2. `stopDockerRuntimeContainersInBackground()`를 호출한다.
+3. 별도 detached Node 프로세스가 실행 중인 helper 컨테이너 목록을 찾아 `docker stop`한다.
+4. 정리 예약에 실패하면 Output 채널에만 기록하고 extension 종료를 막지 않는다.
 
 ### 실행 모드 변경
 
@@ -696,6 +707,7 @@ Dev Container:
 - 사이드바 문제 목록은 메모리의 problem summary cache를 우선 사용하고, 명시적 새로고침 또는 파일 변경 동작 뒤에만 전체 스캔한다.
 - 문제 목록 인덱스가 현재 `Programmers` 루트 밖의 항목을 포함하면 폐기하고 전체 스캔으로 재생성한다.
 - 문제 검색 입력은 짧은 debounce 뒤에 렌더링해 연속 입력 중 불필요한 DOM 재생성을 줄인다.
+- 문제 목록과 풀이기록 목록 클릭은 event delegation으로 처리해 렌더 때마다 행별 이벤트 리스너를 다시 붙이지 않는다.
 
 ### 다음 최적화 후보
 
@@ -706,8 +718,8 @@ Dev Container:
 
 2. Webview 렌더 최적화
    - 위치: `src/sidebarProvider.js`의 inline script
-   - 현재: 검색 입력은 debounce하지만 렌더 시 전체 list innerHTML을 재생성하고 이벤트 리스너를 다시 붙인다.
-   - 방향: 문제 수가 더 커질 때 event delegation, incremental render를 고려한다.
+   - 현재: 검색 입력은 debounce하고 클릭 처리는 event delegation을 사용하지만 렌더 시 전체 list innerHTML은 재생성한다.
+   - 방향: 문제 수가 더 커질 때 incremental render를 고려한다.
 
 ## 작업 시 체크리스트
 

@@ -275,6 +275,8 @@ function buildSidebarHtml(nonce) {
     let currentProblem = undefined;
     let currentProblemDir = '';
     let searchRenderTimer = undefined;
+    let renderedProblems = [];
+    let renderedSnapshots = [];
 
     function setPaneCollapsed(pane, button, className, collapsed) {
       const body = pane.querySelector('.pane-body');
@@ -319,19 +321,24 @@ function buildSidebarHtml(nonce) {
 
       const filter = document.querySelector('input[name="problemFilter"]:checked')?.value || 'all';
       const query = problemSearch.value.trim().toLowerCase();
-      const matched = problems.filter((problem) => {
-        if (!query) return true;
-        return (problem.title || '').toLowerCase().includes(query) || String(problem.lessonId || '').includes(query);
-      });
-      const currentMatchesQuery = currentProblem && (!query
-        || (currentProblem.title || '').toLowerCase().includes(query)
-        || String(currentProblem.lessonId || '').includes(query));
+      const matched = getMatchedProblems(query);
+      const currentMatchesQuery = matchesProblemQuery(currentProblem, query);
       const visibleCount = filter === 'solutions'
         ? (currentMatchesQuery ? buildSolutionRows(currentProblem).length : 0)
         : (filter === 'review' ? matched.filter((problem) => problem.review) : matched).length;
       listSummary.textContent = listPane.classList.contains('collapsed')
         ? (filter === 'solutions' ? '풀이기록 ' + visibleCount + '개' : filter === 'review' ? '다시풀 ' + visibleCount + '개' : '전체 ' + visibleCount + '개')
         : '';
+    }
+
+    function matchesProblemQuery(problem, query) {
+      if (!problem) return false;
+      if (!query) return true;
+      return (problem.title || '').toLowerCase().includes(query) || String(problem.lessonId || '').includes(query);
+    }
+
+    function getMatchedProblems(query) {
+      return problems.filter((problem) => matchesProblemQuery(problem, query));
     }
 
     function formatSnapshotTime(value) {
@@ -357,6 +364,8 @@ function buildSidebarHtml(nonce) {
     }
 
     function renderList(container, visible, emptyText) {
+      renderedProblems = visible;
+      renderedSnapshots = [];
       if (visible.length === 0) {
         container.innerHTML = '<div class="empty">' + escapeHtml(emptyText) + '</div>';
         return;
@@ -372,31 +381,11 @@ function buildSidebarHtml(nonce) {
           '</div>' +
         '</div>'
       )).join('');
-
-      Array.from(container.querySelectorAll('.problem-row')).forEach((row, index) => {
-        const problem = visible[index];
-        row.addEventListener('click', () => {
-          vscode.postMessage({ type: 'openProblem', problemDir: problem.problemDir });
-        });
-        row.querySelector('.review-check').addEventListener('click', (event) => {
-          event.stopPropagation();
-          vscode.postMessage({
-            type: 'toggleReview',
-            problemDir: problem.problemDir,
-            review: event.currentTarget.checked
-          });
-        });
-        row.querySelector('.delete-problem').addEventListener('click', (event) => {
-          event.stopPropagation();
-          vscode.postMessage({
-            type: 'deleteProblem',
-            problemDir: problem.problemDir
-          });
-        });
-      });
     }
 
     function renderSolutionList(container, rows, emptyText) {
+      renderedProblems = [];
+      renderedSnapshots = rows;
       if (rows.length === 0) {
         container.innerHTML = '<div class="empty">' + escapeHtml(emptyText) + '</div>';
         return;
@@ -412,43 +401,14 @@ function buildSidebarHtml(nonce) {
           '</div>' +
         '</div>'
       )).join('');
-
-      Array.from(container.querySelectorAll('.snapshot-row')).forEach((row, index) => {
-        const { problem, snapshot } = rows[index];
-        const open = () => {
-          vscode.postMessage({
-            type: 'openSolutionSnapshot',
-            problemDir: problem.problemDir,
-            snapshotPath: snapshot.path
-          });
-        };
-        row.addEventListener('click', open);
-        row.querySelector('.open-snapshot').addEventListener('click', (event) => {
-          event.stopPropagation();
-          open();
-        });
-        row.querySelector('.delete-snapshot').addEventListener('click', (event) => {
-          event.stopPropagation();
-          vscode.postMessage({
-            type: 'deleteSolutionSnapshot',
-            problemDir: problem.problemDir,
-            snapshotPath: snapshot.path
-          });
-        });
-      });
     }
 
     function renderProblems() {
       const filter = document.querySelector('input[name="problemFilter"]:checked')?.value || 'all';
       const query = problemSearch.value.trim().toLowerCase();
-      const matched = problems.filter((problem) => {
-        if (!query) return true;
-        return (problem.title || '').toLowerCase().includes(query) || String(problem.lessonId || '').includes(query);
-      });
+      const matched = getMatchedProblems(query);
       if (filter === 'solutions') {
-        const currentMatchesQuery = currentProblem && (!query
-          || (currentProblem.title || '').toLowerCase().includes(query)
-          || String(currentProblem.lessonId || '').includes(query));
+        const currentMatchesQuery = matchesProblemQuery(currentProblem, query);
         const rows = currentMatchesQuery ? buildSolutionRows(currentProblem) : [];
         const emptyText = !currentProblem
           ? '현재 열린 문제가 없습니다.'
@@ -521,6 +481,55 @@ function buildSidebarHtml(nonce) {
       })).filter((test) => test.inputsText || test.expectedText);
     }
 
+    function openSnapshot(row) {
+      vscode.postMessage({
+        type: 'openSolutionSnapshot',
+        problemDir: row.problem.problemDir,
+        snapshotPath: row.snapshot.path
+      });
+    }
+
+    function handleProblemListClick(event) {
+      const problemRow = event.target.closest('.problem-row');
+      const snapshotRow = event.target.closest('.snapshot-row');
+
+      if (problemRow) {
+        const problem = renderedProblems[Number(problemRow.dataset.index)];
+        if (!problem) return;
+        if (event.target.closest('.review-check')) {
+          vscode.postMessage({
+            type: 'toggleReview',
+            problemDir: problem.problemDir,
+            review: event.target.checked
+          });
+          return;
+        }
+        if (event.target.closest('.delete-problem')) {
+          vscode.postMessage({
+            type: 'deleteProblem',
+            problemDir: problem.problemDir
+          });
+          return;
+        }
+        vscode.postMessage({ type: 'openProblem', problemDir: problem.problemDir });
+        return;
+      }
+
+      if (snapshotRow) {
+        const row = renderedSnapshots[Number(snapshotRow.dataset.index)];
+        if (!row) return;
+        if (event.target.closest('.delete-snapshot')) {
+          vscode.postMessage({
+            type: 'deleteSolutionSnapshot',
+            problemDir: row.problem.problemDir,
+            snapshotPath: row.snapshot.path
+          });
+          return;
+        }
+        openSnapshot(row);
+      }
+    }
+
     addTest();
     document.getElementById('create').addEventListener('click', () => {
       vscode.postMessage({ type: 'create', lessonId: input.value.trim() });
@@ -582,6 +591,7 @@ function buildSidebarHtml(nonce) {
     document.getElementById('refreshProblems').addEventListener('click', () => {
       vscode.postMessage({ type: 'refreshProblems', force: true });
     });
+    problemList.addEventListener('click', handleProblemListClick);
     window.addEventListener('message', (event) => {
       if (event.data.type === 'status') {
         status.textContent = event.data.text;

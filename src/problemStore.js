@@ -178,7 +178,7 @@ async function readProblemIndex(programmersDir) {
   const entries = index.problems.filter((problem) => problem && typeof problem.problemDir === "string");
   const scopedEntries = entries.filter((problem) => {
     const target = path.resolve(problem.problemDir);
-    return target !== root && target.startsWith(root + path.sep);
+    return isPathInside(root, target);
   });
   if (scopedEntries.length !== entries.length) {
     return undefined;
@@ -432,7 +432,7 @@ async function resetSolutionToInitial(problemDir, cppPath = path.join(problemDir
 
   const root = path.resolve(problemDir);
   const target = path.resolve(cppPath);
-  if ((target !== root && !target.startsWith(root + path.sep)) || path.extname(target) !== ".cpp") {
+  if (!isSameOrInsidePath(root, target) || path.extname(target) !== ".cpp") {
     return false;
   }
 
@@ -527,7 +527,15 @@ function resolveSolutionSnapshotPath(problemDir, snapshotPath) {
 
   const root = path.resolve(problemDir, ".programmers-helper", "solutions");
   const target = path.resolve(problemDir, normalized);
-  return target.startsWith(root + path.sep) ? target : undefined;
+  return isPathInside(root, target) ? target : undefined;
+}
+
+function isSameOrInsidePath(root, target) {
+  return target === root || isPathInside(root, target);
+}
+
+function isPathInside(root, target) {
+  return target.startsWith(root + path.sep);
 }
 
 // 문제 폴더에 필수 파일이 있는지 확인합니다.

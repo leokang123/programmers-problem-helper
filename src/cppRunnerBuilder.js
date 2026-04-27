@@ -24,7 +24,6 @@ function parseSolutionSignature(cpp) {
 function buildRunner(signature, examples, solutionIncludePath = "../solution.cpp", options = {}) {
   const includePath = JSON.stringify(solutionIncludePath);
   const memoryMode = options.memoryMode || "judge";
-  const memoryLabelPrefix = memoryMode === "judge" ? "memory=" : "memory=";
   const memoryValueExpression = memoryMode === "judge"
       ? 'toFixedMemory(currentJudgeMemoryMb()) + "MB"'
       : '"N/A(local)"';
@@ -47,9 +46,9 @@ ${expected}
     double elapsed_ms = chrono::duration<double, milli>(chrono::steady_clock::now() - started_at).count();
     const string memory_label = ${memoryValueExpression};
     if (actual == expected) {
-      cerr << fixed << setprecision(2) << "[PASS] #" << ${index + 1} << " time=" << elapsed_ms << "ms ${memoryLabelPrefix}" << memory_label << " expected=" << repr(expected) << " actual=" << repr(actual) << endl;
+      cerr << fixed << setprecision(2) << "[PASS] #" << ${index + 1} << " time=" << elapsed_ms << "ms memory=" << memory_label << " expected=" << repr(expected) << " actual=" << repr(actual) << endl;
     } else {
-      cerr << fixed << setprecision(2) << "[FAIL] #" << ${index + 1} << " time=" << elapsed_ms << "ms ${memoryLabelPrefix}" << memory_label << " expected=" << repr(expected) << " actual=" << repr(actual) << endl;
+      cerr << fixed << setprecision(2) << "[FAIL] #" << ${index + 1} << " time=" << elapsed_ms << "ms memory=" << memory_label << " expected=" << repr(expected) << " actual=" << repr(actual) << endl;
       failed++;
     }
   }`;
