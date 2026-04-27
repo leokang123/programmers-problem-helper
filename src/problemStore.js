@@ -9,8 +9,20 @@ const {
   slugify,
 } = require("./problemParsing");
 
-// 저장된 문제 목록을 읽고 정렬합니다.
-async function loadProblems(programmersDir) {
+// 저장된 문제 목록을 빠른 인덱스에서 읽고, 필요할 때만 전체 스캔으로 재생성합니다.
+async function loadProblems(programmersDir, options = {}) {
+  if (!options.rebuildIndex) {
+    const indexed = await readProblemIndex(programmersDir);
+    if (indexed) {
+      return indexed;
+    }
+  }
+
+  return rebuildProblemIndex(programmersDir);
+}
+
+// 문제 폴더를 스캔해서 목록 인덱스를 다시 만듭니다.
+async function rebuildProblemIndex(programmersDir) {
   let entries = [];
   try {
     entries = await vscode.workspace.fs.readDirectory(programmersDir);
@@ -26,10 +38,16 @@ async function loadProblems(programmersDir) {
         if (!(await hasProblemFiles(problemDir))) {
           return undefined;
         }
-        return loadProblemInfo(problemDir.fsPath);
+        return loadProblemSummary(problemDir.fsPath);
       })
   )).filter(Boolean);
 
+  const sorted = sortProblemSummaries(problems);
+  await writeProblemIndex(programmersDir, sorted);
+  return sorted;
+}
+
+function sortProblemSummaries(problems) {
   return problems.sort((a, b) => {
     const left = /^\d+$/.test(a.lessonId) ? Number(a.lessonId) : undefined;
     const right = /^\d+$/.test(b.lessonId) ? Number(b.lessonId) : undefined;
@@ -94,6 +112,16 @@ function getDefaultProgrammersDir(context, workspaceUri) {
 
 // 문제 폴더의 표시 정보를 읽습니다.
 async function loadProblemInfo(problemDir) {
+  const summary = await loadProblemSummary(problemDir);
+  const history = await readSolutionHistory(problemDir);
+  return {
+    ...summary,
+    solutionHistory: history.attempts,
+  };
+}
+
+// 목록에 필요한 최소 문제 정보를 읽습니다.
+async function loadProblemSummary(problemDir) {
   const folderName = path.basename(problemDir);
   const helperDir = vscode.Uri.file(path.join(problemDir, ".programmers-helper"));
   const metadata = await readJson(vscode.Uri.joinPath(helperDir, "programmers.json"));
@@ -107,10 +135,59 @@ async function loadProblemInfo(problemDir) {
     title: String(metadata?.title || fallback.title || folderName),
     review: Boolean(reviewData?.review),
     solutionHistoryCount: history.attempts.length,
-    solutionHistory: history.attempts,
-    latestSolutionSnapshot: history.attempts[0]?.path || "",
-    updatedAt: typeof reviewData?.updatedAt === "string" ? reviewData.updatedAt : "",
   };
+}
+
+// 단일 문제의 최신 상태를 인덱스에 반영합니다.
+async function updateProblemIndexEntry(programmersDir, problemDir) {
+  const existing = await readProblemIndex(programmersDir) || await rebuildProblemIndex(programmersDir);
+  const summary = await loadProblemSummary(problemDir);
+  const target = path.resolve(problemDir);
+  const next = existing.filter((problem) => path.resolve(problem.problemDir) !== target);
+  next.push(summary);
+  const sorted = sortProblemSummaries(next);
+  await writeProblemIndex(programmersDir, sorted);
+  return sorted;
+}
+
+// 삭제된 문제를 인덱스에서 제거합니다.
+async function removeProblemIndexEntry(programmersDir, problemDir) {
+  const existing = await readProblemIndex(programmersDir) || await rebuildProblemIndex(programmersDir);
+  const target = path.resolve(problemDir);
+  const sorted = sortProblemSummaries(existing.filter((problem) => path.resolve(problem.problemDir) !== target));
+  await writeProblemIndex(programmersDir, sorted);
+  return sorted;
+}
+
+async function readProblemIndex(programmersDir) {
+  const index = await readJson(getProblemIndexUri(programmersDir));
+  if (!Array.isArray(index?.problems)) {
+    return undefined;
+  }
+
+  return sortProblemSummaries(index.problems
+    .filter((problem) => problem && typeof problem.problemDir === "string")
+    .map((problem) => ({
+      problemDir: problem.problemDir,
+      folderName: String(problem.folderName || path.basename(problem.problemDir)),
+      lessonId: String(problem.lessonId || ""),
+      title: String(problem.title || problem.folderName || path.basename(problem.problemDir)),
+      review: Boolean(problem.review),
+      solutionHistoryCount: Number.isInteger(problem.solutionHistoryCount) ? problem.solutionHistoryCount : 0,
+    })));
+}
+
+async function writeProblemIndex(programmersDir, problems) {
+  const helperDir = vscode.Uri.joinPath(programmersDir, ".programmers-helper");
+  await vscode.workspace.fs.createDirectory(helperDir);
+  await writeJson(getProblemIndexUri(programmersDir), {
+    version: 1,
+    problems,
+  });
+}
+
+function getProblemIndexUri(programmersDir) {
+  return vscode.Uri.joinPath(programmersDir, ".programmers-helper", "problem-index.json");
 }
 
 // 문제의 예제 테스트를 메타데이터나 markdown에서 읽습니다.
@@ -494,7 +571,10 @@ module.exports = {
   loadProblems,
   loadSavedCustomTests,
   readText,
+  rebuildProblemIndex,
+  removeProblemIndexEntry,
   resetSolutionToInitial,
   resolveProgrammersDir,
   saveCustomTests,
+  updateProblemIndexEntry,
 };

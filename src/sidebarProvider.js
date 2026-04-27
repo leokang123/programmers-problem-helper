@@ -18,7 +18,7 @@ class ProgrammersSidebarProvider {
     this.view = webviewView;
     webviewView.webview.options = { enableScripts: true };
     webviewView.webview.html = this.getHtml();
-    this.refreshProblems({ force: true, progress: true });
+    this.refreshProblems({ force: false, progress: true });
 
     webviewView.webview.onDidReceiveMessage(async (message) => {
       if (message.type === "refreshProblems") {
@@ -69,7 +69,7 @@ class ProgrammersSidebarProvider {
       return;
     }
 
-    const promise = programmersDir ? loadProblems(programmersDir) : Promise.resolve([]);
+    const promise = programmersDir ? loadProblems(programmersDir, { rebuildIndex: Boolean(options.force) }) : Promise.resolve([]);
     this.problemListRefreshPromise = { cacheKey, promise };
     try {
       const problems = await promise;
@@ -265,6 +265,7 @@ function buildSidebarHtml(nonce) {
     const runCustom = document.getElementById('runCustom');
     let testCount = 0;
     let problems = [];
+    let currentProblem = undefined;
     let currentProblemDir = '';
 
     function setPaneCollapsed(pane, button, className, collapsed) {
@@ -314,12 +315,11 @@ function buildSidebarHtml(nonce) {
         if (!query) return true;
         return (problem.title || '').toLowerCase().includes(query) || String(problem.lessonId || '').includes(query);
       });
-      const currentProblem = problems.find((problem) => currentProblemDir && problem.problemDir === currentProblemDir);
       const currentMatchesQuery = currentProblem && (!query
         || (currentProblem.title || '').toLowerCase().includes(query)
         || String(currentProblem.lessonId || '').includes(query));
       const visibleCount = filter === 'solutions'
-        ? (currentMatchesQuery ? buildSolutionRows([currentProblem]).length : 0)
+        ? (currentMatchesQuery ? buildSolutionRows(currentProblem).length : 0)
         : (filter === 'review' ? matched.filter((problem) => problem.review) : matched).length;
       listSummary.textContent = listPane.classList.contains('collapsed')
         ? (filter === 'solutions' ? '풀이기록 ' + visibleCount + '개' : filter === 'review' ? '다시풀 ' + visibleCount + '개' : '전체 ' + visibleCount + '개')
@@ -339,10 +339,10 @@ function buildSidebarHtml(nonce) {
       });
     }
 
-    function buildSolutionRows(sourceProblems) {
-      return sourceProblems.flatMap((problem) => (
-        Array.isArray(problem.solutionHistory) ? problem.solutionHistory : []
-      ).map((snapshot) => ({ problem, snapshot })))
+    function buildSolutionRows(problem) {
+      if (!problem) return [];
+      return (Array.isArray(problem.solutionHistory) ? problem.solutionHistory : [])
+        .map((snapshot) => ({ problem, snapshot }))
         .sort((a, b) => {
           return String(b.snapshot.createdAt || '').localeCompare(String(a.snapshot.createdAt || ''));
         });
@@ -438,11 +438,10 @@ function buildSidebarHtml(nonce) {
         return (problem.title || '').toLowerCase().includes(query) || String(problem.lessonId || '').includes(query);
       });
       if (filter === 'solutions') {
-        const currentProblem = problems.find((problem) => currentProblemDir && problem.problemDir === currentProblemDir);
         const currentMatchesQuery = currentProblem && (!query
           || (currentProblem.title || '').toLowerCase().includes(query)
           || String(currentProblem.lessonId || '').includes(query));
-        const rows = currentMatchesQuery ? buildSolutionRows([currentProblem]) : [];
+        const rows = currentMatchesQuery ? buildSolutionRows(currentProblem) : [];
         const emptyText = !currentProblem
           ? '현재 열린 문제가 없습니다.'
           : query
@@ -586,7 +585,8 @@ function buildSidebarHtml(nonce) {
         renderProblems();
       }
       if (event.data.type === 'currentProblem') {
-        currentProblemDir = event.data.problem?.problemDir || '';
+        currentProblem = event.data.problem;
+        currentProblemDir = currentProblem?.problemDir || '';
         updateCurrentActions();
         renderProblems();
       }

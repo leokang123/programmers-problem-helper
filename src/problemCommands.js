@@ -16,9 +16,11 @@ const {
   loadProblemExamples,
   loadProblemInfo,
   loadSavedCustomTests,
+  removeProblemIndexEntry,
   resetSolutionToInitial,
   resolveProgrammersDir,
   saveCustomTests,
+  updateProblemIndexEntry,
 } = require("./problemStore");
 
 // 문제 관련 VS Code 액션들을 묶어 관리합니다.
@@ -230,7 +232,8 @@ class ProblemCommands {
       return;
     }
 
-    await this.refreshProblems?.({ force: true });
+    await this.updateProblemIndexForDir(safeDir);
+    await this.showOpenedProblemState(safeDir, { kind: "", detail: "" });
     vscode.window.showInformationMessage("이전 풀이 기록을 삭제했습니다.");
   }
 
@@ -244,7 +247,8 @@ class ProblemCommands {
 
     await writeReviewState(safeDir, review);
     await this.context.workspaceState.update("lastProblemDir", safeDir);
-    await this.refreshProblems?.({ force: true });
+    await this.updateProblemIndexForDir(safeDir);
+    await this.refreshProblems?.();
   }
 
   // 문제 폴더를 휴지통 또는 직접 삭제합니다.
@@ -284,7 +288,12 @@ class ProblemCommands {
       this.postMessage?.({ type: "status", kind: "", text: "대기 중\n\n문제 번호를 입력하고 생성 버튼을 누르세요." });
     }
 
-    await this.refreshProblems?.({ force: true });
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    const programmersDir = await resolveProgrammersDir(this.context, workspaceFolder?.uri);
+    if (programmersDir) {
+      await removeProblemIndexEntry(programmersDir, safeDir);
+    }
+    await this.refreshProblems?.();
     vscode.window.showInformationMessage(`${folderName} 삭제 완료`);
   }
 
@@ -313,7 +322,8 @@ class ProblemCommands {
     await this.context.workspaceState.update("lastProblemDir", problemDir);
     this.postMessage?.({ type: "currentProblem", problem });
     this.postMessage?.({ type: "customTests", tests: savedCustomTests.length > 0 ? savedCustomTests : examples.length > 0 ? [examples[0]] : [] });
-    await this.refreshProblems?.({ force: Boolean(options.forceRefreshProblems) });
+    await this.updateProblemIndexForDir(problemDir);
+    await this.refreshProblems?.({ force: false });
     const statusKind = runtimeStatus.kind || "";
     const statusTitle = statusKind === "ready"
       ? "준비 완료"
@@ -325,6 +335,14 @@ class ProblemCommands {
       kind: statusKind,
       text: `${statusTitle}\n\n${problem.folderName}${runtimeStatus.detail ? `\n${runtimeStatus.detail}` : ""}`,
     });
+  }
+
+  async updateProblemIndexForDir(problemDir) {
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    const programmersDir = await resolveProgrammersDir(this.context, workspaceFolder?.uri);
+    if (programmersDir) {
+      await updateProblemIndexEntry(programmersDir, problemDir);
+    }
   }
 
   // 문제 폴더가 안전하고 유효한지 확인합니다.
