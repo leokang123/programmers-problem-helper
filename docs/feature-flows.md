@@ -11,7 +11,7 @@
   - `activate(context)`에서 Output 채널, 진단 컬렉션, `ProgrammersSidebarProvider`를 생성한다.
   - `TestRunner`와 `ProblemCommands`는 `ensureServices(context)`에서 명령이나 Webview 액션이 처음 실행될 때 lazy-load한다.
   - 사이드바 Webview 메시지를 실제 명령으로 연결한다.
-  - VS Code 명령 `programmersHelper.createProblem`, `programmersHelper.runSamples`를 등록한다.
+  - VS Code 명령 `programmersHelper.createProblem`, `programmersHelper.runSamples`, `programmersHelper.stopTests`, `programmersHelper.runCustomTests`, `programmersHelper.openNotes`를 등록한다.
   - `programmersHelper.executionMode` 설정 변경을 감지해 실행 모드 전환 피드백과 Docker 컨테이너 정리를 처리한다.
   - `deactivate()`에서 실행 중인 테스트를 멈추고 helper Docker 컨테이너 정리를 백그라운드 프로세스에 맡긴다.
 
@@ -137,7 +137,7 @@ Programmers/
 ### 사용자 흐름
 
 1. 사이드바에서 문제 번호 입력
-2. `생성 및 열기` 클릭
+2. `생성 및 열기` 클릭 또는 `Enter` 입력
 3. Programmers 페이지 fetch
 4. `problem.md`, `solution.cpp`, `.programmers-helper/programmers.json`, `.programmers-helper/initial-solution.cpp` 생성
 5. 문제를 열고 Docker runtime 준비
@@ -146,7 +146,7 @@ Programmers/
 ### 코드 흐름
 
 1. `sidebarProvider.js`
-   - `create` 버튼이 `{ type: "create", lessonId }` 메시지를 보낸다.
+   - `create` 버튼 클릭이나 문제 번호 입력창 `Enter`가 `{ type: "create", lessonId }` 메시지를 보낸다.
 2. `extension.js`
    - `create` 핸들러가 `problemCommands.createProblemFromId(...)`를 호출한다.
 3. `problemCommands.js`
@@ -300,9 +300,12 @@ Programmers/
 
 1. 문제를 명시적으로 연다.
 2. 사이드바 `샘플 테스트 실행` 버튼이 활성화된다.
-3. 버튼 클릭 시 현재 문제 경로가 메시지에 포함된다.
-4. 저장된 샘플 예제로 `test_runner.cpp`를 만든다.
-5. Docker runtime container 안에서 컴파일하고 테스트별로 실행한다.
+3. 버튼 클릭 또는 VS Code 명령 `programmersHelper.runSamples` 실행
+   - 기본 keybinding: `Ctrl+Alt+T`
+4. 사이드바 버튼 경로는 현재 문제 경로를 메시지에 포함한다.
+5. VS Code 명령 경로는 `ProblemCommands.getProblemDir()`로 실행 대상을 찾는다.
+6. 저장된 샘플 예제로 `test_runner.cpp`를 만든다.
+7. Docker runtime container 안에서 컴파일하고 테스트별로 실행한다.
 
 ### Webview에서 TestRunner까지
 
@@ -314,7 +317,10 @@ Programmers/
    - `runSamples` 핸들러
    - `problemDir`이 없으면 "먼저 문제를 열어주세요."
    - `testRunner.runFromCommand(context, "", problemDir, () => undefined)`
-3. `testRunner.js`
+3. VS Code command 경로
+   - `programmersHelper.runSamples`
+   - `testRunner.runFromCommand(context, "", undefined, () => problemCommands.getProblemDir())`
+4. `testRunner.js`
    - `runFromCommand(...)`
    - `normalizeRunTarget(providedProblemDir)`
    - `runSamples(target.problemDir, "", target.cppPath)`
@@ -470,11 +476,13 @@ docker exec -i
 
 ### 실행 흐름
 
-1. Webview `runCustom` 버튼 클릭
-2. `currentProblemDir`이 없으면 return
+1. Webview `runCustom` 버튼 클릭 또는 VS Code 명령 `programmersHelper.runCustomTests`
+2. Webview 경로는 `currentProblemDir`이 없으면 return
 3. `{ type: "runCustom", problemDir, tests }` 메시지
 4. `extension.js`
    - `problemCommands.runCustomTestsFromMessage(tests, problemDir)`
+   - VS Code 명령 경로는 Webview에 `{ type: "runCustomRequest" }`를 보내 현재 입력된 테스트를 실행하게 한다.
+   - Webview가 없으면 사이드바에서 실행하라는 안내를 표시한다.
 5. `problemCommands.js`
    - `validateProblemDir(problemDir)`
    - `saveCustomTests(problemDir, tests)`
@@ -497,7 +505,8 @@ docker exec -i
 
 ## 테스트 중지 flow
 
-1. Webview `stopTests` 메시지
+1. Webview `stopTests` 메시지 또는 VS Code 명령 `programmersHelper.stopTests`
+   - 기본 keybinding: `Ctrl+Alt+S`
 2. `testRunner.stop()`
 3. `stopRequested = true`
 4. 실행 중인 child process가 있으면 `SIGTERM`
@@ -536,6 +545,7 @@ docker exec -i
 ## 메모 flow
 
 1. 사이드바 `메모` 버튼은 `currentProblemDir`이 있을 때만 활성화된다.
+   - VS Code 명령 `programmersHelper.openNotes`도 같은 동작을 제공해 사용자가 키를 지정할 수 있다.
 2. Webview가 `{ type: "openNotes", problemDir }` 메시지를 보낸다.
 3. `ProblemCommands.openNotes(problemDir)`
 4. `validateProblemDir(problemDir)`

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.0
+
+- Add default keyboard shortcuts: `Ctrl+Alt+T` for sample tests and `Ctrl+Alt+S` for stopping the active test run.
+- Expose commands for sample tests, stopping tests, custom tests, and notes so users can assign their own keybindings.
+- Let the problem number input submit with `Enter`, matching the Create and Open button behavior.
+- Refresh the sidebar problem-list cache from updated index data instead of invalidating and rereading after problem-level changes.
+- Reuse keyed sidebar list rows during Webview rendering to reduce repeated HTML parsing and DOM recreation.
+- Refactor JavaScript modules around clearer responsibilities and add comments for the main extension, store, runner, Docker, parsing, and rendering flows.
+- Bump the extension manifest and lockfile to `0.1.0`.
+
 ## 0.0.18
 
 - Bump the extension manifest and lockfile to `0.0.18`, correcting the missed package version update from the previous `0.0.17` deployment.
