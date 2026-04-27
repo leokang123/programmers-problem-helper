@@ -21,8 +21,13 @@ function parseSolutionSignature(cpp) {
 }
 
 // 예제들을 실행하는 C++ 테스트 러너 코드를 만듭니다.
-function buildRunner(signature, examples, solutionIncludePath = "../solution.cpp") {
+function buildRunner(signature, examples, solutionIncludePath = "../solution.cpp", options = {}) {
   const includePath = JSON.stringify(solutionIncludePath);
+  const memoryMode = options.memoryMode || "judge";
+  const memoryLabelPrefix = memoryMode === "judge" ? "memory=" : "memory=";
+  const memoryValueExpression = memoryMode === "judge"
+      ? 'toFixedMemory(currentJudgeMemoryMb()) + "MB"'
+      : '"N/A(local)"';
   const testBlocks = examples.map((example, index) => {
     if (example.inputs.length !== signature.params.length) {
       throw new Error(`입출력 예 #${index + 1}의 인자 수가 solution 시그니처와 다릅니다.`);
@@ -40,11 +45,11 @@ ${expected}
     auto started_at = chrono::steady_clock::now();
     auto actual = solution(${callArgs});
     double elapsed_ms = chrono::duration<double, milli>(chrono::steady_clock::now() - started_at).count();
-    double memory_mb = currentJudgeMemoryMb();
+    const string memory_label = ${memoryValueExpression};
     if (actual == expected) {
-      cerr << fixed << setprecision(2) << "[PASS] #" << ${index + 1} << " time=" << elapsed_ms << "ms memory=" << memory_mb << "MB expected=" << repr(expected) << " actual=" << repr(actual) << endl;
+      cerr << fixed << setprecision(2) << "[PASS] #" << ${index + 1} << " time=" << elapsed_ms << "ms ${memoryLabelPrefix}" << memory_label << " expected=" << repr(expected) << " actual=" << repr(actual) << endl;
     } else {
-      cerr << fixed << setprecision(2) << "[FAIL] #" << ${index + 1} << " time=" << elapsed_ms << "ms memory=" << memory_mb << "MB expected=" << repr(expected) << " actual=" << repr(actual) << endl;
+      cerr << fixed << setprecision(2) << "[FAIL] #" << ${index + 1} << " time=" << elapsed_ms << "ms ${memoryLabelPrefix}" << memory_label << " expected=" << repr(expected) << " actual=" << repr(actual) << endl;
       failed++;
     }
   }`;
@@ -74,6 +79,12 @@ using namespace std;
 string repr(const string& value) { return string("\\"") + value + "\\""; }
 string repr(const char* value) { return repr(string(value)); }
 string repr(bool value) { return value ? "true" : "false"; }
+
+string toFixedMemory(double value) {
+  ostringstream out;
+  out << fixed << setprecision(2) << value;
+  return out.str();
+}
 
 long long readProcStatusKb(const string& key) {
   ifstream status("/proc/self/status");

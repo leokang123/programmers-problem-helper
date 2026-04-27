@@ -84,7 +84,7 @@ async function resolveProgrammersDir(context, workspaceUri, options = {}) {
 // 가능한 Programmers 폴더 후보를 만듭니다.
 function getProgrammersDirCandidates(context, workspaceUri) {
   const candidates = [];
-  if (workspaceUri && vscode.env.remoteName === "dev-container") {
+  if (shouldUseWorkspaceProgrammersDir(context, workspaceUri)) {
     candidates.push(path.basename(workspaceUri.fsPath) === "Programmers" ? workspaceUri : vscode.Uri.joinPath(workspaceUri, "Programmers"));
   }
   candidates.push(getDefaultProgrammersDir(context, workspaceUri));
@@ -102,12 +102,21 @@ function getProgrammersDirCandidates(context, workspaceUri) {
 
 // 기본 Programmers 폴더 위치를 반환합니다.
 function getDefaultProgrammersDir(context, workspaceUri) {
-  if (workspaceUri && vscode.env.remoteName === "dev-container") {
+  if (shouldUseWorkspaceProgrammersDir(context, workspaceUri)) {
     return path.basename(workspaceUri.fsPath) === "Programmers"
       ? workspaceUri
       : vscode.Uri.joinPath(workspaceUri, "Programmers");
   }
   return vscode.Uri.joinPath(context.globalStorageUri, "Programmers");
+}
+
+function shouldUseWorkspaceProgrammersDir(context, workspaceUri) {
+  if (!workspaceUri) {
+    return false;
+  }
+
+  return vscode.env.remoteName === "dev-container"
+    || context.extensionMode === vscode.ExtensionMode.Development;
 }
 
 // 문제 폴더의 표시 정보를 읽습니다.

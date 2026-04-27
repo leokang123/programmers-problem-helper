@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.0.16
+
+- Defer heavier extension initialization until commands are actually used so the sidebar appears faster.
+- Remove the in-webview loading bar and use VS Code progress feedback while the sidebar is preparing.
+- Cache the problem list in a single index file and refresh it immediately after create, delete, and review-state changes.
+- Filter `.programmers-helper` internals out of the visible problem list.
+- Reduce editor flicker on new-attempt and reset flows by keeping the right-side solution editor in place.
+- Keep the problem layout focused on the current problem Markdown on the left and the current C++ solution on the right after problem switches.
+- Run tests against the currently viewed saved C++ snapshot and include the source include path in the compile fingerprint to prevent stale binary reuse.
+
 ## 0.0.11
 
 - Run sample tests from stored `programmers.json` examples, backfilling from `problem.md` only when needed.

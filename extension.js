@@ -127,16 +127,16 @@ function ensureServices(context) {
   return { problemCommands, testRunner };
 }
 
-// 확장 종료 시 실행 중인 프로세스와 컨테이너를 정리합니다.
+// 확장 종료 시 테스트를 중지하고 Docker 정리는 백그라운드에 맡깁니다.
 async function deactivate() {
   testRunner?.stop();
   try {
     const {
-      stopDockerRuntimeContainers,
+      stopDockerRuntimeContainersInBackground,
     } = require("./src/dockerRuntime");
-    const stopped = await stopDockerRuntimeContainers({ execCommand });
-    if (stopped.length > 0) {
-      outputChannel?.appendLine(`[Programmers Helper] Docker runtime stopped: ${stopped.join(", ")}`);
+    const scheduled = stopDockerRuntimeContainersInBackground();
+    if (!scheduled) {
+      outputChannel?.appendLine("[Programmers Helper] Docker runtime cleanup schedule skipped");
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

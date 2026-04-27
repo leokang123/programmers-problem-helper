@@ -7,6 +7,9 @@ const {
   limitStatusText,
 } = require("./errorFormatting");
 const {
+  getExecutionSettings,
+} = require("./settings");
+const {
   createProblem,
   createSolutionAttempt,
   deleteSolutionSnapshot,
@@ -83,7 +86,7 @@ class ProblemCommands {
       if (runtimeStatus?.kind === "ready") {
         vscode.window.showInformationMessage(`Programmers ${lessonId} 준비 완료`);
       } else {
-        vscode.window.showWarningMessage(`Programmers ${lessonId} 문제를 열었지만 실행 컨테이너는 준비되지 않았습니다.`);
+        vscode.window.showWarningMessage(`Programmers ${lessonId} 문제를 열었지만 실행 환경은 준비되지 않았습니다.`);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -457,8 +460,16 @@ class ProblemCommands {
       : undefined;
   }
 
-  // 문제를 열 때 Docker 런타임을 준비합니다.
+  // 문제를 열 때 현재 설정에 맞는 실행 환경을 준비합니다.
   async prepareDockerRuntimeOnOpen(problemDir) {
+    const settings = getExecutionSettings();
+    if (settings.executionMode === "local") {
+      return {
+        kind: "ready",
+        detail: `로컬 실행\n${settings.compilerCommand} -std=${settings.cppStandard}`,
+      };
+    }
+
     return prepareDockerRuntimeOnOpenModule({
       vscode,
       extensionDir: this.extensionDir,

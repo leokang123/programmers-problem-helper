@@ -7,7 +7,7 @@ function formatTestErrorForStatus(error) {
     return "알 수 없는 오류";
   }
 
-  if (message.startsWith("clang++ 실패")) {
+  if (isCompilerFailureMessage(message)) {
     return summarizeCompilerError(message);
   }
 
@@ -25,7 +25,7 @@ function formatTestErrorForPanel(error) {
     return "알 수 없는 오류";
   }
 
-  if (message.startsWith("clang++ 실패")) {
+  if (isCompilerFailureMessage(message)) {
     return message.trim();
   }
 
@@ -36,7 +36,7 @@ function formatTestErrorForPanel(error) {
   return message.trim();
 }
 
-// clang++ 오류를 VS Code 진단 목록으로 바꿉니다.
+// 컴파일러 오류를 VS Code 진단 목록으로 바꿉니다.
 function parseCompilerDiagnostics(vscode, message, solutionUri) {
   const diagnostics = [];
   const targetName = path.basename(solutionUri.fsPath);
@@ -141,9 +141,9 @@ function buildProcessFailureError(command, options, code, signal, stderr, stdout
   const label = options.label || path.basename(command);
   const commandName = path.basename(command);
 
-  if ((typeof label === "string" && label.includes("컴파일")) || commandName === "clang++") {
+  if ((typeof label === "string" && label.includes("컴파일")) || isCompilerCommand(commandName)) {
     const detail = output ? `\n${output}` : "";
-    return new Error(`clang++ 실패${detail}`);
+    return new Error(`컴파일 실패${detail}`);
   }
 
   const reason = signal
@@ -157,6 +157,14 @@ function buildProcessFailureError(command, options, code, signal, stderr, stdout
   error.exitCode = typeof code === "number" ? code : undefined;
   error.signal = signal || undefined;
   return error;
+}
+
+function isCompilerCommand(commandName) {
+  return commandName === "clang++" || commandName === "g++";
+}
+
+function isCompilerFailureMessage(message) {
+  return String(message || "").startsWith("컴파일 실패");
 }
 
 // 긴 런타임 출력을 핵심 줄 위주로 줄입니다.

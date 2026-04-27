@@ -4,10 +4,9 @@ const path = require("path");
 const vscode = require("vscode");
 const {
   COMPILE_TIMEOUT_MS,
-  DOCKER_DEBUG_COMPILE_FLAGS,
-  DOCKER_FAST_COMPILE_FLAGS,
   DOCKER_IMAGE,
-  TEST_TIMEOUT_MS,
+  getDebugCompileFlagsForMode,
+  getFastCompileFlags,
 } = require("./config");
 const {
   buildRunner,
@@ -27,12 +26,15 @@ const {
   loadProblemExamples,
   readText,
 } = require("./problemStore");
+const {
+  getExecutionSettings,
+} = require("./settings");
 
 const TEST_PROCESS_TIMEOUT_GRACE_MS = 2000;
 const MAX_DISPLAY_OUTPUT_CHARS = 20000;
 const MAX_CAPTURE_OUTPUT_CHARS = 100000;
 
-// C++ 테스트 실행 상태와 Docker 실행을 관리합니다.
+// C++ 테스트 실행 상태와 실행 환경을 관리합니다.
 class TestRunner {
   // 출력 채널과 실행 의존성을 주입합니다.
   constructor({ outputChannel, diagnosticCollection, extensionDir, execCommand, postStatus }) {
@@ -110,6 +112,9 @@ class TestRunner {
 
   // 테스트 러너를 생성하고 각 예제를 실행합니다.
   async runSamples(problemDir, customTestsText = "", selectedCppPath) {
+    const settings = getExecutionSettings();
+    const fastCompileFlags = getFastCompileFlags(settings.cppStandard);
+    const debugCompileFlags = getDebugCompileFlagsForMode(settings.executionMode, settings.cppStandard);
     const cppPath = selectedCppPath || path.join(problemDir, "solution.cpp");
     const cpp = await readText(vscode.Uri.file(cppPath));
     const examples = customTestsText.trim() ? parseCustomTests(customTestsText) : await loadProblemExamples(problemDir);
@@ -128,23 +133,26 @@ class TestRunner {
     const fastBinaryPath = ".programmers-helper/test_runner_fast";
     const debugBinaryPath = ".programmers-helper/test_runner_debug";
     const includePath = path.relative(runnerDir, cppPath).split(path.sep).join(path.posix.sep);
-    const runnerCode = buildRunner(signature, examples, includePath);
-    const fastFingerprint = createRunnerFingerprint(runnerCode, cpp, DOCKER_FAST_COMPILE_FLAGS, includePath);
-    const debugFingerprint = createRunnerFingerprint(runnerCode, cpp, DOCKER_DEBUG_COMPILE_FLAGS, includePath);
+    const memoryOptions = this.resolveRunnerMemoryOptions(settings);
+    const runnerCode = buildRunner(signature, examples, includePath, memoryOptions);
+    const fastFingerprint = createRunnerFingerprint(runnerCode, cpp, fastCompileFlags, includePath, settings);
+    const debugFingerprint = createRunnerFingerprint(runnerCode, cpp, debugCompileFlags, includePath, settings);
     await writeFileIfChanged(runnerPath, runnerCode);
 
     this.outputChannel.clear();
     this.outputChannel.appendLine(`[Programmers Helper] ${path.basename(problemDir)} ${customTestsText.trim() ? "커스텀" : "샘플"} 테스트`);
     this.outputChannel.appendLine(`[Programmers Helper] Source: ${path.relative(problemDir, cppPath) || "solution.cpp"}`);
-    this.outputChannel.appendLine(`[Programmers Helper] Docker runtime: ${DOCKER_IMAGE}`);
+    this.outputChannel.appendLine(`[Programmers Helper] Execution mode: ${settings.executionMode === "docker" ? `docker (${DOCKER_IMAGE})` : "local"}`);
+    this.outputChannel.appendLine(`[Programmers Helper] Compiler: ${settings.compilerCommand} -std=${settings.cppStandard}`);
+    this.outputChannel.appendLine(`[Programmers Helper] Memory mode: ${describeMemoryOptions(memoryOptions)}`);
     this.outputChannel.appendLine("");
 
-    const runtime = await this.ensureDockerRuntimeReady(problemDir);
-    this.clearProblemDiagnostics(problemDir);
+    const runtime = await this.ensureRuntimeReady(problemDir, settings);
+    this.clearProblemDiagnostics(cppPath);
     try {
-      await this.compileRunner(runtime, problemDir, runnerPath, fastBinaryPath, DOCKER_FAST_COMPILE_FLAGS, "컴파일", fastFingerprint);
+      await this.compileRunner(runtime, problemDir, fastBinaryPath, fastCompileFlags, "컴파일", fastFingerprint, settings);
     } catch (error) {
-      this.applyCompilerDiagnostics(problemDir, error);
+      this.applyCompilerDiagnostics(cppPath, error);
       throw error;
     }
     if (this.stopRequested) {
@@ -160,9 +168,9 @@ class TestRunner {
       }
 
       try {
-        const testOutput = await this.runTestBinary(runtime, problemDir, fastBinaryPath, index + 1, {
+        const testOutput = await this.runTestBinary(runtime, problemDir, fastBinaryPath, index + 1, settings, {
           label: `테스트 #${index + 1}`,
-          timeoutMs: TEST_TIMEOUT_MS,
+          timeoutMs: settings.testTimeoutMs,
           streamOutput: true,
           streamStderr: false,
           streamSanitizedRuntime: false,
@@ -177,24 +185,28 @@ class TestRunner {
 
         if (!debugBinaryReady) {
           try {
-            await this.compileRunner(runtime, problemDir, runnerPath, debugBinaryPath, DOCKER_DEBUG_COMPILE_FLAGS, "디버그 컴파일", debugFingerprint);
+            await this.compileRunner(runtime, problemDir, debugBinaryPath, debugCompileFlags, "디버그 컴파일", debugFingerprint, settings);
             debugBinaryReady = true;
           } catch (compileError) {
-            this.applyCompilerDiagnostics(problemDir, compileError);
+            if (this.shouldSkipSanitizerFallback(settings, compileError)) {
+              this.outputChannel.appendLine("[Programmers Helper] 로컬 sanitizer fallback을 사용할 수 없어 원래 런타임 에러를 유지합니다.");
+              throw error;
+            }
+            this.applyCompilerDiagnostics(cppPath, compileError);
             throw compileError;
           }
         }
 
         try {
-          const debugOutput = await this.runTestBinary(runtime, problemDir, debugBinaryPath, index + 1, {
+          const debugOutput = await this.runTestBinary(runtime, problemDir, debugBinaryPath, index + 1, settings, {
             label: `테스트 #${index + 1}`,
-            timeoutMs: TEST_TIMEOUT_MS,
+            timeoutMs: settings.testTimeoutMs,
             streamOutput: false,
             streamSanitizedRuntime: true,
-            debugEnv: true,
+            debugEnv: settings.executionMode === "docker",
           });
           if (hasSanitizerOutput(debugOutput)) {
-            throw buildProcessFailureError("docker", { label: `테스트 #${index + 1}` }, 1, undefined, debugOutput, "", 0);
+            throw buildProcessFailureError(settings.executionMode === "docker" ? "docker" : debugBinaryPath, { label: `테스트 #${index + 1}` }, 1, undefined, debugOutput, "", 0);
           }
           throw error;
         } catch (debugError) {
@@ -211,18 +223,18 @@ class TestRunner {
   }
 
   // 해당 문제의 진단 메시지를 지웁니다.
-  clearProblemDiagnostics(problemDir) {
-    this.diagnosticCollection?.delete(vscode.Uri.file(path.join(problemDir, "solution.cpp")));
+  clearProblemDiagnostics(cppPath) {
+    this.diagnosticCollection?.delete(vscode.Uri.file(cppPath));
   }
 
   // 컴파일 오류를 VS Code 진단으로 표시합니다.
-  applyCompilerDiagnostics(problemDir, error) {
+  applyCompilerDiagnostics(cppPath, error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (!message.startsWith("clang++ 실패")) {
+    if (!message.startsWith("컴파일 실패")) {
       return;
     }
 
-    const solutionUri = vscode.Uri.file(path.join(problemDir, "solution.cpp"));
+    const solutionUri = vscode.Uri.file(cppPath);
     const diagnostics = parseCompilerDiagnostics(vscode, message, solutionUri);
     if (diagnostics.length > 0) {
       this.diagnosticCollection?.set(solutionUri, diagnostics);
@@ -230,41 +242,54 @@ class TestRunner {
   }
 
   // 생성된 C++ 러너를 컴파일합니다.
-  async compileRunner(runtime, problemDir, runnerPath, outputBinaryPath, compileFlags, label, fingerprint) {
+  async compileRunner(runtime, problemDir, outputBinaryPath, compileFlags, label, fingerprint, settings) {
     if (fingerprint && await isCompiledRunnerFresh(problemDir, outputBinaryPath, fingerprint)) {
       this.outputChannel.appendLine(`[Programmers Helper] ${label} 생략: 기존 바이너리를 재사용합니다.`);
       return;
     }
 
-    await this.execFile("docker", [
-      "exec",
-      "-i",
-      "-w",
-      runtime.problemPath,
-      runtime.containerName,
-      "clang++",
-      ...compileFlags,
-      path.posix.relative(runtime.problemPath, path.posix.join(runtime.problemPath, ".programmers-helper", "test_runner.cpp")),
-      "-o",
-      outputBinaryPath,
-    ], problemDir, {
-      timeoutMs: COMPILE_TIMEOUT_MS,
-      label,
-    });
+    if (settings.executionMode === "docker") {
+      await this.execFile("docker", [
+        "exec",
+        "-i",
+        "-w",
+        runtime.problemPath,
+        runtime.containerName,
+        settings.compilerCommand,
+        ...compileFlags,
+        path.posix.relative(runtime.problemPath, path.posix.join(runtime.problemPath, ".programmers-helper", "test_runner.cpp")),
+        "-o",
+        outputBinaryPath,
+      ], problemDir, {
+        timeoutMs: COMPILE_TIMEOUT_MS,
+        label,
+      });
 
-    await this.execFile("docker", [
-      "exec",
-      "-i",
-      "-w",
-      runtime.problemPath,
-      runtime.containerName,
-      "chmod",
-      "+x",
-      outputBinaryPath,
-    ], problemDir, {
-      timeoutMs: COMPILE_TIMEOUT_MS,
-      label: `${label} 권한 설정`,
-    });
+      await this.execFile("docker", [
+        "exec",
+        "-i",
+        "-w",
+        runtime.problemPath,
+        runtime.containerName,
+        "chmod",
+        "+x",
+        outputBinaryPath,
+      ], problemDir, {
+        timeoutMs: COMPILE_TIMEOUT_MS,
+        label: `${label} 권한 설정`,
+      });
+    } else {
+      await this.ensureLocalCompilerAvailable(settings.compilerCommand, problemDir);
+      await this.execFile(settings.compilerCommand, [
+        ...compileFlags,
+        path.join(".programmers-helper", "test_runner.cpp"),
+        "-o",
+        outputBinaryPath,
+      ], problemDir, {
+        timeoutMs: COMPILE_TIMEOUT_MS,
+        label,
+      });
+    }
 
     if (fingerprint) {
       await writeJsonFile(path.join(problemDir, `${outputBinaryPath}.meta.json`), {
@@ -275,58 +300,77 @@ class TestRunner {
   }
 
   // 컴파일된 테스트 바이너리를 한 케이스만 실행합니다.
-  async runTestBinary(runtime, problemDir, binaryPath, testIndex, options = {}) {
-    const testTimeoutMs = options.timeoutMs || TEST_TIMEOUT_MS;
-    const seconds = Math.max(1, Math.ceil(testTimeoutMs / 1000));
-    const command = [
-      "exec",
-      "-i",
-      "-w",
-      runtime.problemPath,
-      runtime.containerName,
-    ];
+  async runTestBinary(runtime, problemDir, binaryPath, testIndex, settings, options = {}) {
+    const testTimeoutMs = options.timeoutMs || settings.testTimeoutMs;
+    const timeoutSeconds = Math.max(0.1, testTimeoutMs / 1000);
+    const timeoutLabel = formatTimeoutLimitLabel(testTimeoutMs);
+    let result;
 
-    if (options.debugEnv) {
+    if (settings.executionMode === "docker") {
+      const command = [
+        "exec",
+        "-i",
+        "-w",
+        runtime.problemPath,
+        runtime.containerName,
+      ];
+
+      if (options.debugEnv) {
+        command.push(
+          "env",
+          "ASAN_OPTIONS=symbolize=1:external_symbolizer_path=/usr/bin/llvm-symbolizer:halt_on_error=1",
+          "UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1"
+        );
+      }
+
       command.push(
-        "env",
-        "ASAN_OPTIONS=symbolize=1:external_symbolizer_path=/usr/bin/llvm-symbolizer:halt_on_error=1",
-        "UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1"
+        "timeout",
+        "--signal=TERM",
+        "--kill-after=1s",
+        `${formatTimeoutCommandSeconds(timeoutSeconds)}s`,
+        binaryPath.startsWith(".") ? binaryPath : `./${binaryPath}`,
+        String(testIndex)
       );
+
+      result = await this.execFile("docker", command, problemDir, {
+        ...options,
+        resolveWithStatus: true,
+        streamOutput: false,
+        streamStderr: false,
+        timeoutMs: testTimeoutMs + TEST_PROCESS_TIMEOUT_GRACE_MS,
+        maxCaptureOutputChars: MAX_CAPTURE_OUTPUT_CHARS,
+      });
+    } else {
+      try {
+        result = await this.execFile(path.join(problemDir, binaryPath), [String(testIndex)], problemDir, {
+          ...options,
+          resolveWithStatus: true,
+          streamOutput: false,
+          streamStderr: false,
+          timeoutMs: testTimeoutMs,
+          maxCaptureOutputChars: MAX_CAPTURE_OUTPUT_CHARS,
+          env: buildLocalExecutionEnv(options),
+        });
+      } catch (error) {
+        if (error?.code === "ETIMEOUT") {
+          return this.handleTimeoutResult(testIndex, timeoutLabel, {
+            elapsedMs: error.elapsedMs || testTimeoutMs,
+            stderr: error.stderr || "",
+            stdout: error.stdout || "",
+            stderrTruncated: Boolean(error.stderrTruncated),
+            stdoutTruncated: Boolean(error.stdoutTruncated),
+          }, options);
+        }
+        throw error;
+      }
     }
 
-    command.push(
-      "timeout",
-      "--signal=TERM",
-      "--kill-after=1s",
-      `${seconds}s`,
-      binaryPath.startsWith(".") ? binaryPath : `./${binaryPath}`,
-      String(testIndex)
-    );
-
-    const result = await this.execFile("docker", command, problemDir, {
-      ...options,
-      resolveWithStatus: true,
-      streamOutput: false,
-      streamStderr: false,
-      timeoutMs: testTimeoutMs + TEST_PROCESS_TIMEOUT_GRACE_MS,
-      maxCaptureOutputChars: MAX_CAPTURE_OUTPUT_CHARS,
-    });
-
     if (result.code === 124 || result.code === 137) {
-      const line = `[TIMEOUT] #${testIndex} time=${result.elapsedMs}ms limit=${seconds}s`;
-      const displayed = formatDisplayOutput(result.stderr + result.stdout, result.stdoutTruncated || result.stderrTruncated);
-      const outputText = `${line}\n${displayed}`;
-      if (options.streamOutput) {
-        this.outputChannel.appendLine(line);
-        if (displayed) {
-          this.outputChannel.append(displayed);
-        }
-      }
-      return outputText;
+      return this.handleTimeoutResult(testIndex, timeoutLabel, result, options);
     }
 
     if (result.code !== 0) {
-      throw buildProcessFailureError("docker", options, result.code, result.signal, result.stderr, result.stdout, result.elapsedMs);
+      throw buildProcessFailureError(settings.executionMode === "docker" ? "docker" : binaryPath, options, result.code, result.signal, result.stderr, result.stdout, result.elapsedMs);
     }
 
     const displayed = formatDisplayOutput(result.stderr + result.stdout, result.stdoutTruncated || result.stderrTruncated);
@@ -339,14 +383,61 @@ class TestRunner {
     return displayed;
   }
 
-  // Docker 런타임 준비를 위임합니다.
-  async ensureDockerRuntimeReady(problemDir) {
-    return ensureDockerRuntimeReadyModule({
-      vscode,
-      extensionDir: this.extensionDir,
-      problemDir,
-      execCommand: this.execCommand,
-    });
+  handleTimeoutResult(testIndex, timeoutLabel, result, options) {
+    const line = `[TIMEOUT] #${testIndex} time=${result.elapsedMs}ms limit=${timeoutLabel}`;
+    const displayed = formatDisplayOutput(result.stderr + result.stdout, result.stdoutTruncated || result.stderrTruncated);
+    const outputText = `${line}\n${displayed}`;
+    if (options.streamOutput) {
+      this.outputChannel.appendLine(line);
+      if (displayed) {
+        this.outputChannel.append(displayed);
+      }
+    }
+    return outputText;
+  }
+
+  // 실행 환경 준비를 위임합니다.
+  async ensureRuntimeReady(problemDir, settings) {
+    if (settings.executionMode === "docker") {
+      return ensureDockerRuntimeReadyModule({
+        vscode,
+        extensionDir: this.extensionDir,
+        problemDir,
+        execCommand: this.execCommand,
+      });
+    }
+
+    await this.ensureLocalCompilerAvailable(settings.compilerCommand, problemDir);
+    return {
+      kind: "local",
+      compilerCommand: settings.compilerCommand,
+    };
+  }
+
+  async ensureLocalCompilerAvailable(compilerCommand, cwd) {
+    try {
+      await this.execFile(compilerCommand, ["--version"], cwd, {
+        timeoutMs: 5000,
+        label: "컴파일러 확인",
+      });
+    } catch (error) {
+      if (error?.code === "ENOENT") {
+        throw new Error(`컴파일 실패\n${compilerCommand} 명령어를 찾지 못했습니다.\nVS Code 설정에서 compilerCommand를 바꾸거나 ${compilerCommand}를 설치해주세요.`);
+      }
+      throw error;
+    }
+  }
+
+  shouldSkipSanitizerFallback(settings, error) {
+    return settings.executionMode === "local" && isSanitizerToolchainError(error);
+  }
+
+  resolveRunnerMemoryOptions(settings) {
+    if (settings.executionMode === "docker") {
+      return { memoryMode: "judge" };
+    }
+
+    return { memoryMode: "none" };
   }
 
   // 자식 프로세스를 실행하고 결과를 캡처합니다.
@@ -358,7 +449,10 @@ class TestRunner {
       }
 
       const startedAt = Date.now();
-      const child = cp.spawn(command, args, { cwd });
+      const child = cp.spawn(command, args, {
+        cwd,
+        env: options.env ? { ...process.env, ...options.env } : process.env,
+      });
       this.activeTestProcess = child;
       let stdout = "";
       let stderr = "";
@@ -398,16 +492,24 @@ class TestRunner {
         }
       });
       child.on("error", (error) => {
-        if (timeout) clearTimeout(timeout);
-        if (killTimer) clearTimeout(killTimer);
+        if (timeout) {
+          clearTimeout(timeout);
+        }
+        if (killTimer) {
+          clearTimeout(killTimer);
+        }
         if (this.activeTestProcess === child) {
           this.activeTestProcess = undefined;
         }
         reject(error);
       });
       child.on("close", (code, signal) => {
-        if (timeout) clearTimeout(timeout);
-        if (killTimer) clearTimeout(killTimer);
+        if (timeout) {
+          clearTimeout(timeout);
+        }
+        if (killTimer) {
+          clearTimeout(killTimer);
+        }
         if (this.activeTestProcess === child) {
           this.activeTestProcess = undefined;
         }
@@ -420,6 +522,11 @@ class TestRunner {
           const elapsedMs = Date.now() - startedAt;
           const error = new Error(`${options.label || command} 시간이 초과되었습니다. (${seconds}초, ${elapsedMs}ms)\n무한루프를 확인해주세요.`);
           error.code = "ETIMEOUT";
+          error.elapsedMs = elapsedMs;
+          error.stdout = stdout;
+          error.stderr = stderr;
+          error.stdoutTruncated = stdoutTruncated;
+          error.stderrTruncated = stderrTruncated;
           reject(error);
           return;
         }
@@ -474,15 +581,18 @@ function appendCapturedOutput(current, chunk, maxChars) {
   return { text: current + chunk.slice(0, remaining), truncated: true };
 }
 
-function createRunnerFingerprint(runnerCode, solutionCode, compileFlags, includePath) {
+function createRunnerFingerprint(runnerCode, solutionCode, compileFlags, includePath, settings) {
   return crypto
     .createHash("sha256")
     .update(JSON.stringify({
-      version: 2,
+      version: 3,
       runnerCode,
       solutionCode,
       includePath,
       compileFlags,
+      compilerCommand: settings.compilerCommand,
+      cppStandard: settings.cppStandard,
+      executionMode: settings.executionMode,
     }))
     .digest("hex");
 }
@@ -549,6 +659,37 @@ function shouldRetryWithSanitizer(error) {
 // sanitizer 출력이 포함됐는지 확인합니다.
 function hasSanitizerOutput(output) {
   return /AddressSanitizer|UndefinedBehaviorSanitizer|runtime error:/i.test(String(output || ""));
+}
+
+function isSanitizerToolchainError(error) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  return /libclang_rt\.asan|libclang_rt\.ubsan|cannot find -lasan|cannot find -lubsan|sanitizer/i.test(message);
+}
+
+function buildLocalExecutionEnv(options) {
+  if (!options.debugEnv) {
+    return undefined;
+  }
+
+  return {
+    ASAN_OPTIONS: "symbolize=1:halt_on_error=1",
+    UBSAN_OPTIONS: "print_stacktrace=1:halt_on_error=1",
+  };
+}
+
+function formatTimeoutCommandSeconds(seconds) {
+  return Number(seconds.toFixed(3)).toString();
+}
+
+function formatTimeoutLimitLabel(timeoutMs) {
+  return `${(timeoutMs / 1000).toFixed(1)}s`;
+}
+
+function describeMemoryOptions(memoryOptions) {
+  if (memoryOptions.memoryMode === "judge") {
+    return "judge-like";
+  }
+  return "N/A(local)";
 }
 
 // 실행 대상을 problemDir과 cppPath로 정규화합니다.

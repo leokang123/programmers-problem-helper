@@ -35,6 +35,44 @@
   },
   "main": "./extension.js",
   "contributes": {
+    "configuration": {
+      "title": "Programmers Helper",
+      "properties": {
+        "programmersHelper.executionMode": {
+          "type": "string",
+          "enum": [
+            "docker",
+            "local"
+          ],
+          "default": "docker",
+          "markdownDescription": "Choose whether sample and custom tests run inside the helper Docker container or directly on the local machine."
+        },
+        "programmersHelper.compilerCommand": {
+          "type": "string",
+          "enum": [
+            "clang++",
+            "g++"
+          ],
+          "default": "clang++",
+          "markdownDescription": "Choose the C++ compiler command used for building the generated test runner."
+        },
+        "programmersHelper.cppStandard": {
+          "type": "string",
+          "enum": [
+            "c++17",
+            "c++20"
+          ],
+          "default": "c++17",
+          "markdownDescription": "Choose the `-std=` flag used when compiling tests."
+        },
+        "programmersHelper.testTimeoutMs": {
+          "type": "number",
+          "default": 3000,
+          "minimum": 100,
+          "markdownDescription": "Set the timeout in milliseconds for each sample or custom test case."
+        }
+      }
+    },
     "viewsContainers": {
       "activitybar": [
         {

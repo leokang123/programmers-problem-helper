@@ -1,3 +1,4 @@
+const cp = require("child_process");
 const path = require("path");
 const {
   DOCKER_CONTAINER_PREFIX,
@@ -103,6 +104,51 @@ async function stopDockerRuntimeContainers({ execCommand }) {
     allowNonZeroExit: true,
   });
   return names;
+}
+
+// VS Code 종료를 막지 않도록 Docker stop을 별도 프로세스에 맡깁니다.
+function stopDockerRuntimeContainersInBackground() {
+  const script = `
+const cp = require("child_process");
+function run(args) {
+  try {
+    return cp.spawnSync("docker", args, { encoding: "utf8" });
+  } catch {
+    return { status: 1, stdout: "", stderr: "" };
+  }
+}
+const list = run([
+  "ps",
+  "--filter",
+  ${JSON.stringify(`name=^/${DOCKER_CONTAINER_PREFIX}`)},
+  "--filter",
+  "status=running",
+  "--format",
+  "{{.Names}}",
+]);
+if (list.status !== 0) {
+  process.exit(0);
+}
+const names = String(list.stdout || "")
+  .split(/\\r?\\n/)
+  .map((line) => line.trim())
+  .filter(Boolean);
+if (names.length === 0) {
+  process.exit(0);
+}
+run(["stop", ...names]);
+`;
+
+  try {
+    const child = cp.spawn(process.execPath, ["-e", script], {
+      detached: true,
+      stdio: "ignore",
+    });
+    child.unref();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // Docker CLI가 실행 가능한지 확인합니다.
@@ -213,4 +259,5 @@ module.exports = {
   ensureDockerRuntimeReady,
   prepareDockerRuntimeOnOpen,
   stopDockerRuntimeContainers,
+  stopDockerRuntimeContainersInBackground,
 };
