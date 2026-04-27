@@ -2,7 +2,7 @@
   "name": "programmers-problem-helper",
   "displayName": "Programmers Problem Helper",
   "description": "Create Programmers problem files, open a preview/solution split view, and run sample or custom C++ tests.",
-  "version": "0.0.18",
+  "version": "0.1.0",
   "publisher": "local",
   "license": "MIT",
   "engines": {
@@ -100,6 +100,28 @@
       {
         "command": "programmersHelper.runSamples",
         "title": "Programmers: Run Sample Tests"
+      },
+      {
+        "command": "programmersHelper.stopTests",
+        "title": "Programmers: Stop Tests"
+      },
+      {
+        "command": "programmersHelper.runCustomTests",
+        "title": "Programmers: Run Custom Tests"
+      },
+      {
+        "command": "programmersHelper.openNotes",
+        "title": "Programmers: Open Notes"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "programmersHelper.runSamples",
+        "key": "ctrl+alt+t"
+      },
+      {
+        "command": "programmersHelper.stopTests",
+        "key": "ctrl+alt+s"
       }
     ]
   }

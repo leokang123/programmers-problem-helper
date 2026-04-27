@@ -35,7 +35,11 @@ class ProgrammersSidebarProvider {
 
   // Webview로 메시지를 보냅니다.
   post(message) {
-    this.view?.webview.postMessage(message);
+    if (!this.view) {
+      return false;
+    }
+    this.view.webview.postMessage(message);
+    return true;
   }
 
   // 문제 목록과 현재 문제 상태를 새로 보냅니다.
@@ -600,6 +604,15 @@ function buildSidebarHtml(nonce) {
       });
     }
 
+    function submitCreateProblem() {
+      vscode.postMessage({ type: 'create', lessonId: input.value.trim() });
+    }
+
+    function submitCustomTests() {
+      if (!currentProblemDir) return;
+      vscode.postMessage({ type: 'runCustom', problemDir: currentProblemDir, tests: collectTests() });
+    }
+
     function handleProblemListClick(event) {
       const problemRow = event.target.closest('.problem-row');
       const snapshotRow = event.target.closest('.snapshot-row');
@@ -642,8 +655,12 @@ function buildSidebarHtml(nonce) {
     }
 
     addTest();
-    document.getElementById('create').addEventListener('click', () => {
-      vscode.postMessage({ type: 'create', lessonId: input.value.trim() });
+    document.getElementById('create').addEventListener('click', submitCreateProblem);
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        submitCreateProblem();
+      }
     });
     runSamples.addEventListener('click', () => {
       if (!currentProblemDir) return;
@@ -652,10 +669,7 @@ function buildSidebarHtml(nonce) {
     document.getElementById('addTest').addEventListener('click', () => {
       addTest();
     });
-    runCustom.addEventListener('click', () => {
-      if (!currentProblemDir) return;
-      vscode.postMessage({ type: 'runCustom', problemDir: currentProblemDir, tests: collectTests() });
-    });
+    runCustom.addEventListener('click', submitCustomTests);
     document.getElementById('stopRun').addEventListener('click', () => {
       vscode.postMessage({ type: 'stopTests' });
     });
@@ -725,6 +739,9 @@ function buildSidebarHtml(nonce) {
         currentProblemDir = currentProblem?.problemDir || '';
         updateCurrentActions();
         renderProblems();
+      }
+      if (event.data.type === 'runCustomRequest') {
+        submitCustomTests();
       }
     });
     updateCurrentActions();

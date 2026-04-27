@@ -92,6 +92,22 @@ function activate(context) {
       const { problemCommands, testRunner } = ensureServices(context);
       await testRunner.runFromCommand(context, "", undefined, () => problemCommands.getProblemDir());
     }),
+    vscode.commands.registerCommand("programmersHelper.stopTests", async () => {
+      const { testRunner } = ensureServices(context);
+      testRunner.stop();
+    }),
+    vscode.commands.registerCommand("programmersHelper.runCustomTests", async () => {
+      if (!sidebarProvider?.post({ type: "runCustomRequest" })) {
+        vscode.window.showInformationMessage("사이드바에서 커스텀 테스트를 실행해주세요.");
+      }
+    }),
+    vscode.commands.registerCommand("programmersHelper.openNotes", async () => {
+      const { problemCommands } = ensureServices(context);
+      const target = await problemCommands.getProblemDir();
+      if (target) {
+        await problemCommands.openNotes(target.problemDir);
+      }
+    }),
     vscode.workspace.onDidChangeConfiguration(async (event) => {
       if (event.affectsConfiguration("programmersHelper.executionMode")) {
         await handleExecutionModeChange();
