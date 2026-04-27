@@ -128,7 +128,7 @@ class ProblemCommands {
     const result = await createSolutionAttempt(safeDir);
     await writeReviewState(safeDir, true);
     await this.context.workspaceState.update("lastProblemDir", safeDir);
-    await openProblem(vscode.Uri.file(path.join(safeDir, "problem.md")), vscode.Uri.file(path.join(safeDir, "solution.cpp")));
+    await showSolution(vscode.Uri.file(path.join(safeDir, "solution.cpp")));
     const runtimeStatus = await this.prepareDockerRuntimeOnOpen(safeDir);
     await this.showOpenedProblemState(safeDir, runtimeStatus, { forceRefreshProblems: true });
 
@@ -188,7 +188,7 @@ class ProblemCommands {
     }
 
     await this.context.workspaceState.update("lastProblemDir", target.problemDir);
-    await openProblem(vscode.Uri.file(path.join(target.problemDir, "problem.md")), vscode.Uri.file(target.cppPath));
+    await showSolution(vscode.Uri.file(target.cppPath));
     await this.showOpenedProblemState(target.problemDir);
     vscode.window.showInformationMessage(`${relativeCppPath} 파일을 초기 코드로 되돌렸습니다.`);
   }
@@ -469,6 +469,12 @@ async function openProblem(mdUri, cppUri) {
   await vscode.workspace.saveAll(false);
   await vscode.commands.executeCommand("workbench.action.closeAllEditors");
   await openLockedMarkdownPreview(mdUri, vscode.ViewColumn.One);
+  await showSolution(cppUri);
+}
+
+// 풀이 파일을 오른쪽 그룹에 보여주되 기존 탭은 닫지 않고 재사용합니다.
+async function showSolution(cppUri) {
+  await vscode.workspace.saveAll(false);
   await vscode.window.showTextDocument(cppUri, {
     viewColumn: vscode.ViewColumn.Two,
     preserveFocus: false,
