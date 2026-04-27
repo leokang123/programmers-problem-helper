@@ -306,11 +306,12 @@ class ProblemCommands {
       return;
     }
 
-    const target = {
-      problemDir: safeDir,
-      cppPath: path.join(safeDir, "solution.cpp"),
-    };
-    await saveCustomTests(target.problemDir, tests);
+    const target = await this.getActiveCodeTarget(safeDir);
+    if (!target) {
+      vscode.window.showInformationMessage("먼저 문제를 열어주세요.");
+      return;
+    }
+    await saveCustomTests(safeDir, tests);
     await this.runTests(JSON.stringify(tests || []), target);
   }
 
@@ -443,6 +444,11 @@ class ProblemCommands {
     }
 
     const safeDir = await this.validateProblemDir(problemDir);
+    const fromVisible = safeDir ? getVisibleCodeTarget(safeDir) : undefined;
+    if (fromVisible) {
+      return fromVisible;
+    }
+
     return safeDir
       ? {
         problemDir: safeDir,
@@ -467,9 +473,11 @@ class ProblemCommands {
 // Markdown 미리보기와 solution.cpp를 나란히 엽니다.
 async function openProblem(mdUri, cppUri) {
   await vscode.workspace.saveAll(false);
-  await vscode.commands.executeCommand("workbench.action.closeAllEditors");
   await openLockedMarkdownPreview(mdUri, vscode.ViewColumn.One);
+  await closeInactiveProblemTabs(mdUri, cppUri);
   await showSolution(cppUri);
+  await closeStaleSolutionTabs(cppUri);
+  await keepOnlyProblemLayoutTabs(mdUri, cppUri);
 }
 
 // 풀이 파일을 오른쪽 그룹에 보여주되 기존 탭은 닫지 않고 재사용합니다.
@@ -484,8 +492,15 @@ async function showSolution(cppUri) {
 
 // Markdown preview가 다른 Markdown 파일로 따라가지 않도록 잠급니다.
 async function openLockedMarkdownPreview(mdUri, viewColumn) {
-  await vscode.commands.executeCommand("markdown.showPreview", mdUri, viewColumn);
-  await vscode.commands.executeCommand("markdown.preview.toggleLock");
+  try {
+    await vscode.commands.executeCommand("vscode.openWith", mdUri, "vscode.markdown.preview.editor", {
+      viewColumn,
+      preview: false,
+    });
+  } catch {
+    await vscode.commands.executeCommand("markdown.showPreview", mdUri, viewColumn);
+    await vscode.commands.executeCommand("markdown.preview.toggleLock");
+  }
 }
 
 // 같은 파일이 이미 열려 있으면 해당 탭만 닫습니다.
@@ -505,6 +520,103 @@ async function closeOpenTabsForUri(uri) {
 
   await vscode.window.tabGroups.close(tabs, true);
   return true;
+}
+
+async function closeInactiveProblemTabs(mdUri, cppUri) {
+  const keep = new Set([path.resolve(mdUri.fsPath), path.resolve(cppUri.fsPath)]);
+  const programmersRoot = path.dirname(path.dirname(mdUri.fsPath));
+  const tabs = [];
+  for (const group of vscode.window.tabGroups?.all || []) {
+    for (const tab of group.tabs || []) {
+      if (tab.isActive || !isProblemMarkdownTab(tab, programmersRoot, keep)) {
+        continue;
+      }
+      tabs.push(tab);
+    }
+  }
+
+  if (tabs.length > 0) {
+    await vscode.window.tabGroups.close(tabs, true);
+  }
+}
+
+function isProblemMarkdownTab(tab, programmersRoot, keep) {
+  const uris = getTabUris(tab);
+  if (uris.length > 0) {
+    return uris.some((uri) => {
+      const target = path.resolve(uri.fsPath);
+      return !keep.has(target)
+        && target.endsWith(`${path.sep}problem.md`)
+        && target.startsWith(path.resolve(programmersRoot) + path.sep);
+    });
+  }
+
+  const label = String(tab.label || "").toLowerCase();
+  return label.includes("problem.md");
+}
+
+function getTabUris(tab) {
+  return [
+    tab.input?.uri,
+    tab.input?.modified,
+    tab.input?.original,
+  ].filter((uri) => uri?.scheme === "file");
+}
+
+async function closeStaleSolutionTabs(cppUri) {
+  const keep = path.resolve(cppUri.fsPath);
+  const programmersRoot = path.dirname(path.dirname(path.dirname(cppUri.fsPath)));
+  const tabs = [];
+  for (const group of vscode.window.tabGroups?.all || []) {
+    for (const tab of group.tabs || []) {
+      const uris = getTabUris(tab);
+      if (uris.some((uri) => {
+        const target = path.resolve(uri.fsPath);
+        return target !== keep
+          && target.endsWith(".cpp")
+          && target.startsWith(path.resolve(programmersRoot) + path.sep);
+      })) {
+        tabs.push(tab);
+      }
+    }
+  }
+
+  if (tabs.length > 0) {
+    await vscode.window.tabGroups.close(tabs, true);
+  }
+}
+
+async function keepOnlyProblemLayoutTabs(mdUri, cppUri) {
+  const keepLeft = path.resolve(mdUri.fsPath);
+  const keepRight = path.resolve(cppUri.fsPath);
+  const tabs = [];
+
+  for (const group of vscode.window.tabGroups?.all || []) {
+    for (const tab of group.tabs || []) {
+      const uris = getTabUris(tab);
+      if (uris.length === 0) {
+        continue;
+      }
+
+      const hasLeft = uris.some((uri) => path.resolve(uri.fsPath) === keepLeft);
+      const hasRight = uris.some((uri) => path.resolve(uri.fsPath) === keepRight);
+      if (!hasLeft && !hasRight) {
+        tabs.push(tab);
+        continue;
+      }
+
+      if (group.viewColumn === vscode.ViewColumn.One && !hasLeft) {
+        tabs.push(tab);
+      }
+      if (group.viewColumn === vscode.ViewColumn.Two && !hasRight) {
+        tabs.push(tab);
+      }
+    }
+  }
+
+  if (tabs.length > 0) {
+    await vscode.window.tabGroups.close(tabs, true);
+  }
 }
 
 function sameFsPath(left, right) {
@@ -570,6 +682,17 @@ function getRunTargetFromPath(filePath) {
     problemDir: parts.slice(0, index + 2).join(path.sep),
     cppPath: normalized,
   };
+}
+
+function getVisibleCodeTarget(problemDir) {
+  const safeDir = path.resolve(problemDir);
+  const defaultCppPath = path.resolve(safeDir, "solution.cpp");
+  const visibleTargets = vscode.window.visibleTextEditors
+    .map((editor) => getRunTargetFromPath(editor.document.uri.fsPath))
+    .filter((target) => target && path.resolve(target.problemDir) === safeDir);
+
+  const snapshotTarget = visibleTargets.find((target) => path.resolve(target.cppPath) !== defaultCppPath);
+  return snapshotTarget || visibleTargets[0];
 }
 
 module.exports = {

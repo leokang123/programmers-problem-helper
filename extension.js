@@ -20,13 +20,18 @@ function activate(context) {
       await problemCommands.createProblemFromId(String(message.lessonId || ""));
     },
     runSamples: async (message) => {
-      const { testRunner } = ensureServices(context);
+      const { problemCommands, testRunner } = ensureServices(context);
       const problemDir = String(message.problemDir || "");
       if (!problemDir) {
         vscode.window.showInformationMessage("먼저 문제를 열어주세요.");
         return;
       }
-      await testRunner.runFromCommand(context, "", problemDir, () => undefined);
+      const target = await problemCommands.getActiveCodeTarget(problemDir);
+      if (!target) {
+        vscode.window.showInformationMessage("먼저 문제를 열어주세요.");
+        return;
+      }
+      await testRunner.runFromCommand(context, "", target, () => undefined);
     },
     runCustom: async (message) => {
       const { problemCommands } = ensureServices(context);

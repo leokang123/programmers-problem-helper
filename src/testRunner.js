@@ -129,8 +129,8 @@ class TestRunner {
     const debugBinaryPath = ".programmers-helper/test_runner_debug";
     const includePath = path.relative(runnerDir, cppPath).split(path.sep).join(path.posix.sep);
     const runnerCode = buildRunner(signature, examples, includePath);
-    const fastFingerprint = createRunnerFingerprint(runnerCode, cpp, DOCKER_FAST_COMPILE_FLAGS);
-    const debugFingerprint = createRunnerFingerprint(runnerCode, cpp, DOCKER_DEBUG_COMPILE_FLAGS);
+    const fastFingerprint = createRunnerFingerprint(runnerCode, cpp, DOCKER_FAST_COMPILE_FLAGS, includePath);
+    const debugFingerprint = createRunnerFingerprint(runnerCode, cpp, DOCKER_DEBUG_COMPILE_FLAGS, includePath);
     await writeFileIfChanged(runnerPath, runnerCode);
 
     this.outputChannel.clear();
@@ -474,13 +474,14 @@ function appendCapturedOutput(current, chunk, maxChars) {
   return { text: current + chunk.slice(0, remaining), truncated: true };
 }
 
-function createRunnerFingerprint(runnerCode, solutionCode, compileFlags) {
+function createRunnerFingerprint(runnerCode, solutionCode, compileFlags, includePath) {
   return crypto
     .createHash("sha256")
     .update(JSON.stringify({
-      version: 1,
+      version: 2,
       runnerCode,
       solutionCode,
+      includePath,
       compileFlags,
     }))
     .digest("hex");
