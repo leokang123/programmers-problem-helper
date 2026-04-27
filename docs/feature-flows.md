@@ -274,23 +274,25 @@ Programmers/
 4. 디렉터리만 필터링
 5. 각 디렉터리에 대해 병렬로:
    - `hasProblemFiles(problemDir)`로 `problem.md`, `solution.cpp` 존재 확인
-   - `loadProblemInfo(problemDir.fsPath)`
+   - `loadProblemSummary(problemDir.fsPath)`
 6. lessonId 숫자 순, 그 외 폴더명 순으로 정렬
 7. 재생성한 목록을 `.programmers-helper/problem-index.json`에 저장한다.
 
-### `loadProblemInfo()`가 읽는 파일
+### 문제 목록 summary가 읽는 파일
 
 - `.programmers-helper/programmers.json`
 - `.programmers-helper/review.json`
 - `.programmers-helper/solution-history.json`
 
-반환값은 Webview 렌더링에 필요한 summary다.
+문제 목록에는 `solutionHistory` 전체가 아니라 `solutionHistoryCount`만 포함한다.
+현재 열린 문제의 상세 정보가 필요할 때만 `loadProblemInfo()`가 같은 summary에 `solutionHistory`를 추가한다.
 
 ### 성능 주의점
 
 - 문제 목록 새로고침은 문제 수만큼 metadata 파일을 여러 개 읽는다.
-- 문제 수가 아주 많아지면 `loadProblems()`에 캐시 또는 부분 갱신을 고려한다.
-- 현재는 사용자가 새로고침, 문제 열기, 리뷰 토글, 삭제 등을 할 때 목록을 다시 보낸다.
+- 일반 새로고침은 사이드바 메모리 캐시를 우선 사용한다.
+- 명시적 강제 새로고침은 전체 스캔으로 인덱스를 재생성한다.
+- 문제 열기, 리뷰 토글, 삭제, 풀이기록 변경은 단일 문제 인덱스 갱신 결과로 사이드바 메모리 캐시를 교체한다.
 
 ## 샘플 테스트 flow
 
@@ -704,19 +706,15 @@ Dev Container:
 - Docker 사용 가능 여부와 runtime image 존재 여부는 확장 세션 동안 캐시한다.
 - `solution.cpp` 내용, 생성된 `test_runner.cpp` 내용, 컴파일 플래그 fingerprint가 같으면 기존 `test_runner_fast` / `test_runner_debug` 바이너리를 재사용한다.
 - 테스트 결과 요약은 전체 output 문자열을 누적하지 않고 케이스별 PASS/FAIL/TIMEOUT count로 집계한다.
-- 사이드바 문제 목록은 메모리의 problem summary cache를 우선 사용하고, 명시적 새로고침 또는 파일 변경 동작 뒤에만 전체 스캔한다.
+- 사이드바 문제 목록은 메모리의 problem summary cache를 우선 사용하고, 명시적 강제 새로고침 때만 전체 스캔한다.
 - 문제 목록 인덱스가 현재 `Programmers` 루트 밖의 항목을 포함하면 폐기하고 전체 스캔으로 재생성한다.
+- 문제 열기, 리뷰 토글, 삭제, 풀이기록 변경은 단일 문제 인덱스 갱신 결과로 사이드바 메모리 캐시를 교체한다.
 - 문제 검색 입력은 짧은 debounce 뒤에 렌더링해 연속 입력 중 불필요한 DOM 재생성을 줄인다.
 - 문제 목록과 풀이기록 목록 클릭은 event delegation으로 처리해 렌더 때마다 행별 이벤트 리스너를 다시 붙이지 않는다.
 
 ### 다음 최적화 후보
 
-1. 문제 목록 부분 갱신
-   - 위치: `src/problemStore.js`, `src/sidebarProvider.js`, `src/problemCommands.js`
-   - 현재: 일반 refresh는 메모리 cache를 사용하고 force refresh는 전체를 다시 읽는다.
-   - 다음 방향: 문제 열기/리뷰 변경/삭제/풀이기록 변경 시 전체 force scan 대신 변경된 문제만 cache에서 교체한다.
-
-2. Webview 렌더 최적화
+1. Webview 렌더 최적화
    - 위치: `src/sidebarProvider.js`의 inline script
    - 현재: 검색 입력은 debounce하고 클릭 처리는 event delegation을 사용하지만 렌더 시 전체 list innerHTML은 재생성한다.
    - 방향: 문제 수가 더 커질 때 incremental render를 고려한다.

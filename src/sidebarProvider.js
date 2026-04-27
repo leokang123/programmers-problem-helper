@@ -58,6 +58,16 @@ class ProgrammersSidebarProvider {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     const programmersDir = await resolveProgrammersDir(this.context, workspaceFolder?.uri);
     const cacheKey = programmersDir?.fsPath || "";
+    if (Array.isArray(options.problems)) {
+      const problems = options.problems;
+      this.problemListCache = { cacheKey, problems };
+      if (this.problemListRefreshPromise?.cacheKey === cacheKey) {
+        this.problemListRefreshPromise = undefined;
+      }
+      this.post({ type: "problems", problems });
+      return;
+    }
+
     if (options.invalidateCache && this.problemListCache?.cacheKey === cacheKey) {
       this.problemListCache = undefined;
     }
@@ -80,6 +90,9 @@ class ProgrammersSidebarProvider {
     this.problemListRefreshPromise = { cacheKey, promise };
     try {
       const problems = await promise;
+      if (this.problemListRefreshPromise?.promise !== promise) {
+        return;
+      }
       this.problemListCache = { cacheKey, problems };
       this.post({ type: "problems", problems });
     } finally {
