@@ -258,12 +258,15 @@ Programmers/
 
 ### `loadProblems()` 세부 동작
 
-1. `vscode.workspace.fs.readDirectory(programmersDir)`
-2. 디렉터리만 필터링
-3. 각 디렉터리에 대해 병렬로:
+1. `problem-index.json`이 있고 모든 항목이 현재 `programmersDir` 아래를 가리키면 인덱스를 우선 반환한다.
+2. 인덱스가 없거나 현재 `programmersDir` 밖의 경로를 포함하면 전체 스캔으로 재생성한다.
+3. `vscode.workspace.fs.readDirectory(programmersDir)`
+4. 디렉터리만 필터링
+5. 각 디렉터리에 대해 병렬로:
    - `hasProblemFiles(problemDir)`로 `problem.md`, `solution.cpp` 존재 확인
    - `loadProblemInfo(problemDir.fsPath)`
-4. lessonId 숫자 순, 그 외 폴더명 순으로 정렬
+6. lessonId 숫자 순, 그 외 폴더명 순으로 정렬
+7. 재생성한 목록을 `.programmers-helper/problem-index.json`에 저장한다.
 
 ### `loadProblemInfo()`가 읽는 파일
 
@@ -303,6 +306,24 @@ Programmers/
    - `runFromCommand(...)`
    - `normalizeRunTarget(providedProblemDir)`
    - `runSamples(target.problemDir, "", target.cppPath)`
+
+### 실행 대상 C++ 결정
+
+`ProblemCommands.getActiveCodeTarget(problemDir)`:
+
+1. 활성 에디터가 실행 가능한 C++ 파일이면 그 파일을 우선한다.
+2. 아니면 현재 문제에서 보이는 C++ 파일을 찾는다.
+3. 둘 다 없으면 현재 문제의 `solution.cpp`를 사용한다.
+
+실행 가능한 C++ 파일은 아래 둘만 허용한다.
+
+- `Programmers/<problem>/solution.cpp`
+- `Programmers/<problem>/.programmers-helper/solutions/solution-<timestamp>.cpp`
+
+주의:
+
+- `.programmers-helper/test_runner.cpp`는 내부 생성 파일이라 실행 대상으로 사용하지 않는다.
+- 현재 문제 밖의 C++ 파일은 활성 에디터나 보이는 에디터에 있어도 무시한다.
 
 ### 테스트 데이터 결정
 
@@ -561,6 +582,14 @@ docker exec -i
 1. 문제 목록 refresh 때 `loadProblemInfo()`가 `solution-history.json`을 읽는다.
 2. Webview `풀이기록` 필터는 현재 문제의 `solutionHistory`만 렌더링한다.
 3. 기록은 `createdAt` 역순으로 정렬된다.
+4. 스냅샷 경로가 안전한 풀이 기록만 목록에 포함한다.
+
+스냅샷 경로 검증:
+
+- 상대 경로여야 한다.
+- `.programmers-helper/solutions/` 아래여야 한다.
+- 파일명은 `solution-*.cpp` 형태여야 한다.
+- `path.resolve()` 결과가 문제 폴더의 `.programmers-helper/solutions` 밖으로 나가면 무시한다.
 
 ### 이전 풀이 열기
 
@@ -639,6 +668,20 @@ Dev Container:
 2. `stopDockerRuntimeContainers({ execCommand })`
 3. 실행 중인 helper 컨테이너 목록을 찾아 `docker stop`한다.
 
+### 실행 모드 변경
+
+`programmersHelper.executionMode`가 `docker`에서 `local`로 바뀌면:
+
+1. 사이드바 상태 영역에 로컬 실행 전환을 즉시 표시한다.
+2. 실행 중인 테스트가 있으면 `testRunner.stop()`으로 중지 요청한다.
+3. `stopDockerRuntimeContainers({ execCommand })`로 실행 중인 helper Docker 컨테이너를 멈춘다.
+4. 사이드바 상태 영역에 컨테이너 정리 결과를 다시 표시한다.
+
+`local`에서 `docker`로 바뀌면:
+
+1. 즉시 컨테이너를 만들지는 않는다.
+2. 사이드바 상태 영역에 Docker 실행으로 전환됐고 다음 문제 열기/테스트 실행 때 컨테이너를 준비한다고 표시한다.
+
 ## 성능 점검 메모
 
 ### 이미 개선된 부분
@@ -651,6 +694,8 @@ Dev Container:
 - `solution.cpp` 내용, 생성된 `test_runner.cpp` 내용, 컴파일 플래그 fingerprint가 같으면 기존 `test_runner_fast` / `test_runner_debug` 바이너리를 재사용한다.
 - 테스트 결과 요약은 전체 output 문자열을 누적하지 않고 케이스별 PASS/FAIL/TIMEOUT count로 집계한다.
 - 사이드바 문제 목록은 메모리의 problem summary cache를 우선 사용하고, 명시적 새로고침 또는 파일 변경 동작 뒤에만 전체 스캔한다.
+- 문제 목록 인덱스가 현재 `Programmers` 루트 밖의 항목을 포함하면 폐기하고 전체 스캔으로 재생성한다.
+- 문제 검색 입력은 짧은 debounce 뒤에 렌더링해 연속 입력 중 불필요한 DOM 재생성을 줄인다.
 
 ### 다음 최적화 후보
 
@@ -661,8 +706,8 @@ Dev Container:
 
 2. Webview 렌더 최적화
    - 위치: `src/sidebarProvider.js`의 inline script
-   - 문제: 검색 입력마다 전체 list innerHTML을 재생성하고 이벤트 리스너를 다시 붙인다.
-   - 방향: 문제 수가 커질 때 debounce, event delegation, incremental render를 고려한다.
+   - 현재: 검색 입력은 debounce하지만 렌더 시 전체 list innerHTML을 재생성하고 이벤트 리스너를 다시 붙인다.
+   - 방향: 문제 수가 더 커질 때 event delegation, incremental render를 고려한다.
 
 ## 작업 시 체크리스트
 

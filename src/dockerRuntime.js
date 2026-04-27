@@ -93,6 +93,7 @@ async function stopDockerRuntimeContainers({ execCommand }) {
     "{{.Names}}",
   ], {
     allowNonZeroExit: true,
+    timeoutMs: 5000,
   });
 
   const names = list.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
@@ -102,6 +103,7 @@ async function stopDockerRuntimeContainers({ execCommand }) {
 
   await execCommand("docker", ["stop", ...names], {
     allowNonZeroExit: true,
+    timeoutMs: 15000,
   });
   return names;
 }

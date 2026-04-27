@@ -174,8 +174,17 @@ async function readProblemIndex(programmersDir) {
     return undefined;
   }
 
-  return sortProblemSummaries(index.problems
-    .filter((problem) => problem && typeof problem.problemDir === "string")
+  const root = path.resolve(programmersDir.fsPath);
+  const entries = index.problems.filter((problem) => problem && typeof problem.problemDir === "string");
+  const scopedEntries = entries.filter((problem) => {
+    const target = path.resolve(problem.problemDir);
+    return target !== root && target.startsWith(root + path.sep);
+  });
+  if (scopedEntries.length !== entries.length) {
+    return undefined;
+  }
+
+  return sortProblemSummaries(scopedEntries
     .map((problem) => ({
       problemDir: problem.problemDir,
       folderName: String(problem.folderName || path.basename(problem.problemDir)),
@@ -450,7 +459,7 @@ async function loadInitialSolutionCode(problemDir) {
 async function getSolutionSnapshotPath(problemDir, snapshotPath) {
   const history = await readSolutionHistory(problemDir);
   const found = history.attempts.find((attempt) => attempt.path === snapshotPath);
-  return found ? path.join(problemDir, found.path) : undefined;
+  return found ? resolveSolutionSnapshotPath(problemDir, found.path) : undefined;
 }
 
 // 풀이 기록 하나를 삭제합니다.
@@ -463,11 +472,19 @@ async function deleteSolutionSnapshot(problemDir, snapshotPath) {
     return false;
   }
 
+  const snapshotFilePath = resolveSolutionSnapshotPath(problemDir, target.path);
+  if (!snapshotFilePath) {
+    await writeJson(historyUri, {
+      attempts: history.attempts.filter((attempt) => attempt.path !== snapshotPath),
+    });
+    return true;
+  }
+
   try {
-    await vscode.workspace.fs.delete(vscode.Uri.file(path.join(problemDir, target.path)), { useTrash: true });
+    await vscode.workspace.fs.delete(vscode.Uri.file(snapshotFilePath), { useTrash: true });
   } catch {
     try {
-      await vscode.workspace.fs.delete(vscode.Uri.file(path.join(problemDir, target.path)), { useTrash: false });
+      await vscode.workspace.fs.delete(vscode.Uri.file(snapshotFilePath), { useTrash: false });
     } catch {
       // Metadata still gets cleaned up if the file is already gone.
     }
@@ -486,6 +503,7 @@ async function readSolutionHistory(problemDir) {
     attempts: Array.isArray(history?.attempts)
       ? history.attempts
         .filter((attempt) => attempt && typeof attempt.path === "string")
+        .filter((attempt) => Boolean(resolveSolutionSnapshotPath(problemDir, attempt.path)))
         .map((attempt) => ({
           path: attempt.path,
           createdAt: typeof attempt.createdAt === "string" ? attempt.createdAt : "",
@@ -494,6 +512,22 @@ async function readSolutionHistory(problemDir) {
         .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
       : [],
   };
+}
+
+function resolveSolutionSnapshotPath(problemDir, snapshotPath) {
+  if (typeof snapshotPath !== "string" || path.isAbsolute(snapshotPath)) {
+    return undefined;
+  }
+
+  const normalized = snapshotPath.split(path.win32.sep).join(path.posix.sep);
+  const expectedPrefix = ".programmers-helper/solutions/";
+  if (!normalized.startsWith(expectedPrefix) || !/^solution-.+\.cpp$/.test(path.posix.basename(normalized))) {
+    return undefined;
+  }
+
+  const root = path.resolve(problemDir, ".programmers-helper", "solutions");
+  const target = path.resolve(problemDir, normalized);
+  return target.startsWith(root + path.sep) ? target : undefined;
 }
 
 // 문제 폴더에 필수 파일이 있는지 확인합니다.

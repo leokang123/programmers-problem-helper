@@ -274,6 +274,7 @@ function buildSidebarHtml(nonce) {
     let problems = [];
     let currentProblem = undefined;
     let currentProblemDir = '';
+    let searchRenderTimer = undefined;
 
     function setPaneCollapsed(pane, button, className, collapsed) {
       const body = pane.querySelector('.pane-body');
@@ -469,6 +470,16 @@ function buildSidebarHtml(nonce) {
       updatePaneSummaries();
     }
 
+    function scheduleRenderProblems() {
+      if (searchRenderTimer) {
+        clearTimeout(searchRenderTimer);
+      }
+      searchRenderTimer = setTimeout(() => {
+        searchRenderTimer = undefined;
+        renderProblems();
+      }, 120);
+    }
+
     function addTest(inputValue = '', expectedValue = '') {
       testCount += 1;
       const card = document.createElement('div');
@@ -567,10 +578,7 @@ function buildSidebarHtml(nonce) {
         updatePaneSummaries();
       });
     });
-    problemSearch.addEventListener('input', () => {
-      renderProblems();
-      updatePaneSummaries();
-    });
+    problemSearch.addEventListener('input', scheduleRenderProblems);
     document.getElementById('refreshProblems').addEventListener('click', () => {
       vscode.postMessage({ type: 'refreshProblems', force: true });
     });

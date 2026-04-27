@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.0.18
+
+- Bump the extension manifest and lockfile to `0.0.18`, correcting the missed package version update from the previous `0.0.17` deployment.
+- Stop helper Docker containers automatically when `programmersHelper.executionMode` changes from `docker` to `local`, with bounded Docker cleanup timeouts and sidebar feedback.
+- Show a lightweight sidebar notice when switching from `local` back to `docker`; the Docker container is still prepared lazily on the next problem open or test run.
+- Restrict active C++ test targets to `solution.cpp` and saved `solution-*.cpp` snapshots so generated `test_runner.cpp` files are never run by mistake.
+- Prevent stale problem layout cleanup from closing unrelated C++ tabs outside the active `Programmers` root.
+- Validate problem-list index entries and saved solution snapshot paths before using them, rebuilding stale indexes and ignoring unsafe snapshot metadata.
+- Debounce sidebar problem search rendering to reduce repeated DOM rebuilds while typing.
+- Expand `docs/feature-flows.md` with the new execution-mode, target-selection, index, and snapshot-safety flows.
+
+## 0.0.17
+
+- Keep the right-side solution editor stable when resetting or starting a new attempt to reduce editor flash.
+- Fix stale compile fingerprint reuse when running saved solution snapshots by including the selected source include path in the fingerprint.
+- Tighten problem layout cleanup so switching problems keeps the current Markdown preview and C++ solution focused.
+
 ## 0.0.16
 
 - Defer heavier extension initialization until commands are actually used so the sidebar appears faster.

@@ -9,11 +9,13 @@ let problemCommands;
 let testRunner;
 let outputChannel;
 let diagnosticCollection;
+let lastExecutionMode;
 
 // 확장 진입점을 초기화하고 명령을 등록합니다.
 function activate(context) {
   outputChannel = vscode.window.createOutputChannel("Programmers Helper");
   diagnosticCollection = vscode.languages.createDiagnosticCollection("programmers-helper");
+  lastExecutionMode = getConfiguredExecutionMode();
   sidebarProvider = new ProgrammersSidebarProvider(context, {
     create: async (message) => {
       const { problemCommands } = ensureServices(context);
@@ -89,6 +91,11 @@ function activate(context) {
     vscode.commands.registerCommand("programmersHelper.runSamples", async () => {
       const { problemCommands, testRunner } = ensureServices(context);
       await testRunner.runFromCommand(context, "", undefined, () => problemCommands.getProblemDir());
+    }),
+    vscode.workspace.onDidChangeConfiguration(async (event) => {
+      if (event.affectsConfiguration("programmersHelper.executionMode")) {
+        await handleExecutionModeChange();
+      }
     })
   );
 }
@@ -142,6 +149,66 @@ async function deactivate() {
     const message = error instanceof Error ? error.message : String(error);
     outputChannel?.appendLine(`[Programmers Helper] Docker runtime cleanup skipped: ${message}`);
   }
+}
+
+async function handleExecutionModeChange() {
+  const nextExecutionMode = getConfiguredExecutionMode();
+  const previousExecutionMode = lastExecutionMode;
+  lastExecutionMode = nextExecutionMode;
+
+  if (previousExecutionMode === nextExecutionMode) {
+    return;
+  }
+
+  if (previousExecutionMode === "local" && nextExecutionMode === "docker") {
+    sidebarProvider?.post({
+      type: "status",
+      kind: "",
+      text: "Docker 실행으로 전환됨\n\n문제를 열거나 테스트를 실행하면 Docker 컨테이너를 준비합니다.",
+    });
+    return;
+  }
+
+  if (previousExecutionMode !== "docker" || nextExecutionMode !== "local") {
+    return;
+  }
+
+  sidebarProvider?.post({
+    type: "status",
+    kind: "ready",
+    text: "로컬 실행으로 전환됨\n\nDocker 컨테이너를 정리하고 있습니다.",
+  });
+
+  try {
+    testRunner?.stop();
+    const {
+      stopDockerRuntimeContainers,
+    } = require("./src/dockerRuntime");
+    const stopped = await stopDockerRuntimeContainers({ execCommand });
+    const detail = stopped.length > 0
+      ? `${stopped.length}개 컨테이너 중지\n${stopped.join("\n")}`
+      : "실행 중인 helper Docker 컨테이너가 없습니다.";
+    outputChannel?.appendLine(`[Programmers Helper] Switched executionMode to local. ${detail.replace(/\n/g, " ")}`);
+    sidebarProvider?.post({
+      type: "status",
+      kind: "ready",
+      text: `로컬 실행으로 전환됨\n\n${detail}`,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    outputChannel?.appendLine(`[Programmers Helper] Docker cleanup after local switch failed: ${message}`);
+    sidebarProvider?.post({
+      type: "status",
+      kind: "error",
+      text: `로컬 실행으로 전환됨\n\nDocker 컨테이너 정리에 실패했습니다.\n${message}`,
+    });
+  }
+}
+
+function getConfiguredExecutionMode() {
+  return vscode.workspace.getConfiguration("programmersHelper").get("executionMode") === "local"
+    ? "local"
+    : "docker";
 }
 
 // 외부 명령을 실행하고 stdout/stderr를 모읍니다.

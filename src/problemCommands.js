@@ -576,7 +576,8 @@ function getTabUris(tab) {
 
 async function closeStaleSolutionTabs(cppUri) {
   const keep = path.resolve(cppUri.fsPath);
-  const programmersRoot = path.dirname(path.dirname(path.dirname(cppUri.fsPath)));
+  const target = getRunTargetFromPath(cppUri.fsPath);
+  const programmersRoot = target ? path.dirname(target.problemDir) : path.dirname(path.dirname(cppUri.fsPath));
   const tabs = [];
   for (const group of vscode.window.tabGroups?.all || []) {
     for (const tab of group.tabs || []) {
@@ -684,11 +685,18 @@ function getRunTargetFromPath(filePath) {
   if (path.extname(normalized) !== ".cpp") {
     return undefined;
   }
+
   const parts = normalized.split(path.sep);
   const index = parts.lastIndexOf("Programmers");
   if (index < 0 || index + 1 >= parts.length) {
     return undefined;
   }
+
+  const relativeParts = parts.slice(index + 2);
+  if (!isRunnableCppPath(relativeParts)) {
+    return undefined;
+  }
+
   return {
     problemDir: parts.slice(0, index + 2).join(path.sep),
     cppPath: normalized,
@@ -704,6 +712,17 @@ function getVisibleCodeTarget(problemDir) {
 
   const snapshotTarget = visibleTargets.find((target) => path.resolve(target.cppPath) !== defaultCppPath);
   return snapshotTarget || visibleTargets[0];
+}
+
+function isRunnableCppPath(relativeParts) {
+  if (relativeParts.length === 1) {
+    return relativeParts[0] === "solution.cpp";
+  }
+
+  return relativeParts.length === 3
+    && relativeParts[0] === ".programmers-helper"
+    && relativeParts[1] === "solutions"
+    && /^solution-.+\.cpp$/.test(relativeParts[2]);
 }
 
 module.exports = {
