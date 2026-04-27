@@ -15,6 +15,7 @@ const {
   hasProblemFiles,
   loadProblemExamples,
   loadProblemInfo,
+  loadProblems,
   loadSavedCustomTests,
   removeProblemIndexEntry,
   resetSolutionToInitial,
@@ -248,7 +249,7 @@ class ProblemCommands {
     await writeReviewState(safeDir, review);
     await this.context.workspaceState.update("lastProblemDir", safeDir);
     await this.updateProblemIndexForDir(safeDir);
-    await this.refreshProblems?.();
+    await this.refreshProblems?.({ invalidateCache: true });
   }
 
   // 문제 폴더를 휴지통 또는 직접 삭제합니다.
@@ -293,7 +294,7 @@ class ProblemCommands {
     if (programmersDir) {
       await removeProblemIndexEntry(programmersDir, safeDir);
     }
-    await this.refreshProblems?.();
+    await this.refreshProblems?.({ invalidateCache: true });
     vscode.window.showInformationMessage(`${folderName} 삭제 완료`);
   }
 
@@ -323,7 +324,7 @@ class ProblemCommands {
     this.postMessage?.({ type: "currentProblem", problem });
     this.postMessage?.({ type: "customTests", tests: savedCustomTests.length > 0 ? savedCustomTests : examples.length > 0 ? [examples[0]] : [] });
     await this.updateProblemIndexForDir(problemDir);
-    await this.refreshProblems?.({ force: false });
+    await this.refreshProblems?.({ invalidateCache: true });
     const statusKind = runtimeStatus.kind || "";
     const statusTitle = statusKind === "ready"
       ? "준비 완료"
@@ -403,25 +404,24 @@ class ProblemCommands {
       return undefined;
     }
 
-    let entries = [];
-    try {
-      entries = await vscode.workspace.fs.readDirectory(programmersDir);
-    } catch {
-      vscode.window.showErrorMessage(`Programmers 폴더를 찾지 못했습니다: ${programmersDir.fsPath}`);
-      return undefined;
-    }
-
-    const folders = entries.filter(([, type]) => type === vscode.FileType.Directory).map(([name]) => name).sort();
-    if (folders.length === 0) {
+    const problems = await loadProblems(programmersDir);
+    if (problems.length === 0) {
       vscode.window.showErrorMessage("실행할 문제 폴더가 없습니다.");
       return undefined;
     }
 
-    const picked = await vscode.window.showQuickPick(folders, { title: "샘플 테스트를 실행할 문제를 선택하세요." });
+    const picked = await vscode.window.showQuickPick(
+      problems.map((problem) => ({
+        label: problem.folderName,
+        description: problem.lessonId ? `#${problem.lessonId}` : "",
+        problemDir: problem.problemDir,
+      })),
+      { title: "샘플 테스트를 실행할 문제를 선택하세요." }
+    );
     if (!picked) {
       return undefined;
     }
-    const problemDir = path.join(programmersDir.fsPath, picked);
+    const problemDir = picked.problemDir;
     return {
       problemDir,
       cppPath: path.join(problemDir, "solution.cpp"),

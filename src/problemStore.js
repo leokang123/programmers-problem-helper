@@ -32,7 +32,7 @@ async function rebuildProblemIndex(programmersDir) {
 
   const problems = (await Promise.all(
     entries
-      .filter(([, type]) => type === vscode.FileType.Directory)
+      .filter(([name, type]) => type === vscode.FileType.Directory && !isInternalHelperFolder(name))
       .map(async ([name]) => {
         const problemDir = vscode.Uri.joinPath(programmersDir, name);
         if (!(await hasProblemFiles(problemDir))) {
@@ -337,7 +337,7 @@ async function findExistingProblem(programmersDir, lessonId) {
   }
 
   for (const [name, type] of entries) {
-    if (type !== vscode.FileType.Directory) {
+    if (type !== vscode.FileType.Directory || isInternalHelperFolder(name)) {
       continue;
     }
 
@@ -557,6 +557,10 @@ function formatTimestamp(date) {
     "-",
     padMs(date.getMilliseconds()),
   ].join("");
+}
+
+function isInternalHelperFolder(name) {
+  return name === ".programmers-helper";
 }
 
 module.exports = {

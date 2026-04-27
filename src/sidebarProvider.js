@@ -58,6 +58,13 @@ class ProgrammersSidebarProvider {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     const programmersDir = await resolveProgrammersDir(this.context, workspaceFolder?.uri);
     const cacheKey = programmersDir?.fsPath || "";
+    if (options.invalidateCache && this.problemListCache?.cacheKey === cacheKey) {
+      this.problemListCache = undefined;
+    }
+    if (options.invalidateCache && this.problemListRefreshPromise?.cacheKey === cacheKey) {
+      this.problemListRefreshPromise = undefined;
+    }
+
     if (!options.force && this.problemListCache?.cacheKey === cacheKey) {
       this.post({ type: "problems", problems: this.problemListCache.problems });
       return;
