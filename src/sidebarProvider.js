@@ -290,6 +290,8 @@ function buildSidebarHtml(nonce) {
     let searchRenderTimer = undefined;
     let renderedProblems = [];
     let renderedSnapshots = [];
+    const problemRowCache = new Map();
+    const snapshotRowCache = new Map();
 
     function setPaneCollapsed(pane, button, className, collapsed) {
       const body = pane.querySelector('.pane-body');
@@ -305,16 +307,6 @@ function buildSidebarHtml(nonce) {
 
     function togglePane(pane, button, className) {
       setPaneCollapsed(pane, button, className, !pane.classList.contains('collapsed'));
-    }
-
-    function escapeHtml(value) {
-      return String(value).replace(/[&<>"']/g, (ch) => ({
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#39;'
-      })[ch]);
     }
 
     function updateCurrentActions() {
@@ -376,44 +368,120 @@ function buildSidebarHtml(nonce) {
         });
     }
 
+    function createEmptyRow(text) {
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = text;
+      return empty;
+    }
+
+    function pruneRowCache(cache, nextKeys) {
+      for (const key of Array.from(cache.keys())) {
+        if (!nextKeys.has(key)) {
+          cache.delete(key);
+        }
+      }
+    }
+
+    function createProblemRow() {
+      const row = document.createElement('div');
+      row.className = 'problem-row';
+      row.innerHTML =
+        '<div><div class="problem-title"></div><div class="problem-id"></div></div>' +
+        '<div class="problem-actions">' +
+          '<label class="review-toggle"><input class="review-check" type="checkbox" /> 다시풀</label>' +
+          '<button class="delete-problem" type="button" title="문제 삭제">삭제</button>' +
+        '</div>';
+      row._title = row.querySelector('.problem-title');
+      row._id = row.querySelector('.problem-id');
+      row._review = row.querySelector('.review-check');
+      return row;
+    }
+
+    function updateProblemRow(row, problem, index) {
+      row.dataset.index = String(index);
+      row._title.textContent = problem.title || '';
+      row._id.textContent =
+        '#' + (problem.lessonId || '-') +
+        (problem.solutionHistoryCount ? ' · 이전풀이 ' + problem.solutionHistoryCount + '개' : '');
+      row._review.checked = Boolean(problem.review);
+    }
+
+    function createSnapshotRow() {
+      const row = document.createElement('div');
+      row.className = 'snapshot-row';
+      row.innerHTML =
+        '<div><div class="snapshot-title"></div><div class="snapshot-meta"></div></div>' +
+        '<div class="problem-actions">' +
+          '<button class="solution-action open-snapshot" type="button">열기</button>' +
+          '<button class="delete-problem delete-snapshot" type="button">삭제</button>' +
+        '</div>';
+      row._title = row.querySelector('.snapshot-title');
+      row._meta = row.querySelector('.snapshot-meta');
+      return row;
+    }
+
+    function updateSnapshotRow(row, problem, snapshot, index) {
+      row.dataset.index = String(index);
+      row._title.textContent = problem.title || '';
+      row._meta.textContent =
+        '#' + (problem.lessonId || '-') +
+        ' · ' + (snapshot.label || '이전 풀이') +
+        ' · ' + formatSnapshotTime(snapshot.createdAt);
+    }
+
     function renderList(container, visible, emptyText) {
       renderedProblems = visible;
       renderedSnapshots = [];
+      snapshotRowCache.clear();
       if (visible.length === 0) {
-        container.innerHTML = '<div class="empty">' + escapeHtml(emptyText) + '</div>';
+        problemRowCache.clear();
+        container.replaceChildren(createEmptyRow(emptyText));
         return;
       }
 
-      container.innerHTML = visible.map((problem, index) => (
-        '<div class="problem-row" data-index="' + index + '">' +
-          '<div><div class="problem-title">' + escapeHtml(problem.title) + '</div>' +
-          '<div class="problem-id">#' + escapeHtml(problem.lessonId || '-') + (problem.solutionHistoryCount ? ' · 이전풀이 ' + escapeHtml(problem.solutionHistoryCount) + '개' : '') + '</div></div>' +
-          '<div class="problem-actions">' +
-            '<label class="review-toggle"><input class="review-check" type="checkbox" ' + (problem.review ? 'checked' : '') + ' /> 다시풀</label>' +
-            '<button class="delete-problem" type="button" title="문제 삭제">삭제</button>' +
-          '</div>' +
-        '</div>'
-      )).join('');
+      const nextKeys = new Set();
+      const fragment = document.createDocumentFragment();
+      visible.forEach((problem, index) => {
+        const key = problem.problemDir || String(index);
+        nextKeys.add(key);
+        let row = problemRowCache.get(key);
+        if (!row) {
+          row = createProblemRow();
+          problemRowCache.set(key, row);
+        }
+        updateProblemRow(row, problem, index);
+        fragment.appendChild(row);
+      });
+      pruneRowCache(problemRowCache, nextKeys);
+      container.replaceChildren(fragment);
     }
 
     function renderSolutionList(container, rows, emptyText) {
       renderedProblems = [];
       renderedSnapshots = rows;
+      problemRowCache.clear();
       if (rows.length === 0) {
-        container.innerHTML = '<div class="empty">' + escapeHtml(emptyText) + '</div>';
+        snapshotRowCache.clear();
+        container.replaceChildren(createEmptyRow(emptyText));
         return;
       }
 
-      container.innerHTML = rows.map(({ problem, snapshot }, index) => (
-        '<div class="snapshot-row" data-index="' + index + '">' +
-          '<div><div class="snapshot-title">' + escapeHtml(problem.title) + '</div>' +
-          '<div class="snapshot-meta">#' + escapeHtml(problem.lessonId || '-') + ' · ' + escapeHtml(snapshot.label || '이전 풀이') + ' · ' + escapeHtml(formatSnapshotTime(snapshot.createdAt)) + '</div></div>' +
-          '<div class="problem-actions">' +
-            '<button class="solution-action open-snapshot" type="button">열기</button>' +
-            '<button class="delete-problem delete-snapshot" type="button">삭제</button>' +
-          '</div>' +
-        '</div>'
-      )).join('');
+      const nextKeys = new Set();
+      const fragment = document.createDocumentFragment();
+      rows.forEach(({ problem, snapshot }, index) => {
+        const key = (problem.problemDir || '') + '::' + (snapshot.path || index);
+        nextKeys.add(key);
+        let row = snapshotRowCache.get(key);
+        if (!row) {
+          row = createSnapshotRow();
+          snapshotRowCache.set(key, row);
+        }
+        updateSnapshotRow(row, problem, snapshot, index);
+        fragment.appendChild(row);
+      });
+      pruneRowCache(snapshotRowCache, nextKeys);
+      container.replaceChildren(fragment);
     }
 
     function renderProblems() {

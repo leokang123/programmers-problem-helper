@@ -711,13 +711,14 @@ Dev Container:
 - 문제 열기, 리뷰 토글, 삭제, 풀이기록 변경은 단일 문제 인덱스 갱신 결과로 사이드바 메모리 캐시를 교체한다.
 - 문제 검색 입력은 짧은 debounce 뒤에 렌더링해 연속 입력 중 불필요한 DOM 재생성을 줄인다.
 - 문제 목록과 풀이기록 목록 클릭은 event delegation으로 처리해 렌더 때마다 행별 이벤트 리스너를 다시 붙이지 않는다.
+- 문제 목록과 풀이기록 목록 row는 key 기반 cache로 재사용하고, 텍스트와 checkbox 상태만 갱신한다.
 
 ### 다음 최적화 후보
 
-1. Webview 렌더 최적화
+1. Webview 가상 스크롤
    - 위치: `src/sidebarProvider.js`의 inline script
-   - 현재: 검색 입력은 debounce하고 클릭 처리는 event delegation을 사용하지만 렌더 시 전체 list innerHTML은 재생성한다.
-   - 방향: 문제 수가 더 커질 때 incremental render를 고려한다.
+   - 현재: row DOM은 재사용하지만 보이는 목록 전체를 순회하고 배치한다.
+   - 방향: 문제 수가 수천 개 이상으로 커져 검색/스크롤 끊김이 확인되면 화면 근처 row만 렌더링한다.
 
 ## 작업 시 체크리스트
 
