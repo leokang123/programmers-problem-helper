@@ -2,7 +2,7 @@
   "name": "programmers-problem-helper",
   "displayName": "Programmers Problem Helper",
   "description": "Create Programmers problem files, open a preview/solution split view, and run sample or custom C++ tests.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "local",
   "license": "MIT",
   "engines": {
@@ -45,7 +45,7 @@
             "local"
           ],
           "default": "docker",
-          "markdownDescription": "Choose whether sample and custom tests run inside the helper Docker container or directly on the local machine."
+          "markdownDescription": "Choose whether sample and custom tests run inside the helper Docker container or directly on the local machine. Docker is recommended on Windows. If you use local mode on Windows, install a GNU/Clang-style compiler such as MinGW `g++` or LLVM `clang++` and make sure it is available in PATH."
         },
         "programmersHelper.compilerCommand": {
           "type": "string",
@@ -54,7 +54,7 @@
             "g++"
           ],
           "default": "clang++",
-          "markdownDescription": "Choose the C++ compiler command used for building the generated test runner."
+          "markdownDescription": "Choose the C++ compiler command used for building the generated test runner. Local Windows mode supports `g++` or `clang++`; MSVC `cl.exe` is not supported by the current compile flags."
         },
         "programmersHelper.cppStandard": {
           "type": "string",

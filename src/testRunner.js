@@ -210,8 +210,9 @@ class TestRunner {
     const runnerDir = path.join(problemDir, ".programmers-helper");
     await vscode.workspace.fs.createDirectory(vscode.Uri.file(runnerDir));
     const runnerPath = path.join(runnerDir, "test_runner.cpp");
-    const fastBinaryPath = ".programmers-helper/test_runner_fast";
-    const debugBinaryPath = ".programmers-helper/test_runner_debug";
+    const binaryExtension = getLocalBinaryExtension(settings);
+    const fastBinaryPath = `.programmers-helper/test_runner_fast${binaryExtension}`;
+    const debugBinaryPath = `.programmers-helper/test_runner_debug${binaryExtension}`;
     const includePath = path.relative(runnerDir, cppPath).split(path.sep).join(path.posix.sep);
     const memoryOptions = this.resolveRunnerMemoryOptions(settings);
     const runnerCode = buildRunner(signature, examples, includePath, memoryOptions);
@@ -714,6 +715,10 @@ function describeMemoryOptions(memoryOptions) {
     return "judge-like";
   }
   return "N/A(local)";
+}
+
+function getLocalBinaryExtension(settings) {
+  return settings.executionMode === "local" && process.platform === "win32" ? ".exe" : "";
 }
 
 // 실행 대상을 problemDir과 cppPath로 정규화합니다.

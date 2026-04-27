@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.1
+
+- Fix generated C++ test runners so local Windows runs build `.exe` binaries.
+- Avoid POSIX-only memory measurement code in local test runners so Windows builds do not include `sys/resource.h`.
+- Document that Docker mode is recommended on Windows and local Windows mode requires MinGW `g++` or LLVM `clang++`.
+- Bump the extension manifest and lockfile to `0.1.1`.
+
 ## 0.1.0
 
 - Add default keyboard shortcuts: `Ctrl+Alt+T` for sample tests and `Ctrl+Alt+S` for stopping the active test run.

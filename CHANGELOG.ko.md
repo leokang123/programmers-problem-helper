@@ -1,5 +1,12 @@
 # 변경 이력
 
+## 0.1.1
+
+- Windows 로컬 실행에서 생성된 C++ 테스트 러너가 `.exe` 바이너리로 빌드되도록 수정했습니다.
+- 로컬 테스트 러너에서는 POSIX 전용 메모리 측정 코드를 생성하지 않아 Windows 빌드가 `sys/resource.h`를 포함하지 않도록 했습니다.
+- Windows에서는 Docker 실행 모드를 권장하고, 로컬 실행에는 MinGW `g++` 또는 LLVM `clang++`가 필요하다는 안내를 추가했습니다.
+- `package.json`과 `package-lock.json` 버전을 `0.1.1`로 올렸습니다.
+
 ## 0.1.0
 
 - 기본 키보드 단축키를 추가했습니다: 샘플 테스트 실행은 `Ctrl+Alt+T`, 실행 중지는 `Ctrl+Alt+S`입니다.

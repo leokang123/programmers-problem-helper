@@ -23,6 +23,9 @@ function parseSolutionSignature(cpp) {
 // 예제들을 실행하는 C++ 테스트 러너 코드를 만듭니다.
 function buildRunner(signature, examples, solutionIncludePath = "../solution.cpp", options = {}) {
   const includePath = JSON.stringify(solutionIncludePath);
+  const shouldMeasureMemory = shouldMeasureJudgeMemory(options);
+  const memoryHeaderCode = buildMemoryHeaderCode(shouldMeasureMemory);
+  const memorySupportCode = buildMemorySupportCode(shouldMeasureMemory);
   const memoryValueExpression = getMemoryValueExpression(options);
   const testBlocks = examples.map((example, index) => buildTestBlock(signature, example, index, memoryValueExpression));
 
@@ -44,7 +47,7 @@ function buildRunner(signature, examples, solutionIncludePath = "../solution.cpp
 #include <unordered_set>
 #include <utility>
 #include <vector>
-#include <sys/resource.h>
+${memoryHeaderCode}
 using namespace std;
 
 string repr(const string& value) { return string("\\"") + value + "\\""; }
@@ -56,38 +59,7 @@ string toFixedMemory(double value) {
   out << fixed << setprecision(2) << value;
   return out.str();
 }
-
-long long readProcStatusKb(const string& key) {
-  ifstream status("/proc/self/status");
-  string line;
-  const string prefix = key + ":";
-  while (getline(status, line)) {
-    if (line.rfind(prefix, 0) == 0) {
-      istringstream value(line.substr(prefix.size()));
-      long long kb = 0;
-      value >> kb;
-      return kb;
-    }
-  }
-  return 0;
-}
-
-double currentJudgeMemoryMb() {
-  rusage usage {};
-#if defined(__APPLE__) && defined(__MACH__)
-  if (getrusage(RUSAGE_SELF, &usage) != 0) {
-    return 0.0;
-  }
-  return static_cast<double>(usage.ru_maxrss) / 1024.0 / 1024.0;
-#else
-  long long peak_rss_kb = 0;
-  if (getrusage(RUSAGE_SELF, &usage) == 0) {
-    peak_rss_kb = usage.ru_maxrss;
-  }
-  const long long data_stack_kb = readProcStatusKb("VmData") + readProcStatusKb("VmStk");
-  return static_cast<double>(max(peak_rss_kb, data_stack_kb)) / 1024.0;
-#endif
-}
+${memorySupportCode}
 
 template <typename T>
 typename enable_if<is_arithmetic<T>::value && !is_same<T, bool>::value, string>::type repr(T value) {
@@ -113,6 +85,67 @@ ${testBlocks.join("\n")}
     cerr << "All sample tests passed." << endl;
   }
   return 0;
+}
+`;
+}
+
+// judge 모드일 때만 플랫폼별 메모리 측정 코드를 생성합니다.
+function shouldMeasureJudgeMemory(options) {
+  return (options.memoryMode || "judge") === "judge";
+}
+
+function buildMemoryHeaderCode(shouldMeasureMemory) {
+  return shouldMeasureMemory
+    ? "#if !defined(_WIN32)\n#include <sys/resource.h>\n#endif"
+    : "";
+}
+
+// POSIX 전용 헤더가 Windows 로컬 컴파일을 막지 않도록 필요한 경우에만 포함합니다.
+function buildMemorySupportCode(shouldMeasureMemory) {
+  if (!shouldMeasureMemory) {
+    return "";
+  }
+
+  return `
+long long readProcStatusKb(const string& key) {
+#if defined(_WIN32)
+  (void)key;
+  return 0;
+#else
+  ifstream status("/proc/self/status");
+  string line;
+  const string prefix = key + ":";
+  while (getline(status, line)) {
+    if (line.rfind(prefix, 0) == 0) {
+      istringstream value(line.substr(prefix.size()));
+      long long kb = 0;
+      value >> kb;
+      return kb;
+    }
+  }
+  return 0;
+#endif
+}
+
+double currentJudgeMemoryMb() {
+#if defined(_WIN32)
+  return 0.0;
+#else
+  rusage usage {};
+#if defined(__APPLE__) && defined(__MACH__)
+  if (getrusage(RUSAGE_SELF, &usage) != 0) {
+    return 0.0;
+  }
+  return static_cast<double>(usage.ru_maxrss) / 1024.0 / 1024.0;
+#else
+  long long peak_rss_kb = 0;
+  if (getrusage(RUSAGE_SELF, &usage) == 0) {
+    peak_rss_kb = usage.ru_maxrss;
+  }
+  const long long data_stack_kb = readProcStatusKb("VmData") + readProcStatusKb("VmStk");
+  return static_cast<double>(max(peak_rss_kb, data_stack_kb)) / 1024.0;
+#endif
+#endif
 }
 `;
 }

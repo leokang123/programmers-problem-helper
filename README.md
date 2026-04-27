@@ -34,6 +34,12 @@
 docker version
 ```
 
+### Windows 실행 안내
+
+Windows에서는 Docker 실행 모드를 권장합니다. Docker 모드는 확장이 준비한 Linux 컨테이너 안에서 컴파일하므로 Windows C++ toolchain 차이를 덜 탑니다.
+
+로컬 실행 모드를 사용하려면 MinGW `g++` 또는 LLVM `clang++`처럼 `-std=c++17`, `-Wall`, `-O2` 형식의 옵션을 지원하는 컴파일러가 PATH에 있어야 합니다. Visual Studio의 `cl.exe`만 설치된 환경은 현재 로컬 실행 모드에서 지원하지 않습니다.
+
 ## 보안 안내
 
 샘플/커스텀 테스트 실행은 Docker 컨테이너 안에서 `solution.cpp`를 컴파일하고 실행합니다. 신뢰할 수 없는 C++ 코드는 실행하지 마세요.
