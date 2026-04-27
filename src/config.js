@@ -12,6 +12,7 @@ const DEFAULT_EXECUTION_MODE = "docker";
 const DEFAULT_COMPILER_COMMAND = "clang++";
 const DEFAULT_CPP_STANDARD = "c++17";
 
+// 평소 실행용 컴파일 플래그입니다. 빠른 반복 실행을 우선합니다.
 function getFastCompileFlags(cppStandard = DEFAULT_CPP_STANDARD) {
   return [
     `-std=${cppStandard}`,
@@ -20,10 +21,12 @@ function getFastCompileFlags(cppStandard = DEFAULT_CPP_STANDARD) {
   ];
 }
 
+// Docker 기준 debug 플래그를 유지하는 호환 wrapper입니다.
 function getDebugCompileFlags(cppStandard = DEFAULT_CPP_STANDARD) {
   return getDebugCompileFlagsForMode("docker", cppStandard);
 }
 
+// sanitizer fallback용 플래그입니다. 로컬은 sanitizer runtime 부재가 잦아 기본 debug 플래그만 씁니다.
 function getDebugCompileFlagsForMode(executionMode = DEFAULT_EXECUTION_MODE, cppStandard = DEFAULT_CPP_STANDARD) {
   const common = [
     `-std=${cppStandard}`,

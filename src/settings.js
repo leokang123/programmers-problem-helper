@@ -10,6 +10,7 @@ const EXECUTION_MODES = new Set(["docker", "local"]);
 const COMPILER_COMMANDS = new Set(["clang++", "g++"]);
 const CPP_STANDARDS = new Set(["c++17", "c++20"]);
 
+// VS Code 설정을 읽고 실행 코드가 기대하는 안정적인 값으로 정규화합니다.
 function getExecutionSettings() {
   const config = vscode.workspace.getConfiguration("programmersHelper");
   return {
@@ -20,10 +21,12 @@ function getExecutionSettings() {
   };
 }
 
+// enum 설정은 package.json의 선택지 밖 값이 들어오면 기본값으로 되돌립니다.
 function normalizeEnum(value, allowed, fallback) {
   return allowed.has(value) ? value : fallback;
 }
 
+// timeout 설정은 숫자로 강제하고 너무 작은 값은 테스트 프로세스 관리가 가능한 최소값으로 올립니다.
 function normalizeTimeoutMs(value, fallback) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) {

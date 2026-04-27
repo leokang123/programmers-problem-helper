@@ -23,36 +23,8 @@ function parseSolutionSignature(cpp) {
 // 예제들을 실행하는 C++ 테스트 러너 코드를 만듭니다.
 function buildRunner(signature, examples, solutionIncludePath = "../solution.cpp", options = {}) {
   const includePath = JSON.stringify(solutionIncludePath);
-  const memoryMode = options.memoryMode || "judge";
-  const memoryValueExpression = memoryMode === "judge"
-      ? 'toFixedMemory(currentJudgeMemoryMb()) + "MB"'
-      : '"N/A(local)"';
-  const testBlocks = examples.map((example, index) => {
-    if (example.inputs.length !== signature.params.length) {
-      throw new Error(`입출력 예 #${index + 1}의 인자 수가 solution 시그니처와 다릅니다.`);
-    }
-
-    const declarations = signature.params.map((param, paramIndex) => {
-      return `    ${param.type} arg${paramIndex} = ${toCppLiteral(param.type, example.inputs[paramIndex])};`;
-    });
-    const expected = `    ${signature.returnType} expected = ${toCppLiteral(signature.returnType, example.expected)};`;
-    const callArgs = signature.params.map((_, paramIndex) => `arg${paramIndex}`).join(", ");
-
-    return `  if (target == 0 || target == ${index + 1}) {
-${declarations.join("\n")}
-${expected}
-    auto started_at = chrono::steady_clock::now();
-    auto actual = solution(${callArgs});
-    double elapsed_ms = chrono::duration<double, milli>(chrono::steady_clock::now() - started_at).count();
-    const string memory_label = ${memoryValueExpression};
-    if (actual == expected) {
-      cerr << fixed << setprecision(2) << "[PASS] #" << ${index + 1} << " time=" << elapsed_ms << "ms memory=" << memory_label << " expected=" << repr(expected) << " actual=" << repr(actual) << endl;
-    } else {
-      cerr << fixed << setprecision(2) << "[FAIL] #" << ${index + 1} << " time=" << elapsed_ms << "ms memory=" << memory_label << " expected=" << repr(expected) << " actual=" << repr(actual) << endl;
-      failed++;
-    }
-  }`;
-  });
+  const memoryValueExpression = getMemoryValueExpression(options);
+  const testBlocks = examples.map((example, index) => buildTestBlock(signature, example, index, memoryValueExpression));
 
   return `#include ${includePath}
 
@@ -143,6 +115,42 @@ ${testBlocks.join("\n")}
   return 0;
 }
 `;
+}
+
+// 실행 환경별 메모리 표시식을 C++ 코드 문자열로 선택합니다.
+function getMemoryValueExpression(options) {
+  return (options.memoryMode || "judge") === "judge"
+    ? 'toFixedMemory(currentJudgeMemoryMb()) + "MB"'
+    : '"N/A(local)"';
+}
+
+// 한 개 예제를 실행하는 C++ if 블록을 만듭니다.
+// buildRunner는 전체 파일 조립만, 이 함수는 테스트 케이스별 선언/호출/비교만 담당한다.
+function buildTestBlock(signature, example, index, memoryValueExpression) {
+  if (example.inputs.length !== signature.params.length) {
+    throw new Error(`입출력 예 #${index + 1}의 인자 수가 solution 시그니처와 다릅니다.`);
+  }
+
+  const declarations = signature.params.map((param, paramIndex) => {
+    return `    ${param.type} arg${paramIndex} = ${toCppLiteral(param.type, example.inputs[paramIndex])};`;
+  });
+  const expected = `    ${signature.returnType} expected = ${toCppLiteral(signature.returnType, example.expected)};`;
+  const callArgs = signature.params.map((_, paramIndex) => `arg${paramIndex}`).join(", ");
+
+  return `  if (target == 0 || target == ${index + 1}) {
+${declarations.join("\n")}
+${expected}
+    auto started_at = chrono::steady_clock::now();
+    auto actual = solution(${callArgs});
+    double elapsed_ms = chrono::duration<double, milli>(chrono::steady_clock::now() - started_at).count();
+    const string memory_label = ${memoryValueExpression};
+    if (actual == expected) {
+      cerr << fixed << setprecision(2) << "[PASS] #" << ${index + 1} << " time=" << elapsed_ms << "ms memory=" << memory_label << " expected=" << repr(expected) << " actual=" << repr(actual) << endl;
+    } else {
+      cerr << fixed << setprecision(2) << "[FAIL] #" << ${index + 1} << " time=" << elapsed_ms << "ms memory=" << memory_label << " expected=" << repr(expected) << " actual=" << repr(actual) << endl;
+      failed++;
+    }
+  }`;
 }
 
 // 입력 값을 C++ 리터럴 형태로 바꿉니다.

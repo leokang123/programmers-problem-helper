@@ -53,7 +53,14 @@ async function ensureDockerRuntimeReadyOnce({ vscode, extensionDir, problemDir, 
 
   await ensureDockerAvailable({ vscode, execCommand });
   await ensureDockerImageAvailable({ extensionDir, execCommand });
+  await ensureDockerContainerRunning({ containerName, mountSource, execCommand });
 
+  return { containerName, problemPath, mountSource };
+}
+
+// Programmers 루트별 장기 실행 컨테이너를 만들거나 다시 시작합니다.
+// 이미지/CLI 준비는 호출자가 끝낸 상태라고 가정하고 컨테이너 상태만 담당한다.
+async function ensureDockerContainerRunning({ containerName, mountSource, execCommand }) {
   const inspect = await execCommand("docker", ["inspect", "--format", "{{.State.Running}}", containerName], {
     allowNonZeroExit: true,
   });
@@ -77,8 +84,6 @@ async function ensureDockerRuntimeReadyOnce({ vscode, extensionDir, problemDir, 
   } else if (inspect.stdout.trim() !== "true") {
     await execCommand("docker", ["start", containerName]);
   }
-
-  return { containerName, problemPath, mountSource };
 }
 
 // 실행 중인 helper 컨테이너들을 모두 멈춥니다.
@@ -110,7 +115,23 @@ async function stopDockerRuntimeContainers({ execCommand }) {
 
 // VS Code 종료를 막지 않도록 Docker stop을 별도 프로세스에 맡깁니다.
 function stopDockerRuntimeContainersInBackground() {
-  const script = `
+  const script = buildDockerCleanupScript();
+
+  try {
+    const child = cp.spawn(process.execPath, ["-e", script], {
+      detached: true,
+      stdio: "ignore",
+    });
+    child.unref();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// extension 종료 경로에서는 await 없이 실행할 수 있는 standalone cleanup script를 만든다.
+function buildDockerCleanupScript() {
+  return `
 const cp = require("child_process");
 function run(args) {
   try {
@@ -140,17 +161,6 @@ if (names.length === 0) {
 }
 run(["stop", ...names]);
 `;
-
-  try {
-    const child = cp.spawn(process.execPath, ["-e", script], {
-      detached: true,
-      stdio: "ignore",
-    });
-    child.unref();
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 // Docker CLI가 실행 가능한지 확인합니다.

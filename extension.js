@@ -211,25 +211,57 @@ function getConfiguredExecutionMode() {
     : "docker";
 }
 
+// child_process timeout 처리를 한 곳에 모읍니다.
+function startKillTimer(child, timeoutMs) {
+  if (!timeoutMs) {
+    return { timeout: undefined, getTimedOut: () => false };
+  }
+
+  let timedOut = false;
+  let killTimer;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    if (!child.killed) {
+      child.kill("SIGTERM");
+      killTimer = setTimeout(() => {
+        if (!child.killed) {
+          child.kill("SIGKILL");
+        }
+      }, 1000);
+    }
+  }, timeoutMs);
+
+  return {
+    timeout,
+    getTimedOut: () => timedOut,
+    clear: () => {
+      clearTimeout(timeout);
+      if (killTimer) clearTimeout(killTimer);
+    },
+  };
+}
+
+// execCommand의 성공/실패 정책을 child_process 이벤트 처리에서 분리합니다.
+function settleExecCommand({ command, args, options, code, signal, stdout, stderr, timedOut }) {
+  const result = { code, signal, stdout, stderr };
+  if (timedOut) {
+    throw new Error(`${command} ${args.join(" ")} 시간이 초과되었습니다.`);
+  }
+  if (options.allowNonZeroExit || code === 0) {
+    return result;
+  }
+
+  const detail = (stderr || stdout || "").trim();
+  throw new Error(`${command} ${args.join(" ")} 실패${detail ? `\n${detail}` : ""}`);
+}
+
 // 외부 명령을 실행하고 stdout/stderr를 모읍니다.
 function execCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = cp.spawn(command, args, { cwd: options.cwd });
     let stdout = "";
     let stderr = "";
-    let timedOut = false;
-    let killTimer;
-    const timeout = options.timeoutMs ? setTimeout(() => {
-      timedOut = true;
-      if (!child.killed) {
-        child.kill("SIGTERM");
-        killTimer = setTimeout(() => {
-          if (!child.killed) {
-            child.kill("SIGKILL");
-          }
-        }, 1000);
-      }
-    }, options.timeoutMs) : undefined;
+    const timeoutState = startKillTimer(child, options.timeoutMs);
 
     child.stdout.on("data", (chunk) => {
       stdout += chunk.toString();
@@ -238,25 +270,16 @@ function execCommand(command, args, options = {}) {
       stderr += chunk.toString();
     });
     child.on("error", (error) => {
-      if (timeout) clearTimeout(timeout);
-      if (killTimer) clearTimeout(killTimer);
+      timeoutState.clear?.();
       reject(error);
     });
     child.on("close", (code, signal) => {
-      if (timeout) clearTimeout(timeout);
-      if (killTimer) clearTimeout(killTimer);
-      const result = { code, signal, stdout, stderr };
-      if (timedOut) {
-        reject(new Error(`${command} ${args.join(" ")} 시간이 초과되었습니다.`));
-        return;
+      timeoutState.clear?.();
+      try {
+        resolve(settleExecCommand({ command, args, options, code, signal, stdout, stderr, timedOut: timeoutState.getTimedOut() }));
+      } catch (error) {
+        reject(error);
       }
-      if (options.allowNonZeroExit || code === 0) {
-        resolve(result);
-        return;
-      }
-
-      const detail = (stderr || stdout || "").trim();
-      reject(new Error(`${command} ${args.join(" ")} 실패${detail ? `\n${detail}` : ""}`));
     });
   });
 }

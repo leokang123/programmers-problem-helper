@@ -112,6 +112,86 @@ class TestRunner {
 
   // 테스트 러너를 생성하고 각 예제를 실행합니다.
   async runSamples(problemDir, customTestsText = "", selectedCppPath) {
+    const runContext = await this.prepareTestRunContext(problemDir, customTestsText, selectedCppPath);
+    this.writeRunHeader(runContext);
+    const runtime = await this.ensureRuntimeReady(problemDir, runContext.settings);
+    this.clearProblemDiagnostics(runContext.cppPath);
+    try {
+      await this.compileRunner(runtime, problemDir, runContext.fastBinaryPath, runContext.fastCompileFlags, "컴파일", runContext.fastFingerprint, runContext.settings);
+    } catch (error) {
+      this.applyCompilerDiagnostics(runContext.cppPath, error);
+      throw error;
+    }
+    if (this.stopRequested) {
+      throw new Error("테스트 실행이 중지되었습니다.");
+    }
+
+    let passed = 0;
+    let failed = 0;
+    let debugBinaryReady = false;
+    for (let index = 0; index < runContext.examples.length; index++) {
+      if (this.stopRequested) {
+        throw new Error("테스트 실행이 중지되었습니다.");
+      }
+
+      try {
+        const testOutput = await this.runTestBinary(runtime, problemDir, runContext.fastBinaryPath, index + 1, runContext.settings, {
+          label: `테스트 #${index + 1}`,
+          timeoutMs: runContext.settings.testTimeoutMs,
+          streamOutput: true,
+          streamStderr: false,
+          streamSanitizedRuntime: false,
+        });
+        const counts = countTestResultOutput(testOutput);
+        passed += counts.passed;
+        failed += counts.failed;
+      } catch (error) {
+        if (!shouldRetryWithSanitizer(error)) {
+          throw error;
+        }
+
+        if (!debugBinaryReady) {
+          try {
+            await this.compileRunner(runtime, problemDir, runContext.debugBinaryPath, runContext.debugCompileFlags, "디버그 컴파일", runContext.debugFingerprint, runContext.settings);
+            debugBinaryReady = true;
+          } catch (compileError) {
+            if (this.shouldSkipSanitizerFallback(runContext.settings, compileError)) {
+              this.outputChannel.appendLine("[Programmers Helper] 로컬 sanitizer fallback을 사용할 수 없어 원래 런타임 에러를 유지합니다.");
+              throw error;
+            }
+            this.applyCompilerDiagnostics(runContext.cppPath, compileError);
+            throw compileError;
+          }
+        }
+
+        try {
+          const debugOutput = await this.runTestBinary(runtime, problemDir, runContext.debugBinaryPath, index + 1, runContext.settings, {
+            label: `테스트 #${index + 1}`,
+            timeoutMs: runContext.settings.testTimeoutMs,
+            streamOutput: false,
+            streamSanitizedRuntime: true,
+            debugEnv: runContext.settings.executionMode === "docker",
+          });
+          if (hasSanitizerOutput(debugOutput)) {
+            throw buildProcessFailureError(runContext.settings.executionMode === "docker" ? "docker" : runContext.debugBinaryPath, { label: `테스트 #${index + 1}` }, 1, undefined, debugOutput, "", 0);
+          }
+          throw error;
+        } catch (debugError) {
+          throw debugError;
+        }
+      }
+    }
+
+    const summary = `테스트 완료: ${passed} 통과, ${failed} 실패`;
+    this.outputChannel.appendLine("");
+    this.outputChannel.appendLine(summary);
+    vscode.window.showInformationMessage(summary);
+    return { summary, passed, failed };
+  }
+
+  // 테스트 실행에 필요한 설정, 예제, 생성 파일 경로, fingerprint를 한 번에 준비합니다.
+  // runSamples는 이 결과를 실행 순서에만 사용하고, 준비 세부사항은 이 함수 안에 둔다.
+  async prepareTestRunContext(problemDir, customTestsText = "", selectedCppPath) {
     const settings = getExecutionSettings();
     const fastCompileFlags = getFastCompileFlags(settings.cppStandard);
     const debugCompileFlags = getDebugCompileFlagsForMode(settings.executionMode, settings.cppStandard);
@@ -139,87 +219,31 @@ class TestRunner {
     const debugFingerprint = createRunnerFingerprint(runnerCode, cpp, debugCompileFlags, includePath, settings);
     await writeFileIfChanged(runnerPath, runnerCode);
 
+    return {
+      settings,
+      problemDir,
+      fastCompileFlags,
+      debugCompileFlags,
+      cppPath,
+      examples,
+      memoryOptions,
+      fastBinaryPath,
+      debugBinaryPath,
+      fastFingerprint,
+      debugFingerprint,
+      isCustomRun: customTestsText.trim().length > 0,
+    };
+  }
+
+  // Output 패널의 실행 헤더만 담당합니다.
+  writeRunHeader(runContext) {
     this.outputChannel.clear();
-    this.outputChannel.appendLine(`[Programmers Helper] ${path.basename(problemDir)} ${customTestsText.trim() ? "커스텀" : "샘플"} 테스트`);
-    this.outputChannel.appendLine(`[Programmers Helper] Source: ${path.relative(problemDir, cppPath) || "solution.cpp"}`);
-    this.outputChannel.appendLine(`[Programmers Helper] Execution mode: ${settings.executionMode === "docker" ? `docker (${DOCKER_IMAGE})` : "local"}`);
-    this.outputChannel.appendLine(`[Programmers Helper] Compiler: ${settings.compilerCommand} -std=${settings.cppStandard}`);
-    this.outputChannel.appendLine(`[Programmers Helper] Memory mode: ${describeMemoryOptions(memoryOptions)}`);
+    this.outputChannel.appendLine(`[Programmers Helper] ${path.basename(runContext.problemDir)} ${runContext.isCustomRun ? "커스텀" : "샘플"} 테스트`);
+    this.outputChannel.appendLine(`[Programmers Helper] Source: ${path.relative(runContext.problemDir, runContext.cppPath) || "solution.cpp"}`);
+    this.outputChannel.appendLine(`[Programmers Helper] Execution mode: ${runContext.settings.executionMode === "docker" ? `docker (${DOCKER_IMAGE})` : "local"}`);
+    this.outputChannel.appendLine(`[Programmers Helper] Compiler: ${runContext.settings.compilerCommand} -std=${runContext.settings.cppStandard}`);
+    this.outputChannel.appendLine(`[Programmers Helper] Memory mode: ${describeMemoryOptions(runContext.memoryOptions)}`);
     this.outputChannel.appendLine("");
-
-    const runtime = await this.ensureRuntimeReady(problemDir, settings);
-    this.clearProblemDiagnostics(cppPath);
-    try {
-      await this.compileRunner(runtime, problemDir, fastBinaryPath, fastCompileFlags, "컴파일", fastFingerprint, settings);
-    } catch (error) {
-      this.applyCompilerDiagnostics(cppPath, error);
-      throw error;
-    }
-    if (this.stopRequested) {
-      throw new Error("테스트 실행이 중지되었습니다.");
-    }
-
-    let passed = 0;
-    let failed = 0;
-    let debugBinaryReady = false;
-    for (let index = 0; index < examples.length; index++) {
-      if (this.stopRequested) {
-        throw new Error("테스트 실행이 중지되었습니다.");
-      }
-
-      try {
-        const testOutput = await this.runTestBinary(runtime, problemDir, fastBinaryPath, index + 1, settings, {
-          label: `테스트 #${index + 1}`,
-          timeoutMs: settings.testTimeoutMs,
-          streamOutput: true,
-          streamStderr: false,
-          streamSanitizedRuntime: false,
-        });
-        const counts = countTestResultOutput(testOutput);
-        passed += counts.passed;
-        failed += counts.failed;
-      } catch (error) {
-        if (!shouldRetryWithSanitizer(error)) {
-          throw error;
-        }
-
-        if (!debugBinaryReady) {
-          try {
-            await this.compileRunner(runtime, problemDir, debugBinaryPath, debugCompileFlags, "디버그 컴파일", debugFingerprint, settings);
-            debugBinaryReady = true;
-          } catch (compileError) {
-            if (this.shouldSkipSanitizerFallback(settings, compileError)) {
-              this.outputChannel.appendLine("[Programmers Helper] 로컬 sanitizer fallback을 사용할 수 없어 원래 런타임 에러를 유지합니다.");
-              throw error;
-            }
-            this.applyCompilerDiagnostics(cppPath, compileError);
-            throw compileError;
-          }
-        }
-
-        try {
-          const debugOutput = await this.runTestBinary(runtime, problemDir, debugBinaryPath, index + 1, settings, {
-            label: `테스트 #${index + 1}`,
-            timeoutMs: settings.testTimeoutMs,
-            streamOutput: false,
-            streamSanitizedRuntime: true,
-            debugEnv: settings.executionMode === "docker",
-          });
-          if (hasSanitizerOutput(debugOutput)) {
-            throw buildProcessFailureError(settings.executionMode === "docker" ? "docker" : debugBinaryPath, { label: `테스트 #${index + 1}` }, 1, undefined, debugOutput, "", 0);
-          }
-          throw error;
-        } catch (debugError) {
-          throw debugError;
-        }
-      }
-    }
-
-    const summary = `테스트 완료: ${passed} 통과, ${failed} 실패`;
-    this.outputChannel.appendLine("");
-    this.outputChannel.appendLine(summary);
-    vscode.window.showInformationMessage(summary);
-    return { summary, passed, failed };
   }
 
   // 해당 문제의 진단 메시지를 지웁니다.

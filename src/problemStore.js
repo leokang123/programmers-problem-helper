@@ -281,21 +281,8 @@ async function createProblem(programmersDir, lessonId) {
 
   const url = `https://school.programmers.co.kr/learn/courses/30/lessons/${lessonId}?language=cpp`;
   const html = await fetchText(url);
-  const title = decodeHtml(
-    matchFirst(html, /data-lesson-title="([^"]+)"/, /<span class="challenge-title">([\s\S]*?)<\/span>/, /<title>코딩테스트 연습 - ([^|]+?)\s*\|/)
-  ).trim();
-
-  if (!title) {
-    throw new Error(`문제 제목을 찾지 못했습니다: ${url}`);
-  }
-
-  const markdownHtml = matchFirst(html, /<div class="markdown solarized-dark">([\s\S]*?)<\/div>/);
-  if (!markdownHtml) {
-    throw new Error(`문제 본문을 찾지 못했습니다: ${url}`);
-  }
-
-  const level = matchFirst(html, /data-challenge-level="([^"]+)"/);
-  const category = matchFirst(html, /data-challenge-category="([^"]+)"/);
+  const page = parseProgrammersProblemPage(html, url);
+  const { title, initialCode } = page;
   const folderName = `${lessonId}_${slugify(title)}`;
   const problemDir = vscode.Uri.joinPath(programmersDir, folderName);
   const mdUri = vscode.Uri.joinPath(problemDir, "problem.md");
@@ -307,28 +294,8 @@ async function createProblem(programmersDir, lessonId) {
   await vscode.workspace.fs.createDirectory(problemDir);
   await vscode.workspace.fs.createDirectory(helperDir);
 
-  const problemMd = [
-    `# [Programmers ${lessonId}] ${title}`,
-    "",
-    `- 출처: [프로그래머스 스쿨](${url})`,
-    level ? `- 난이도: Level ${level}` : "",
-    category ? `- 분류: ${category}` : "",
-    "",
-    htmlToMarkdown(markdownHtml),
-    "",
-  ].filter((line, index, arr) => line !== "" || arr[index - 1] !== "").join("\n");
-
+  const problemMd = buildProblemMarkdown(lessonId, url, page);
   await writeFileIfAbsent(mdUri, problemMd);
-
-  const code = decodeHtml(
-    matchFirst(html, /<textarea hidden id="code" name="code">([\s\S]*?)<\/textarea>/, /name="initial_code_\d+"[^>]*value="([\s\S]*?)"/)
-  ).replace(/\r\n/g, "\n");
-
-  if (!code.trim()) {
-    throw new Error("C++ 기본 코드 템플릿을 찾지 못했습니다.");
-  }
-
-  const initialCode = code.trimEnd() + "\n";
   await writeFileIfAbsent(cppUri, initialCode);
   await writeFileIfAbsent(initialCppUri, initialCode);
 
@@ -343,6 +310,51 @@ async function createProblem(programmersDir, lessonId) {
   await vscode.workspace.fs.writeFile(metadataUri, Buffer.from(JSON.stringify(metadata, null, 2) + "\n", "utf8"));
 
   return { folderName, problemDir, mdUri, cppUri, examples: metadata.examples };
+}
+
+// HTML에서 문제 생성에 필요한 원천 데이터를 추출하고 필수 항목을 검증합니다.
+function parseProgrammersProblemPage(html, url) {
+  const title = decodeHtml(
+    matchFirst(html, /data-lesson-title="([^"]+)"/, /<span class="challenge-title">([\s\S]*?)<\/span>/, /<title>코딩테스트 연습 - ([^|]+?)\s*\|/)
+  ).trim();
+  if (!title) {
+    throw new Error(`문제 제목을 찾지 못했습니다: ${url}`);
+  }
+
+  const markdownHtml = matchFirst(html, /<div class="markdown solarized-dark">([\s\S]*?)<\/div>/);
+  if (!markdownHtml) {
+    throw new Error(`문제 본문을 찾지 못했습니다: ${url}`);
+  }
+
+  const code = decodeHtml(
+    matchFirst(html, /<textarea hidden id="code" name="code">([\s\S]*?)<\/textarea>/, /name="initial_code_\d+"[^>]*value="([\s\S]*?)"/)
+  ).replace(/\r\n/g, "\n");
+  if (!code.trim()) {
+    throw new Error("C++ 기본 코드 템플릿을 찾지 못했습니다.");
+  }
+
+  return {
+    title,
+    markdownHtml,
+    initialCode: code.trimEnd() + "\n",
+    level: matchFirst(html, /data-challenge-level="([^"]+)"/),
+    category: matchFirst(html, /data-challenge-category="([^"]+)"/),
+  };
+}
+
+// 저장할 problem.md를 조립합니다.
+// page 파싱과 파일 쓰기 사이에 문서 포맷 책임을 분리해 둔다.
+function buildProblemMarkdown(lessonId, url, page) {
+  return [
+    `# [Programmers ${lessonId}] ${page.title}`,
+    "",
+    `- 출처: [프로그래머스 스쿨](${url})`,
+    page.level ? `- 난이도: Level ${page.level}` : "",
+    page.category ? `- 분류: ${page.category}` : "",
+    "",
+    htmlToMarkdown(page.markdownHtml),
+    "",
+  ].filter((line, index, arr) => line !== "" || arr[index - 1] !== "").join("\n");
 }
 
 // 같은 lessonId로 이미 만든 문제를 찾습니다.

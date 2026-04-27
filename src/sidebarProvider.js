@@ -368,6 +368,8 @@ function buildSidebarHtml(nonce) {
         });
     }
 
+    // 빈 목록 메시지는 실제 row cache와 별개인 임시 DOM이다.
+    // 검색 결과 없음, 현재 문제 없음 같은 상태를 표시할 때만 만든다.
     function createEmptyRow(text) {
       const empty = document.createElement('div');
       empty.className = 'empty';
@@ -375,6 +377,8 @@ function buildSidebarHtml(nonce) {
       return empty;
     }
 
+    // 이번 렌더 결과에 남아 있는 key만 cache에 보관한다.
+    // DOM에서 빠진 row를 계속 들고 있으면 검색/삭제 후 메모리가 불필요하게 유지된다.
     function pruneRowCache(cache, nextKeys) {
       for (const key of Array.from(cache.keys())) {
         if (!nextKeys.has(key)) {
@@ -383,6 +387,52 @@ function buildSidebarHtml(nonce) {
       }
     }
 
+    // 목록이 비었을 때는 해당 목록의 row cache를 비우고 empty row 하나만 배치한다.
+    function renderEmptyList(container, cache, emptyText) {
+      cache.clear();
+      container.replaceChildren(createEmptyRow(emptyText));
+    }
+
+    // key에 해당하는 row를 cache에서 꺼내고, 없으면 factory로 새 row를 만든다.
+    // row 생성 책임과 row 갱신 책임을 분리하기 위한 작은 진입점이다.
+    function getCachedRow(cache, key, factory) {
+      let row = cache.get(key);
+      if (!row) {
+        row = factory();
+        cache.set(key, row);
+      }
+      return row;
+    }
+
+    // 현재 렌더 결과를 DocumentFragment 하나로 모아 container에 배치한다.
+    // 각 항목의 key 계산, row 생성, row 갱신은 인자로 받아 목록 종류별 차이를 밖으로 밀어낸다.
+    function renderCachedRows(container, items, cache, getKey, createRow, updateRow) {
+      const nextKeys = new Set();
+      const fragment = document.createDocumentFragment();
+      items.forEach((item, index) => {
+        const key = getKey(item, index);
+        nextKeys.add(key);
+        const row = getCachedRow(cache, key, createRow);
+        updateRow(row, item, index);
+        fragment.appendChild(row);
+      });
+      pruneRowCache(cache, nextKeys);
+      container.replaceChildren(fragment);
+    }
+
+    // 문제 row의 안정적인 identity는 문제 폴더 경로다.
+    // 경로가 없는 비정상 데이터는 index로 fallback하지만, 정상 목록에서는 problemDir가 항상 key가 된다.
+    function getProblemRowKey(problem, index) {
+      return problem.problemDir || String(index);
+    }
+
+    // 풀이기록 row는 같은 문제 안에 여러 snapshot이 있으므로 문제 경로와 snapshot 경로를 함께 쓴다.
+    function getSnapshotRowKey(row, index) {
+      return (row.problem.problemDir || '') + '::' + (row.snapshot.path || index);
+    }
+
+    // 문제 row의 DOM 구조는 최초 생성 때만 만든다.
+    // 이후 렌더에서는 updateProblemRow가 텍스트와 checkbox 상태만 바꾼다.
     function createProblemRow() {
       const row = document.createElement('div');
       row.className = 'problem-row';
@@ -398,6 +448,8 @@ function buildSidebarHtml(nonce) {
       return row;
     }
 
+    // 기존 문제 row를 최신 summary로 갱신한다.
+    // 클릭 핸들러는 event delegation을 쓰므로 여기서는 data-index와 표시 상태만 맞춘다.
     function updateProblemRow(row, problem, index) {
       row.dataset.index = String(index);
       row._title.textContent = problem.title || '';
@@ -407,6 +459,8 @@ function buildSidebarHtml(nonce) {
       row._review.checked = Boolean(problem.review);
     }
 
+    // 풀이기록 row의 DOM 구조도 최초 생성 때만 만든다.
+    // 열기/삭제 버튼 동작은 상위 목록 click handler가 data-index로 처리한다.
     function createSnapshotRow() {
       const row = document.createElement('div');
       row.className = 'snapshot-row';
@@ -421,7 +475,9 @@ function buildSidebarHtml(nonce) {
       return row;
     }
 
-    function updateSnapshotRow(row, problem, snapshot, index) {
+    // 기존 풀이기록 row를 최신 snapshot metadata로 갱신한다.
+    function updateSnapshotRow(row, item, index) {
+      const { problem, snapshot } = item;
       row.dataset.index = String(index);
       row._title.textContent = problem.title || '';
       row._meta.textContent =
@@ -430,58 +486,32 @@ function buildSidebarHtml(nonce) {
         ' · ' + formatSnapshotTime(snapshot.createdAt);
     }
 
+    // 일반 문제 목록 렌더링 진입점이다.
+    // snapshot 목록 cache와 현재 renderedSnapshots를 비워 클릭 대상이 문제 row임을 명확히 한다.
     function renderList(container, visible, emptyText) {
       renderedProblems = visible;
       renderedSnapshots = [];
       snapshotRowCache.clear();
       if (visible.length === 0) {
-        problemRowCache.clear();
-        container.replaceChildren(createEmptyRow(emptyText));
+        renderEmptyList(container, problemRowCache, emptyText);
         return;
       }
 
-      const nextKeys = new Set();
-      const fragment = document.createDocumentFragment();
-      visible.forEach((problem, index) => {
-        const key = problem.problemDir || String(index);
-        nextKeys.add(key);
-        let row = problemRowCache.get(key);
-        if (!row) {
-          row = createProblemRow();
-          problemRowCache.set(key, row);
-        }
-        updateProblemRow(row, problem, index);
-        fragment.appendChild(row);
-      });
-      pruneRowCache(problemRowCache, nextKeys);
-      container.replaceChildren(fragment);
+      renderCachedRows(container, visible, problemRowCache, getProblemRowKey, createProblemRow, updateProblemRow);
     }
 
+    // 풀이기록 목록 렌더링 진입점이다.
+    // 문제 목록 cache와 현재 renderedProblems를 비워 클릭 대상이 snapshot row임을 명확히 한다.
     function renderSolutionList(container, rows, emptyText) {
       renderedProblems = [];
       renderedSnapshots = rows;
       problemRowCache.clear();
       if (rows.length === 0) {
-        snapshotRowCache.clear();
-        container.replaceChildren(createEmptyRow(emptyText));
+        renderEmptyList(container, snapshotRowCache, emptyText);
         return;
       }
 
-      const nextKeys = new Set();
-      const fragment = document.createDocumentFragment();
-      rows.forEach(({ problem, snapshot }, index) => {
-        const key = (problem.problemDir || '') + '::' + (snapshot.path || index);
-        nextKeys.add(key);
-        let row = snapshotRowCache.get(key);
-        if (!row) {
-          row = createSnapshotRow();
-          snapshotRowCache.set(key, row);
-        }
-        updateSnapshotRow(row, problem, snapshot, index);
-        fragment.appendChild(row);
-      });
-      pruneRowCache(snapshotRowCache, nextKeys);
-      container.replaceChildren(fragment);
+      renderCachedRows(container, rows, snapshotRowCache, getSnapshotRowKey, createSnapshotRow, updateSnapshotRow);
     }
 
     function renderProblems() {

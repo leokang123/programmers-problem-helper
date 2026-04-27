@@ -67,8 +67,7 @@ function cleanCell(value) {
 // URL의 텍스트 응답을 가져옵니다.
 function fetchText(targetUrl, redirects = 0) {
   return new Promise((resolve, reject) => {
-    const parsedUrl = new URL(targetUrl);
-    if (parsedUrl.hostname !== PROGRAMMERS_HOST) {
+    if (!isAllowedProgrammersUrl(targetUrl)) {
       reject(new Error(`허용되지 않은 프로그래머스 URL입니다: ${targetUrl}`));
       return;
     }
@@ -90,7 +89,7 @@ function fetchText(targetUrl, redirects = 0) {
           }
 
           const redirectUrl = new URL(response.headers.location, targetUrl);
-          if (redirectUrl.hostname !== PROGRAMMERS_HOST) {
+          if (!isAllowedProgrammersUrl(redirectUrl.toString())) {
             reject(new Error(`허용되지 않은 redirect URL입니다: ${redirectUrl.toString()}`));
             response.resume();
             return;
@@ -126,6 +125,12 @@ function fetchText(targetUrl, redirects = 0) {
       request.destroy(new Error("프로그래머스 페이지 요청 시간이 초과되었습니다."));
     });
   });
+}
+
+// 네트워크 fetch는 프로그래머스 호스트만 허용한다.
+// redirect 검증에서도 같은 함수를 사용해 외부 URL로 빠지는 것을 막는다.
+function isAllowedProgrammersUrl(targetUrl) {
+  return new URL(targetUrl).hostname === PROGRAMMERS_HOST;
 }
 
 // 여러 정규식 중 처음 매칭된 값을 반환합니다.

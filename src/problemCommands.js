@@ -351,6 +351,8 @@ class ProblemCommands {
     return undefined;
   }
 
+  // problemStore가 돌려준 최신 인덱스 목록이 있으면 사이드바 cache를 그 목록으로 바로 교체한다.
+  // Programmers 루트를 찾지 못한 예외적인 경우에는 기존 full refresh 경로로 fallback한다.
   async refreshProblemsFromIndex(problems) {
     if (Array.isArray(problems)) {
       await this.refreshProblems?.({ problems });
@@ -560,6 +562,8 @@ async function closeInactiveProblemTabs(mdUri, cppUri) {
   }
 }
 
+// 닫아도 되는 Programmers problem.md 탭인지 판정합니다.
+// URI가 없는 Markdown preview 탭은 label fallback으로 보수적으로 처리한다.
 function isProblemMarkdownTab(tab, programmersRoot, keep) {
   const uris = getTabUris(tab);
   if (uris.length > 0) {
@@ -575,6 +579,7 @@ function isProblemMarkdownTab(tab, programmersRoot, keep) {
   return label.includes("problem.md");
 }
 
+// diff/custom editor 입력까지 고려해 탭이 참조하는 file URI들을 모읍니다.
 function getTabUris(tab) {
   return [
     tab.input?.uri,
@@ -583,6 +588,7 @@ function getTabUris(tab) {
   ].filter((uri) => uri?.scheme === "file");
 }
 
+// 현재 문제 풀이 파일 외에 같은 Programmers 루트의 C++ 풀이 탭을 정리합니다.
 async function closeStaleSolutionTabs(cppUri) {
   const keep = path.resolve(cppUri.fsPath);
   const target = getRunTargetFromPath(cppUri.fsPath);
@@ -607,6 +613,7 @@ async function closeStaleSolutionTabs(cppUri) {
   }
 }
 
+// 문제 열기 후 좌/우 editor group에 현재 problem.md와 cpp만 남깁니다.
 async function keepOnlyProblemLayoutTabs(mdUri, cppUri) {
   const keepLeft = path.resolve(mdUri.fsPath);
   const keepRight = path.resolve(cppUri.fsPath);
@@ -640,6 +647,7 @@ async function keepOnlyProblemLayoutTabs(mdUri, cppUri) {
   }
 }
 
+// VS Code URI의 파일 경로를 정규화해서 비교합니다.
 function sameFsPath(left, right) {
   return path.resolve(left.fsPath) === path.resolve(right.fsPath);
 }
@@ -723,6 +731,7 @@ function getVisibleCodeTarget(problemDir) {
   return snapshotTarget || visibleTargets[0];
 }
 
+// 실행 대상으로 인정하는 C++ 파일은 현재 풀이 또는 저장된 풀이 snapshot뿐입니다.
 function isRunnableCppPath(relativeParts) {
   if (relativeParts.length === 1) {
     return relativeParts[0] === "solution.cpp";

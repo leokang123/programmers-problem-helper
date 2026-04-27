@@ -163,6 +163,7 @@ function isCompilerCommand(commandName) {
   return commandName === "clang++" || commandName === "g++";
 }
 
+// Error message prefix만 보고 컴파일 실패인지 빠르게 판정합니다.
 function isCompilerFailureMessage(message) {
   return String(message || "").startsWith("컴파일 실패");
 }
@@ -176,34 +177,28 @@ function condenseRuntimeOutput(text) {
 
   const userFrame = extractUserRuntimeFrame(lines);
 
-  const summaryLines = lines.filter((line) => /^SUMMARY: /i.test(line));
-  if (summaryLines.length > 0) {
-    return uniqueLines([
-      ...(userFrame ? [userFrame] : []),
-      ...summaryLines.map((line) => translateRuntimeDiagnosticLine(shortenRuntimeDiagnosticLine(line))),
-    ]).slice(0, 2).join("\n");
-  }
+  const summary = buildRuntimeSummary(userFrame, lines.filter((line) => /^SUMMARY: /i.test(line)));
+  if (summary) return summary;
 
-  const runtimeLines = lines.filter((line) => /runtime error:/i.test(line));
-  if (runtimeLines.length > 0) {
-    return uniqueLines([
-      ...(userFrame ? [userFrame] : []),
-      ...runtimeLines.map((line) => translateRuntimeDiagnosticLine(shortenRuntimeDiagnosticLine(line))),
-    ]).slice(0, 2).join("\n");
-  }
+  const runtime = buildRuntimeSummary(userFrame, lines.filter((line) => /runtime error:/i.test(line)));
+  if (runtime) return runtime;
 
-  const errorLines = lines.filter((line) => /^==\d+==ERROR: /i.test(line) || /AddressSanitizer:/i.test(line) || /UndefinedBehaviorSanitizer/i.test(line));
-  if (errorLines.length > 0) {
-    return uniqueLines([
-      ...(userFrame ? [userFrame] : []),
-      ...errorLines.map((line) => translateRuntimeDiagnosticLine(shortenRuntimeDiagnosticLine(line))),
-    ]).slice(0, 2).join("\n");
-  }
+  const sanitizer = buildRuntimeSummary(userFrame, lines.filter((line) => /^==\d+==ERROR: /i.test(line) || /AddressSanitizer:/i.test(line) || /UndefinedBehaviorSanitizer/i.test(line)));
+  if (sanitizer) return sanitizer;
 
   const compact = lines.filter((line) => !/^#\d+\s/.test(line) && !/\(BuildId:/.test(line) && !/^==\d+==ABORTING/i.test(line));
+  return buildRuntimeSummary(userFrame, compact);
+}
+
+// user frame과 후보 진단 줄을 상태/패널 공용 요약 형식으로 압축합니다.
+function buildRuntimeSummary(userFrame, lines) {
+  if (lines.length === 0) {
+    return "";
+  }
+
   return uniqueLines([
     ...(userFrame ? [userFrame] : []),
-    ...compact.map((line) => translateRuntimeDiagnosticLine(shortenRuntimeDiagnosticLine(line))),
+    ...lines.map((line) => translateRuntimeDiagnosticLine(shortenRuntimeDiagnosticLine(line))),
   ]).slice(0, 2).join("\n");
 }
 
