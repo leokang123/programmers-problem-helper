@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.3
+
+- Publish tagged releases to the VS Code Marketplace from GitHub Actions using the `VSCE_PAT` repository secret.
+- Verify that the `package.json` version matches the pushed `v*.*.*` tag before release packaging.
+- Document the automated Marketplace release secret in the development release notes.
+- Bump the extension manifest and lockfile to `0.2.3`.
+
 ## 0.2.2
 
 - Prepare Marketplace metadata with the public publisher ID, package icon, banner color, and broader search keywords.

@@ -1,5 +1,12 @@
 # 변경 이력
 
+## 0.2.3
+
+- `VSCE_PAT` repository secret을 사용해 태그 배포 시 GitHub Actions에서 VS Code Marketplace까지 자동 publish하도록 했습니다.
+- Release 패키징 전에 `package.json` 버전과 `v*.*.*` 태그 버전이 일치하는지 검증하도록 했습니다.
+- 개발 문서에 자동 Marketplace 배포 secret 안내를 추가했습니다.
+- `package.json`과 `package-lock.json` 버전을 `0.2.3`으로 올렸습니다.
+
 ## 0.2.2
 
 - Marketplace 배포를 위해 공개 publisher ID, 패키지 아이콘, 배너 색상, 검색 키워드 메타데이터를 정리했습니다.
