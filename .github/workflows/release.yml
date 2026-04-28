@@ -24,6 +24,15 @@ jobs:
       - name: Check extension syntax
         run: npm run check
 
+      - name: Verify package version matches tag
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$PACKAGE_VERSION" != "$TAG_VERSION" ]; then
+            echo "package.json version ($PACKAGE_VERSION) does not match tag ($TAG_VERSION)."
+            exit 1
+          fi
+
       - name: Package VSIX
         run: npm run package
 
@@ -31,3 +40,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: "*.vsix"
+
+      - name: Publish VS Code Marketplace
+        run: npx @vscode/vsce publish -p "$VSCE_PAT"
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}

@@ -227,7 +227,7 @@ npx @vscode/vsce login leokang123
 npx @vscode/vsce publish
 ```
 
-GitHub Release 배포는 `v*.*.*` 태그를 push하면 GitHub Actions가 `.vsix`를 만들고 Release에 첨부합니다.
+GitHub Release와 Marketplace 배포는 `v*.*.*` 태그를 push하면 GitHub Actions가 `.vsix`를 만들고 Release에 첨부한 뒤 Marketplace에 publish합니다. 자동 Marketplace 배포에는 GitHub repository secret `VSCE_PAT`가 필요합니다.
 
 ## Dev Container 개발
 
