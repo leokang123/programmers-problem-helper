@@ -1,14 +1,18 @@
 # Changelog
 
-## 0.2.0
+## 0.2.1
 
 - Add a current-problem Website button that copies the active solution file to the clipboard and opens the original Programmers page.
+- Install the default JDK in the development Dev Container so Java local execution works in development mode.
+- Bump the extension manifest and lockfile to `0.2.1`.
+
+## 0.2.0
+
 - Add the `programmersHelper.language` setting and manage solution files, initial templates, and solution history by language.
 - Add Java template fetching, `Solution.java`/`TestRunner.java` generation, and `javac`/`java` sample and custom test runs.
 - Introduce language-specific runner builders and diagnostic parsing so future languages can be added more cleanly.
 - Show current-language solution history first and keep other-language history available in a collapsed section.
 - Rebuild the helper Docker runtime as `programmers-helper-runtime:2` with both C++ and Java tooling plus UTF-8 locale support for Korean problem paths.
-- Install the default JDK in the development Dev Container so Java local execution works in development mode.
 - Bump the extension manifest and lockfile to `0.2.0`.
 
 ## 0.1.1

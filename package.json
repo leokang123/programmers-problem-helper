@@ -2,7 +2,7 @@
   "name": "programmers-problem-helper",
   "displayName": "Programmers Problem Helper",
   "description": "Create Programmers problem files, open a preview/solution split view, and run sample or custom tests.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "local",
   "license": "MIT",
   "engines": {
