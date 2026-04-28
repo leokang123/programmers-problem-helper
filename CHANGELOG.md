@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.2
+
+- Prepare Marketplace metadata with the public publisher ID, package icon, banner color, and broader search keywords.
+- Update the README with Marketplace installation guidance, update behavior, privacy notes, and warranty disclaimer.
+- Tighten the VSIX ignore list so local problem workspaces and development-only files are not packaged.
+- Bump the extension manifest and lockfile to `0.2.2`.
+
 ## 0.2.1
 
 - Add a current-problem Website button that copies the active solution file to the clipboard and opens the original Programmers page.

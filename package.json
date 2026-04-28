@@ -1,10 +1,11 @@
 {
   "name": "programmers-problem-helper",
   "displayName": "Programmers Problem Helper",
-  "description": "Create Programmers problem files, open a preview/solution split view, and run sample or custom tests.",
-  "version": "0.2.1",
-  "publisher": "local",
+  "description": "Solve Programmers coding-test problems in VS Code with language templates, split previews, and local sample test runs.",
+  "version": "0.2.2",
+  "publisher": "leokang123",
   "license": "MIT",
+  "icon": "media/icon.png",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -17,11 +18,18 @@
   "keywords": [
     "programmers",
     "algorithm",
+    "algorithms",
     "cpp",
+    "c++",
     "java",
     "coding-test",
+    "competitive-programming",
     "korean"
   ],
+  "galleryBanner": {
+    "color": "#1e4069",
+    "theme": "dark"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/leokang123/programmers-problem-helper.git"

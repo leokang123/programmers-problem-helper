@@ -1,6 +1,6 @@
 # Programmers Problem Helper
 
-프로그래머스 코딩테스트 문제를 VS Code에서 더 편하게 풀기 위한 로컬 확장입니다.
+프로그래머스 코딩테스트 문제를 VS Code에서 더 편하게 풀기 위한 확장입니다.
 
 이 확장은 OpenAI Codex를 사용해서 만들었습니다.
 
@@ -58,11 +58,31 @@ Windows에서는 Docker 실행 모드를 권장합니다. Docker 모드는 확�
 
 샘플/커스텀 테스트 실행은 Docker 컨테이너 안에서 현재 언어 풀이 파일을 컴파일하고 실행합니다. 신뢰할 수 없는 코드는 실행하지 마세요.
 
-## GitHub에서 설치하기
+## 개인정보 안내
 
-방법은 두 가지입니다.
+이 확장은 사용자의 풀이 코드, 테스트 입력, 문제 기록을 별도 서버로 전송하지 않습니다. 문제 생성과 언어별 템플릿 갱신을 위해 사용자의 환경에서 프로그래머스 문제 페이지를 가져오며, 테스트 실행은 로컬 환경 또는 로컬 Docker 컨테이너에서 수행됩니다.
 
-### 방법 1: GitHub Releases에서 VSIX 다운로드
+`웹` 버튼은 현재 풀이 파일 코드를 로컬 클립보드에 복사한 뒤 프로그래머스 문제 페이지를 엽니다. 사이트에 코드를 자동 제출하거나 입력하지 않습니다.
+
+## 면책 안내
+
+이 확장은 있는 그대로 제공되며 어떠한 보증도 제공하지 않습니다. 사용자 코드는 로컬 환경 또는 로컬 Docker 컨테이너에서 실행되며, 실행 결과, 프로그래머스 페이지 접근 가능 여부, 사용자 코드 실행으로 인한 영향에 대해 보장하지 않습니다. 사용자는 본인의 책임 하에 확장을 사용해야 합니다.
+
+## 설치하기
+
+### 방법 1: VS Code Marketplace에서 설치
+
+VS Code의 Extensions 화면에서 `Programmers Problem Helper`를 검색해 설치합니다.
+
+명령 팔레트 또는 터미널에서는 다음 명령으로 설치할 수 있습니다.
+
+```sh
+code --install-extension leokang123.programmers-problem-helper
+```
+
+Marketplace 설치본은 VS Code의 확장 업데이트 설정에 따라 자동으로 업데이트됩니다.
+
+### 방법 2: GitHub Releases에서 VSIX 다운로드
 
 GitHub 저장소의 `Releases` 페이지에서 최신 `.vsix` 파일을 다운로드합니다.
 
@@ -78,7 +98,7 @@ code --install-extension <다운로드한-vsix-파일>
 2. `Developer: Reload Window` 실행
 3. 왼쪽 Activity Bar에서 `Programmers` 아이콘 열기
 
-### 방법 2: 저장소를 clone해서 연결
+### 방법 3: 저장소를 clone해서 연결
 
 이 저장소를 clone합니다.
 
@@ -110,7 +130,11 @@ New-Item -ItemType Junction "$HOME\.vscode\extensions\local.programmers-problem-
 
 ## 업데이트
 
-최신 코드를 받고 VS Code를 다시 불러오면 됩니다.
+Marketplace 설치본은 VS Code가 일반 확장처럼 업데이트합니다.
+
+GitHub Releases에서 설치한 경우 최신 `.vsix`를 다시 내려받아 설치합니다.
+
+clone 연결 방식으로 설치한 경우 최신 코드를 받고 VS Code를 다시 불러오면 됩니다.
 
 ```sh
 cd programmers-problem-helper
@@ -119,7 +143,7 @@ git pull
 
 그 다음 `Developer: Reload Window`를 실행합니다.
 
-## 이 프로젝트를 내 GitHub에 올리기
+## 직접 배포하기
 
 새 GitHub 저장소를 만든 뒤, 이 확장 폴더를 저장소 루트로 push합니다.
 
@@ -190,7 +214,20 @@ Expected Output:
 npm run check
 ```
 
-배포는 `v*.*.*` 태그를 push하면 GitHub Actions가 `.vsix`를 만들고 Release에 첨부합니다.
+VSIX 패키징 확인:
+
+```sh
+npm run package
+```
+
+Marketplace 배포는 publisher 계정이 준비된 뒤 실행합니다.
+
+```sh
+npx @vscode/vsce login leokang123
+npx @vscode/vsce publish
+```
+
+GitHub Release 배포는 `v*.*.*` 태그를 push하면 GitHub Actions가 `.vsix`를 만들고 Release에 첨부합니다.
 
 ## Dev Container 개발
 

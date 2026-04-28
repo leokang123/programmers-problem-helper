@@ -1,8 +1,15 @@
 .git/**
+.gitignore
 .github/**
+.devcontainer/**
 .vscode/**
+Programmers/**
+.programmers-helper/**
 node_modules/**
+out/**
+dist/**
 *.vsix
 *.log
 .DS_Store
 npm-debug.log
+programmers-problem-helper
