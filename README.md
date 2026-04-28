@@ -196,7 +196,8 @@ npm run check
 이 저장소에는 Dev Container 설정이 포함되어 있습니다.
 
 - 컨테이너 안에서는 현재 워크스페이스를 `~/.vscode-server/extensions/local.programmers-problem-helper`로 자동 symlink합니다.
-- 개발판은 Dev Container 안에서 확장을 개발하고, 컴파일 및 실행은 호스트 Docker daemon에 붙는 별도의 sibling 실행 컨테이너가 담당합니다.
+- 개발판은 Dev Container 안에서 확장을 개발하고, Docker 실행 모드에서는 호스트 Docker daemon에 붙는 별도의 sibling 실행 컨테이너가 컴파일 및 실행을 담당합니다.
+- 개발판 Dev Container에는 `clang`, `lldb`, 기본 JDK(`javac`, `java`)가 포함되어 있어 `programmersHelper.executionMode`를 `local`로 바꾸면 C++/Java를 컨테이너 내부에서 바로 실행할 수 있습니다.
 - 즉 개발판은 "개발용 Dev Container 1개 + 실행용 컨테이너 1개" 구조이며, 실행용 컨테이너를 Dev Container 내부에 중첩 생성하지 않습니다.
 - 로컬 macOS VS Code에는 배포판 `.vsix` 또는 마켓 설치본을 그대로 사용하면 됩니다.
 - 즉 개발용 확장은 컨테이너 쪽 VS Code Server에서만 보이고, 로컬 배포판과 분리됩니다.

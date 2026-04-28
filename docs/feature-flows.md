@@ -778,6 +778,14 @@ Dev Container:
 1. 즉시 컨테이너를 만들지는 않는다.
 2. 사이드바 상태 영역에 Docker 실행으로 전환됐고 다음 문제 열기/테스트 실행 때 컨테이너를 준비한다고 표시한다.
 
+## Dev Container flow
+
+- 개발 컨테이너 Dockerfile: `.devcontainer/Dockerfile`
+- 개발 컨테이너에는 확장 개발과 local 실행 검증을 위해 `clang`, `lldb`, `default-jdk-headless`를 설치한다.
+- `LANG=C.UTF-8`, `LC_ALL=C.UTF-8`을 설정해 한글 문제 폴더에서 Java local 컴파일이 깨지지 않도록 한다.
+- `programmersHelper.executionMode=local`이면 Dev Container 내부의 `clang++`/`g++` 또는 `javac`/`java`로 실행한다.
+- `programmersHelper.executionMode=docker`이면 기존처럼 호스트 Docker daemon에 붙는 sibling 실행 컨테이너를 준비한다.
+
 ## 성능 점검 메모
 
 ### 이미 개선된 부분
