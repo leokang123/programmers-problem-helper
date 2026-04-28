@@ -5,14 +5,18 @@ const vscode = require("vscode");
 const {
   COMPILE_TIMEOUT_MS,
   DOCKER_IMAGE,
+  JAVA_COMMAND,
+  JAVAC_COMMAND,
   getDebugCompileFlagsForMode,
   getFastCompileFlags,
 } = require("./config");
 const {
-  buildRunner,
-  parseCustomTests,
-  parseSolutionSignature,
-} = require("./cppRunnerBuilder");
+  getRunnerBuilder,
+} = require("./languageRunnerRegistry");
+const {
+  getLanguage,
+  getSolutionPath,
+} = require("./languages");
 const {
   ensureDockerRuntimeReady: ensureDockerRuntimeReadyModule,
 } = require("./dockerRuntime");
@@ -34,7 +38,7 @@ const TEST_PROCESS_TIMEOUT_GRACE_MS = 2000;
 const MAX_DISPLAY_OUTPUT_CHARS = 20000;
 const MAX_CAPTURE_OUTPUT_CHARS = 100000;
 
-// C++ 테스트 실행 상태와 실행 환경을 관리합니다.
+// 언어별 테스트 실행 상태와 실행 환경을 관리합니다.
 class TestRunner {
   // 출력 채널과 실행 의존성을 주입합니다.
   constructor({ outputChannel, diagnosticCollection, extensionDir, execCommand, postStatus }) {
@@ -67,7 +71,7 @@ class TestRunner {
     try {
       const hasCustomTests = customTestsText.trim().length > 0;
       this.postStatus?.({ type: "status", kind: "running", text: `${hasCustomTests ? "커스텀" : "샘플"} 테스트 실행 중...` });
-      const result = await this.runSamples(target.problemDir, customTestsText, target.cppPath);
+      const result = await this.runSamples(target.problemDir, customTestsText, target.solutionPath, target.language);
       this.postStatus?.({
         type: "status",
         kind: result.failed === 0 ? "ready" : "error",
@@ -111,15 +115,15 @@ class TestRunner {
   }
 
   // 테스트 러너를 생성하고 각 예제를 실행합니다.
-  async runSamples(problemDir, customTestsText = "", selectedCppPath) {
-    const runContext = await this.prepareTestRunContext(problemDir, customTestsText, selectedCppPath);
+  async runSamples(problemDir, customTestsText = "", selectedSolutionPath, selectedLanguage) {
+    const runContext = await this.prepareTestRunContext(problemDir, customTestsText, selectedSolutionPath, selectedLanguage);
     this.writeRunHeader(runContext);
-    const runtime = await this.ensureRuntimeReady(problemDir, runContext.settings);
-    this.clearProblemDiagnostics(runContext.cppPath);
+    const runtime = await this.ensureRuntimeReady(problemDir, runContext);
+    this.clearProblemDiagnostics(runContext.solutionPath);
     try {
-      await this.compileRunner(runtime, problemDir, runContext.fastBinaryPath, runContext.fastCompileFlags, "컴파일", runContext.fastFingerprint, runContext.settings);
+      await this.compileRunner(runtime, runContext, runContext.fastArtifactPath, runContext.fastCompileFlags, "컴파일", runContext.fastFingerprint);
     } catch (error) {
-      this.applyCompilerDiagnostics(runContext.cppPath, error);
+      this.applyCompilerDiagnostics(runContext.solutionPath, error, runContext.language.id);
       throw error;
     }
     if (this.stopRequested) {
@@ -135,7 +139,7 @@ class TestRunner {
       }
 
       try {
-        const testOutput = await this.runTestBinary(runtime, problemDir, runContext.fastBinaryPath, index + 1, runContext.settings, {
+        const testOutput = await this.runTestArtifact(runtime, runContext, runContext.fastArtifactPath, index + 1, {
           label: `테스트 #${index + 1}`,
           timeoutMs: runContext.settings.testTimeoutMs,
           streamOutput: true,
@@ -146,26 +150,26 @@ class TestRunner {
         passed += counts.passed;
         failed += counts.failed;
       } catch (error) {
-        if (!shouldRetryWithSanitizer(error)) {
+        if (!runContext.language.supportsDebugRetry || !shouldRetryWithSanitizer(error)) {
           throw error;
         }
 
         if (!debugBinaryReady) {
           try {
-            await this.compileRunner(runtime, problemDir, runContext.debugBinaryPath, runContext.debugCompileFlags, "디버그 컴파일", runContext.debugFingerprint, runContext.settings);
+            await this.compileRunner(runtime, runContext, runContext.debugArtifactPath, runContext.debugCompileFlags, "디버그 컴파일", runContext.debugFingerprint);
             debugBinaryReady = true;
           } catch (compileError) {
             if (this.shouldSkipSanitizerFallback(runContext.settings, compileError)) {
               this.outputChannel.appendLine("[Programmers Helper] 로컬 sanitizer fallback을 사용할 수 없어 원래 런타임 에러를 유지합니다.");
               throw error;
             }
-            this.applyCompilerDiagnostics(runContext.cppPath, compileError);
+            this.applyCompilerDiagnostics(runContext.solutionPath, compileError, runContext.language.id);
             throw compileError;
           }
         }
 
         try {
-          const debugOutput = await this.runTestBinary(runtime, problemDir, runContext.debugBinaryPath, index + 1, runContext.settings, {
+          const debugOutput = await this.runTestArtifact(runtime, runContext, runContext.debugArtifactPath, index + 1, {
             label: `테스트 #${index + 1}`,
             timeoutMs: runContext.settings.testTimeoutMs,
             streamOutput: false,
@@ -173,7 +177,7 @@ class TestRunner {
             debugEnv: runContext.settings.executionMode === "docker",
           });
           if (hasSanitizerOutput(debugOutput)) {
-            throw buildProcessFailureError(runContext.settings.executionMode === "docker" ? "docker" : runContext.debugBinaryPath, { label: `테스트 #${index + 1}` }, 1, undefined, debugOutput, "", 0);
+            throw buildProcessFailureError(runContext.settings.executionMode === "docker" ? "docker" : runContext.debugArtifactPath, { label: `테스트 #${index + 1}` }, 1, undefined, debugOutput, "", 0);
           }
           throw error;
         } catch (debugError) {
@@ -191,45 +195,53 @@ class TestRunner {
 
   // 테스트 실행에 필요한 설정, 예제, 생성 파일 경로, fingerprint를 한 번에 준비합니다.
   // runSamples는 이 결과를 실행 순서에만 사용하고, 준비 세부사항은 이 함수 안에 둔다.
-  async prepareTestRunContext(problemDir, customTestsText = "", selectedCppPath) {
+  async prepareTestRunContext(problemDir, customTestsText = "", selectedSolutionPath, selectedLanguage) {
     const settings = getExecutionSettings();
-    const fastCompileFlags = getFastCompileFlags(settings.cppStandard);
-    const debugCompileFlags = getDebugCompileFlagsForMode(settings.executionMode, settings.cppStandard);
-    const cppPath = selectedCppPath || path.join(problemDir, "solution.cpp");
-    const cpp = await readText(vscode.Uri.file(cppPath));
-    const examples = customTestsText.trim() ? parseCustomTests(customTestsText) : await loadProblemExamples(problemDir);
-    const signature = parseSolutionSignature(cpp);
+    const language = getLanguage(selectedLanguage || settings.language);
+    const builder = getRunnerBuilder(language.id);
+    const fastCompileFlags = language.id === "cpp" ? getFastCompileFlags(settings.cppStandard) : [];
+    const debugCompileFlags = language.id === "cpp" ? getDebugCompileFlagsForMode(settings.executionMode, settings.cppStandard) : [];
+    const solutionPath = selectedSolutionPath || getSolutionPath(problemDir, language.id);
+    const solutionCode = await readText(vscode.Uri.file(solutionPath));
+    const examples = customTestsText.trim() ? builder.parseCustomTests(customTestsText) : await loadProblemExamples(problemDir);
+    const signature = builder.parseSolutionSignature(solutionCode);
 
     if (examples.length === 0) {
       throw new Error(customTestsText.trim() ? "커스텀 테스트케이스가 비어 있습니다." : "problem.md에서 입출력 예를 찾지 못했습니다.");
     }
     if (!signature) {
-      throw new Error(`${path.basename(cppPath)}에서 solution 함수 시그니처를 찾지 못했습니다.`);
+      throw new Error(`${path.basename(solutionPath)}에서 solution 함수 시그니처를 찾지 못했습니다.`);
     }
 
     const runnerDir = path.join(problemDir, ".programmers-helper");
     await vscode.workspace.fs.createDirectory(vscode.Uri.file(runnerDir));
-    const runnerPath = path.join(runnerDir, "test_runner.cpp");
+    const runnerPath = path.join(runnerDir, language.runnerFileName);
     const binaryExtension = getLocalBinaryExtension(settings);
-    const fastBinaryPath = `.programmers-helper/test_runner_fast${binaryExtension}`;
-    const debugBinaryPath = `.programmers-helper/test_runner_debug${binaryExtension}`;
-    const includePath = path.relative(runnerDir, cppPath).split(path.sep).join(path.posix.sep);
-    const memoryOptions = this.resolveRunnerMemoryOptions(settings);
-    const runnerCode = buildRunner(signature, examples, includePath, memoryOptions);
-    const fastFingerprint = createRunnerFingerprint(runnerCode, cpp, fastCompileFlags, includePath, settings);
-    const debugFingerprint = createRunnerFingerprint(runnerCode, cpp, debugCompileFlags, includePath, settings);
+    const fastArtifactPath = language.id === "cpp" ? `${language.fastArtifactPath}${binaryExtension}` : language.fastArtifactPath;
+    const debugArtifactPath = language.id === "cpp" ? `${language.debugArtifactPath}${binaryExtension}` : language.debugArtifactPath;
+    const includePath = path.relative(runnerDir, solutionPath).split(path.sep).join(path.posix.sep);
+    const memoryOptions = this.resolveRunnerMemoryOptions(settings, language);
+    const runnerCode = builder.buildRunner(signature, examples, includePath, memoryOptions);
+    const fastFingerprint = createRunnerFingerprint(runnerCode, solutionCode, fastCompileFlags, includePath, settings, language.id);
+    const debugFingerprint = language.supportsDebugRetry
+      ? createRunnerFingerprint(runnerCode, solutionCode, debugCompileFlags, includePath, settings, language.id)
+      : fastFingerprint;
     await writeFileIfChanged(runnerPath, runnerCode);
 
     return {
       settings,
+      language,
       problemDir,
       fastCompileFlags,
       debugCompileFlags,
-      cppPath,
+      solutionPath,
+      cppPath: solutionPath,
       examples,
       memoryOptions,
-      fastBinaryPath,
-      debugBinaryPath,
+      fastArtifactPath,
+      debugArtifactPath,
+      runnerPath,
+      includePath,
       fastFingerprint,
       debugFingerprint,
       isCustomRun: customTestsText.trim().length > 0,
@@ -239,53 +251,55 @@ class TestRunner {
   // Output 패널의 실행 헤더만 담당합니다.
   writeRunHeader(runContext) {
     this.outputChannel.clear();
-    this.outputChannel.appendLine(`[Programmers Helper] ${path.basename(runContext.problemDir)} ${runContext.isCustomRun ? "커스텀" : "샘플"} 테스트`);
-    this.outputChannel.appendLine(`[Programmers Helper] Source: ${path.relative(runContext.problemDir, runContext.cppPath) || "solution.cpp"}`);
+    this.outputChannel.appendLine(`[Programmers Helper] ${path.basename(runContext.problemDir)} ${runContext.language.label} ${runContext.isCustomRun ? "커스텀" : "샘플"} 테스트`);
+    this.outputChannel.appendLine(`[Programmers Helper] Source: ${path.relative(runContext.problemDir, runContext.solutionPath) || runContext.language.solutionFileName}`);
     this.outputChannel.appendLine(`[Programmers Helper] Execution mode: ${runContext.settings.executionMode === "docker" ? `docker (${DOCKER_IMAGE})` : "local"}`);
-    this.outputChannel.appendLine(`[Programmers Helper] Compiler: ${runContext.settings.compilerCommand} -std=${runContext.settings.cppStandard}`);
+    this.outputChannel.appendLine(`[Programmers Helper] Compiler: ${runContext.language.compilerSettingsLabel(runContext.settings)}`);
     this.outputChannel.appendLine(`[Programmers Helper] Memory mode: ${describeMemoryOptions(runContext.memoryOptions)}`);
     this.outputChannel.appendLine("");
   }
 
   // 해당 문제의 진단 메시지를 지웁니다.
-  clearProblemDiagnostics(cppPath) {
-    this.diagnosticCollection?.delete(vscode.Uri.file(cppPath));
+  clearProblemDiagnostics(solutionPath) {
+    this.diagnosticCollection?.delete(vscode.Uri.file(solutionPath));
   }
 
   // 컴파일 오류를 VS Code 진단으로 표시합니다.
-  applyCompilerDiagnostics(cppPath, error) {
+  applyCompilerDiagnostics(solutionPath, error, languageId) {
     const message = error instanceof Error ? error.message : String(error);
     if (!message.startsWith("컴파일 실패")) {
       return;
     }
 
-    const solutionUri = vscode.Uri.file(cppPath);
-    const diagnostics = parseCompilerDiagnostics(vscode, message, solutionUri);
+    const solutionUri = vscode.Uri.file(solutionPath);
+    const diagnostics = parseCompilerDiagnostics(vscode, message, solutionUri, languageId);
     if (diagnostics.length > 0) {
       this.diagnosticCollection?.set(solutionUri, diagnostics);
     }
   }
 
-  // 생성된 C++ 러너를 컴파일합니다.
-  async compileRunner(runtime, problemDir, outputBinaryPath, compileFlags, label, fingerprint, settings) {
-    if (fingerprint && await isCompiledRunnerFresh(problemDir, outputBinaryPath, fingerprint)) {
-      this.outputChannel.appendLine(`[Programmers Helper] ${label} 생략: 기존 바이너리를 재사용합니다.`);
+  // 생성된 언어별 러너를 컴파일합니다.
+  async compileRunner(runtime, runContext, outputArtifactPath, compileFlags, label, fingerprint) {
+    if (fingerprint && await isCompiledRunnerFresh(runContext.problemDir, outputArtifactPath, fingerprint)) {
+      this.outputChannel.appendLine(`[Programmers Helper] ${label} 생략: 기존 실행 산출물을 재사용합니다.`);
       return;
     }
 
-    if (settings.executionMode === "docker") {
+    if (runContext.language.id === "java") {
+      await this.compileJavaRunner(runtime, runContext, outputArtifactPath, label);
+    } else if (runContext.settings.executionMode === "docker") {
       await this.execFile("docker", [
         "exec",
         "-i",
         "-w",
         runtime.problemPath,
         runtime.containerName,
-        settings.compilerCommand,
+        runContext.settings.compilerCommand,
         ...compileFlags,
-        path.posix.relative(runtime.problemPath, path.posix.join(runtime.problemPath, ".programmers-helper", "test_runner.cpp")),
+        path.posix.relative(runtime.problemPath, path.posix.join(runtime.problemPath, ".programmers-helper", runContext.language.runnerFileName)),
         "-o",
-        outputBinaryPath,
-      ], problemDir, {
+        outputArtifactPath,
+      ], runContext.problemDir, {
         timeoutMs: COMPILE_TIMEOUT_MS,
         label,
       });
@@ -298,33 +312,80 @@ class TestRunner {
         runtime.containerName,
         "chmod",
         "+x",
-        outputBinaryPath,
-      ], problemDir, {
+        outputArtifactPath,
+      ], runContext.problemDir, {
         timeoutMs: COMPILE_TIMEOUT_MS,
         label: `${label} 권한 설정`,
       });
     } else {
-      await this.ensureLocalCompilerAvailable(settings.compilerCommand, problemDir);
-      await this.execFile(settings.compilerCommand, [
+      await this.ensureLocalCommandAvailable(runContext.settings.compilerCommand, runContext.problemDir, "컴파일러 확인");
+      await this.execFile(runContext.settings.compilerCommand, [
         ...compileFlags,
-        path.join(".programmers-helper", "test_runner.cpp"),
+        path.join(".programmers-helper", runContext.language.runnerFileName),
         "-o",
-        outputBinaryPath,
-      ], problemDir, {
+        outputArtifactPath,
+      ], runContext.problemDir, {
         timeoutMs: COMPILE_TIMEOUT_MS,
         label,
       });
     }
 
     if (fingerprint) {
-      await writeJsonFile(path.join(problemDir, `${outputBinaryPath}.meta.json`), {
+      await writeJsonFile(path.join(runContext.problemDir, `${outputArtifactPath}.meta.json`), {
         fingerprint,
         updatedAt: new Date().toISOString(),
       });
     }
   }
 
-  // 컴파일된 테스트 바이너리를 한 케이스만 실행합니다.
+  async compileJavaRunner(runtime, runContext, outputArtifactPath, label) {
+    await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.join(runContext.problemDir, outputArtifactPath)));
+    if (runContext.settings.executionMode === "docker") {
+      await this.execFile("docker", [
+        "exec",
+        "-i",
+        "-w",
+        runtime.problemPath,
+        runtime.containerName,
+        "env",
+        "LANG=C.UTF-8",
+        "LC_ALL=C.UTF-8",
+        JAVAC_COMMAND,
+        "-encoding",
+        "UTF-8",
+        "-d",
+        outputArtifactPath,
+        path.relative(runContext.problemDir, runContext.solutionPath).split(path.sep).join(path.posix.sep),
+        path.posix.relative(runtime.problemPath, path.posix.join(runtime.problemPath, ".programmers-helper", runContext.language.runnerFileName)),
+      ], runContext.problemDir, {
+        timeoutMs: COMPILE_TIMEOUT_MS,
+        label,
+      });
+      return;
+    }
+
+    await this.ensureLocalCommandAvailable(JAVAC_COMMAND, runContext.problemDir, "Java 컴파일러 확인");
+    await this.execFile(JAVAC_COMMAND, [
+      "-encoding",
+      "UTF-8",
+      "-d",
+      outputArtifactPath,
+      path.relative(runContext.problemDir, runContext.solutionPath),
+      path.join(".programmers-helper", runContext.language.runnerFileName),
+    ], runContext.problemDir, {
+      timeoutMs: COMPILE_TIMEOUT_MS,
+      label,
+    });
+  }
+
+  // 컴파일된 테스트 산출물을 한 케이스만 실행합니다.
+  async runTestArtifact(runtime, runContext, artifactPath, testIndex, options = {}) {
+    if (runContext.language.id === "java") {
+      return this.runJavaTest(runtime, runContext, artifactPath, testIndex, options);
+    }
+    return this.runTestBinary(runtime, runContext.problemDir, artifactPath, testIndex, runContext.settings, options);
+  }
+
   async runTestBinary(runtime, problemDir, binaryPath, testIndex, settings, options = {}) {
     const testTimeoutMs = options.timeoutMs || settings.testTimeoutMs;
     const timeoutSeconds = Math.max(0.1, testTimeoutMs / 1000);
@@ -408,6 +469,84 @@ class TestRunner {
     return displayed;
   }
 
+  async runJavaTest(runtime, runContext, artifactPath, testIndex, options = {}) {
+    const testTimeoutMs = options.timeoutMs || runContext.settings.testTimeoutMs;
+    const timeoutSeconds = Math.max(0.1, testTimeoutMs / 1000);
+    const timeoutLabel = formatTimeoutLimitLabel(testTimeoutMs);
+    let result;
+
+    if (runContext.settings.executionMode === "docker") {
+      result = await this.execFile("docker", [
+        "exec",
+        "-i",
+        "-w",
+        runtime.problemPath,
+        runtime.containerName,
+        "env",
+        "LANG=C.UTF-8",
+        "LC_ALL=C.UTF-8",
+        "timeout",
+        "--signal=TERM",
+        "--kill-after=1s",
+        `${formatTimeoutCommandSeconds(timeoutSeconds)}s`,
+        JAVA_COMMAND,
+        "-cp",
+        artifactPath,
+        "TestRunner",
+        String(testIndex),
+      ], runContext.problemDir, {
+        ...options,
+        resolveWithStatus: true,
+        streamOutput: false,
+        streamStderr: false,
+        timeoutMs: testTimeoutMs + TEST_PROCESS_TIMEOUT_GRACE_MS,
+        maxCaptureOutputChars: MAX_CAPTURE_OUTPUT_CHARS,
+      });
+    } else {
+      try {
+        await this.ensureLocalCommandAvailable(JAVA_COMMAND, runContext.problemDir, "Java 실행기 확인");
+        result = await this.execFile(JAVA_COMMAND, [
+          "-cp",
+          artifactPath,
+          "TestRunner",
+          String(testIndex),
+        ], runContext.problemDir, {
+          ...options,
+          resolveWithStatus: true,
+          streamOutput: false,
+          streamStderr: false,
+          timeoutMs: testTimeoutMs,
+          maxCaptureOutputChars: MAX_CAPTURE_OUTPUT_CHARS,
+        });
+      } catch (error) {
+        if (error?.code === "ETIMEOUT") {
+          return this.handleTimeoutResult(testIndex, timeoutLabel, {
+            elapsedMs: error.elapsedMs || testTimeoutMs,
+            stderr: error.stderr || "",
+            stdout: error.stdout || "",
+            stderrTruncated: Boolean(error.stderrTruncated),
+            stdoutTruncated: Boolean(error.stdoutTruncated),
+          }, options);
+        }
+        throw error;
+      }
+    }
+
+    if (result.code === 124 || result.code === 137) {
+      return this.handleTimeoutResult(testIndex, timeoutLabel, result, options);
+    }
+
+    if (result.code !== 0) {
+      throw buildProcessFailureError(runContext.settings.executionMode === "docker" ? "docker" : JAVA_COMMAND, options, result.code, result.signal, result.stderr, result.stdout, result.elapsedMs);
+    }
+
+    const displayed = formatDisplayOutput(result.stderr + result.stdout, result.stdoutTruncated || result.stderrTruncated);
+    if (options.streamOutput && displayed) {
+      this.outputChannel.append(displayed);
+    }
+    return displayed;
+  }
+
   handleTimeoutResult(testIndex, timeoutLabel, result, options) {
     const line = `[TIMEOUT] #${testIndex} time=${result.elapsedMs}ms limit=${timeoutLabel}`;
     const displayed = formatDisplayOutput(result.stderr + result.stdout, result.stdoutTruncated || result.stderrTruncated);
@@ -422,8 +561,8 @@ class TestRunner {
   }
 
   // 실행 환경 준비를 위임합니다.
-  async ensureRuntimeReady(problemDir, settings) {
-    if (settings.executionMode === "docker") {
+  async ensureRuntimeReady(problemDir, runContext) {
+    if (runContext.settings.executionMode === "docker") {
       return ensureDockerRuntimeReadyModule({
         vscode,
         extensionDir: this.extensionDir,
@@ -432,22 +571,26 @@ class TestRunner {
       });
     }
 
-    await this.ensureLocalCompilerAvailable(settings.compilerCommand, problemDir);
+    if (runContext.language.id === "java") {
+      await this.ensureLocalCommandAvailable(JAVAC_COMMAND, problemDir, "Java 컴파일러 확인");
+    } else {
+      await this.ensureLocalCommandAvailable(runContext.settings.compilerCommand, problemDir, "컴파일러 확인");
+    }
     return {
       kind: "local",
-      compilerCommand: settings.compilerCommand,
+      compilerCommand: runContext.language.compilerSettingsLabel(runContext.settings),
     };
   }
 
-  async ensureLocalCompilerAvailable(compilerCommand, cwd) {
+  async ensureLocalCommandAvailable(command, cwd, label) {
     try {
-      await this.execFile(compilerCommand, ["--version"], cwd, {
+      await this.execFile(command, ["--version"], cwd, {
         timeoutMs: 5000,
-        label: "컴파일러 확인",
+        label,
       });
     } catch (error) {
       if (error?.code === "ENOENT") {
-        throw new Error(`컴파일 실패\n${compilerCommand} 명령어를 찾지 못했습니다.\nVS Code 설정에서 compilerCommand를 바꾸거나 ${compilerCommand}를 설치해주세요.`);
+        throw new Error(`컴파일 실패\n${command} 명령어를 찾지 못했습니다.\nVS Code 설정에서 실행 명령을 바꾸거나 ${command}를 설치해주세요.`);
       }
       throw error;
     }
@@ -457,7 +600,7 @@ class TestRunner {
     return settings.executionMode === "local" && isSanitizerToolchainError(error);
   }
 
-  resolveRunnerMemoryOptions(settings) {
+  resolveRunnerMemoryOptions(settings, language) {
     if (settings.executionMode === "docker") {
       return { memoryMode: "judge" };
     }
@@ -606,11 +749,12 @@ function appendCapturedOutput(current, chunk, maxChars) {
   return { text: current + chunk.slice(0, remaining), truncated: true };
 }
 
-function createRunnerFingerprint(runnerCode, solutionCode, compileFlags, includePath, settings) {
+function createRunnerFingerprint(runnerCode, solutionCode, compileFlags, includePath, settings, languageId) {
   return crypto
     .createHash("sha256")
     .update(JSON.stringify({
-      version: 3,
+      version: 4,
+      languageId,
       runnerCode,
       solutionCode,
       includePath,
@@ -721,21 +865,34 @@ function getLocalBinaryExtension(settings) {
   return settings.executionMode === "local" && process.platform === "win32" ? ".exe" : "";
 }
 
-// 실행 대상을 problemDir과 cppPath로 정규화합니다.
+// 실행 대상을 problemDir과 solutionPath로 정규화합니다.
 function normalizeRunTarget(target) {
   if (!target) {
     return undefined;
   }
   if (typeof target === "string") {
+    const settings = getExecutionSettings();
+    const language = getLanguage(settings.language);
     return {
       problemDir: target,
-      cppPath: path.join(target, "solution.cpp"),
+      solutionPath: getSolutionPath(target, language.id),
+      cppPath: getSolutionPath(target, language.id),
+      language: language.id,
     };
   }
   if (typeof target.problemDir === "string") {
+    const settings = getExecutionSettings();
+    const language = getLanguage(target.language || settings.language);
+    const solutionPath = typeof target.solutionPath === "string"
+      ? target.solutionPath
+      : typeof target.cppPath === "string"
+        ? target.cppPath
+        : getSolutionPath(target.problemDir, language.id);
     return {
       problemDir: target.problemDir,
-      cppPath: typeof target.cppPath === "string" ? target.cppPath : path.join(target.problemDir, "solution.cpp"),
+      solutionPath,
+      cppPath: solutionPath,
+      language: language.id,
     };
   }
   return undefined;

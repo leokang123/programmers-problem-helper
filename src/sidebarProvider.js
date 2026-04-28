@@ -176,6 +176,9 @@ function buildSidebarHtml(nonce) {
     .snapshot-row:hover { background: var(--vscode-list-hoverBackground); }
     .snapshot-title { font-size: 12px; line-height: 1.35; color: var(--vscode-foreground); word-break: break-word; }
     .snapshot-meta { margin-top: 2px; font-size: 11px; color: var(--vscode-descriptionForeground); }
+    .snapshot-other { border-bottom: 1px solid var(--vscode-panel-border); }
+    .snapshot-other > summary { cursor: pointer; padding: 8px 0; font-size: 11px; color: var(--vscode-descriptionForeground); user-select: none; }
+    .snapshot-other-list { padding-left: 8px; border-left: 1px solid var(--vscode-panel-border); }
     .delete-problem { width: auto; margin: 0; padding: 2px 6px; background: transparent; color: var(--vscode-descriptionForeground); font-size: 12px; }
     .delete-problem:hover { background: var(--vscode-list-hoverBackground); color: var(--vscode-errorForeground); }
     .empty { padding: 9px 0; font-size: 12px; color: var(--vscode-descriptionForeground); line-height: 1.4; }
@@ -243,7 +246,7 @@ function buildSidebarHtml(nonce) {
             <button id="addTest" class="secondary">+ 테스트 추가</button>
             <button id="runCustom">커스텀 테스트 실행</button>
             <div class="hint">Input은 solution 인자 순서대로 쉼표로 구분합니다. 예: 4, 5, 2, 2, [[0,0]]</div>
-            <div class="hint">테스트는 현재 사용자 권한으로 solution.cpp를 컴파일하고 실행합니다.</div>
+            <div class="hint">테스트는 현재 사용자 권한으로 현재 언어 풀이 파일을 컴파일하고 실행합니다.</div>
           </div>
         </div>
       </div>
@@ -296,6 +299,7 @@ function buildSidebarHtml(nonce) {
     let renderedSnapshots = [];
     const problemRowCache = new Map();
     const snapshotRowCache = new Map();
+    const otherSnapshotRowCache = new Map();
 
     function setPaneCollapsed(pane, button, className, collapsed) {
       const body = pane.querySelector('.pane-body');
@@ -333,7 +337,7 @@ function buildSidebarHtml(nonce) {
       const matched = getMatchedProblems(query);
       const currentMatchesQuery = matchesProblemQuery(currentProblem, query);
       const visibleCount = filter === 'solutions'
-        ? (currentMatchesQuery ? buildSolutionRows(currentProblem).length : 0)
+        ? (currentMatchesQuery ? buildAllSolutionRows(currentProblem).length : 0)
         : (filter === 'review' ? matched.filter((problem) => problem.review) : matched).length;
       listSummary.textContent = listPane.classList.contains('collapsed')
         ? (filter === 'solutions' ? '풀이기록 ' + visibleCount + '개' : filter === 'review' ? '다시풀 ' + visibleCount + '개' : '전체 ' + visibleCount + '개')
@@ -370,6 +374,23 @@ function buildSidebarHtml(nonce) {
         .sort((a, b) => {
           return String(b.snapshot.createdAt || '').localeCompare(String(a.snapshot.createdAt || ''));
         });
+    }
+
+    function buildOtherSolutionRows(problem) {
+      if (!problem) return [];
+      return (Array.isArray(problem.otherSolutionHistory) ? problem.otherSolutionHistory : [])
+        .map((snapshot) => ({ problem, snapshot, otherLanguage: true }))
+        .sort((a, b) => {
+          return String(b.snapshot.createdAt || '').localeCompare(String(a.snapshot.createdAt || ''));
+        });
+    }
+
+    function buildAllSolutionRows(problem) {
+      return buildSolutionRows(problem).concat(buildOtherSolutionRows(problem));
+    }
+
+    function formatLanguageLabel(language) {
+      return language === 'java' ? 'Java' : language === 'cpp' ? 'C++' : (language || 'Unknown');
     }
 
     // 빈 목록 메시지는 실제 row cache와 별개인 임시 DOM이다.
@@ -486,6 +507,7 @@ function buildSidebarHtml(nonce) {
       row._title.textContent = problem.title || '';
       row._meta.textContent =
         '#' + (problem.lessonId || '-') +
+        ' · ' + formatLanguageLabel(snapshot.language) +
         ' · ' + (snapshot.label || '이전 풀이') +
         ' · ' + formatSnapshotTime(snapshot.createdAt);
     }
@@ -496,6 +518,7 @@ function buildSidebarHtml(nonce) {
       renderedProblems = visible;
       renderedSnapshots = [];
       snapshotRowCache.clear();
+      otherSnapshotRowCache.clear();
       if (visible.length === 0) {
         renderEmptyList(container, problemRowCache, emptyText);
         return;
@@ -506,16 +529,48 @@ function buildSidebarHtml(nonce) {
 
     // 풀이기록 목록 렌더링 진입점이다.
     // 문제 목록 cache와 현재 renderedProblems를 비워 클릭 대상이 snapshot row임을 명확히 한다.
-    function renderSolutionList(container, rows, emptyText) {
+    function renderSolutionList(container, rows, otherRows, emptyText) {
       renderedProblems = [];
-      renderedSnapshots = rows;
+      renderedSnapshots = rows.concat(otherRows);
       problemRowCache.clear();
-      if (rows.length === 0) {
+      if (rows.length === 0 && otherRows.length === 0) {
+        otherSnapshotRowCache.clear();
         renderEmptyList(container, snapshotRowCache, emptyText);
         return;
       }
 
-      renderCachedRows(container, rows, snapshotRowCache, getSnapshotRowKey, createSnapshotRow, updateSnapshotRow);
+      const fragment = document.createDocumentFragment();
+      if (rows.length > 0) {
+        const currentContainer = document.createElement('div');
+        renderCachedRows(currentContainer, rows, snapshotRowCache, getSnapshotRowKey, createSnapshotRow, updateSnapshotRow);
+        fragment.append(...Array.from(currentContainer.childNodes));
+      } else {
+        snapshotRowCache.clear();
+        fragment.appendChild(createEmptyRow('현재 언어에 저장된 풀이 기록이 없습니다.'));
+      }
+
+      if (otherRows.length > 0) {
+        const details = document.createElement('details');
+        details.className = 'snapshot-other';
+        const summary = document.createElement('summary');
+        summary.textContent = '다른 언어 풀이 ' + otherRows.length + '개';
+        const otherList = document.createElement('div');
+        otherList.className = 'snapshot-other-list';
+        renderCachedRows(
+          otherList,
+          otherRows,
+          otherSnapshotRowCache,
+          getSnapshotRowKey,
+          createSnapshotRow,
+          (row, item, index) => updateSnapshotRow(row, item, rows.length + index)
+        );
+        details.append(summary, otherList);
+        fragment.appendChild(details);
+      } else {
+        otherSnapshotRowCache.clear();
+      }
+
+      container.replaceChildren(fragment);
     }
 
     function renderProblems() {
@@ -525,12 +580,13 @@ function buildSidebarHtml(nonce) {
       if (filter === 'solutions') {
         const currentMatchesQuery = matchesProblemQuery(currentProblem, query);
         const rows = currentMatchesQuery ? buildSolutionRows(currentProblem) : [];
+        const otherRows = currentMatchesQuery ? buildOtherSolutionRows(currentProblem) : [];
         const emptyText = !currentProblem
           ? '현재 열린 문제가 없습니다.'
           : query
             ? '현재 문제와 검색어가 일치하지 않습니다.'
             : '현재 문제에 저장된 풀이 기록이 없습니다.';
-        renderSolutionList(problemList, rows, emptyText);
+        renderSolutionList(problemList, rows, otherRows, emptyText);
         updatePaneSummaries();
         return;
       }
@@ -564,7 +620,7 @@ function buildSidebarHtml(nonce) {
         '<label>Input</label>' +
         '<textarea class="test-input" spellcheck="false" placeholder="solution 인자를 쉼표로 입력"></textarea>' +
         '<label>Expected Output</label>' +
-        '<textarea class="test-expected" spellcheck="false" placeholder="기대 결과를 C++ 리터럴 형태로 입력"></textarea>';
+        '<textarea class="test-expected" spellcheck="false" placeholder="기대 결과를 현재 언어 리터럴 형태로 입력"></textarea>';
       card.querySelector('.test-input').value = inputValue;
       card.querySelector('.test-expected').value = expectedValue;
       card.querySelector('.remove').addEventListener('click', () => {

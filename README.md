@@ -4,31 +4,44 @@
 
 이 확장은 OpenAI Codex를 사용해서 만들었습니다.
 
-문제 번호를 입력하면 프로그래머스 문제 페이지를 가져와서 `problem.md`와 `solution.cpp`를 만들고, 왼쪽에는 문제 미리보기, 오른쪽에는 C++ 풀이 파일을 열어줍니다. 샘플 테스트와 직접 추가한 커스텀 테스트도 실행할 수 있습니다.
+문제 번호를 입력하면 프로그래머스 문제 페이지를 가져와서 `problem.md`와 현재 설정 언어의 풀이 파일을 만들고, 왼쪽에는 문제 미리보기, 오른쪽에는 풀이 파일을 열어줍니다. 샘플 테스트와 직접 추가한 커스텀 테스트도 실행할 수 있습니다.
 
 ## 주요 기능
 
 - 왼쪽 Activity Bar에 `Programmers` 사이드바 추가
 - `Programmers/<문제번호>_<문제이름>/problem.md` 생성
-- `Programmers/<문제번호>_<문제이름>/solution.cpp` 생성
+- `Programmers/<문제번호>_<문제이름>/solution.cpp` 또는 `Solution.java` 생성
 - 예제 정보를 담은 `.programmers-helper/programmers.json` 생성
 - 왼쪽에는 `problem.md` Markdown Preview 열기
-- 오른쪽에는 `solution.cpp` 에디터 열기
+- 오른쪽에는 현재 언어 풀이 파일 에디터 열기
 - 문제의 입출력 예를 기반으로 샘플 테스트 실행
 - `+ 테스트 추가`로 Input / Expected Output을 직접 넣어 커스텀 테스트 실행
 - 기본 단축키로 샘플 테스트 실행(`Ctrl+Alt+T`)과 실행 중지(`Ctrl+Alt+S`) 지원
 - 샘플 테스트 실행, 실행 중지, 커스텀 테스트 실행, 메모 열기는 VS Code 키보드 설정에서 원하는 키로 지정 가능
 - PASS/FAIL 모두 expected / actual 출력
-- 문제 목록에서 `새풀이`를 눌러 현재 `solution.cpp`를 이전 풀이로 보관
+- 문제 목록에서 `새풀이`를 눌러 현재 언어 풀이 파일을 이전 풀이로 보관
 - `풀이기록` 필터에서 이전 풀이를 시간순으로 열거나 삭제
-- 처음 받아온 `solution.cpp` 원본을 `.programmers-helper/initial-solution.cpp`로 보관
+- 처음 받아온 풀이 원본을 `.programmers-helper/initial-solution.<ext>`로 보관
+
+## 지원 언어
+
+`programmersHelper.language` 설정에서 기본 언어를 선택할 수 있습니다.
+
+- C++: `solution.cpp`, `.programmers-helper/initial-solution.cpp`, `clang++` 또는 `g++`
+- Java: `Solution.java`, `.programmers-helper/initial-solution.java`, `javac` / `java`
+
+기존 문제를 다른 언어로 열면 해당 언어의 풀이 템플릿이 없을 때만 프로그래머스 페이지를 다시 가져와 언어별 초기 파일을 추가합니다. 문제 설명 `problem.md`는 덮어쓰지 않습니다.
+
+테스트 실행은 현재 활성 풀이 파일을 우선합니다. 예를 들어 Java가 기본 언어여도 C++ 풀이 기록을 열어둔 상태에서 실행하면 C++ runner로 실행됩니다.
+
+풀이기록은 현재 언어 기록을 먼저 보여주고, 다른 언어 기록은 접힌 섹션에서 확인할 수 있습니다.
 
 ## 필요 조건
 
 - VS Code 1.85.0 이상
 - Docker
 
-테스트 실행 시 확장이 Docker 실행 컨테이너를 자동으로 준비하고, 그 안에서 `clang++`로 컴파일 및 실행합니다.
+테스트 실행 시 확장이 Docker 실행 컨테이너를 자동으로 준비하고, 그 안에서 현재 언어에 맞게 컴파일 및 실행합니다.
 
 ```sh
 docker version
@@ -42,7 +55,7 @@ Windows에서는 Docker 실행 모드를 권장합니다. Docker 모드는 확�
 
 ## 보안 안내
 
-샘플/커스텀 테스트 실행은 Docker 컨테이너 안에서 `solution.cpp`를 컴파일하고 실행합니다. 신뢰할 수 없는 C++ 코드는 실행하지 마세요.
+샘플/커스텀 테스트 실행은 Docker 컨테이너 안에서 현재 언어 풀이 파일을 컴파일하고 실행합니다. 신뢰할 수 없는 코드는 실행하지 마세요.
 
 ## GitHub에서 설치하기
 
@@ -135,7 +148,7 @@ git push origin v0.1.0
 3. 프로그래머스 문제 번호를 입력합니다.
 4. `문제 생성 및 열기`를 누르거나 `Enter`를 입력합니다.
 5. 문제를 열면 컴파일 및 실행용 Docker 컨테이너가 자동으로 준비됩니다.
-6. 오른쪽 `solution.cpp`에 풀이를 작성합니다.
+6. 오른쪽 풀이 파일에 코드를 작성합니다.
 7. `샘플 테스트 실행` 또는 `커스텀 테스트 실행`을 누릅니다. 샘플 테스트는 `Ctrl+Alt+T`로도 실행할 수 있습니다.
 8. 다시 풀 때는 문제 목록의 `새풀이`를 눌러 현재 풀이를 보관하고 새 풀이를 시작합니다.
 9. 보관된 코드는 `풀이기록` 필터에서 시간순으로 확인하거나 삭제합니다.
@@ -215,7 +228,7 @@ ls -l ~/.vscode-server/extensions/local.programmers-problem-helper
 
 ## 참고
 
-테스트 러너는 프로그래머스 C++ 함수형 문제에서 자주 쓰이는 타입을 지원합니다.
+테스트 러너는 프로그래머스 C++/Java 함수형 문제에서 자주 쓰이는 타입을 지원합니다.
 
 - `int`
 - `long long`
@@ -237,6 +250,6 @@ This extension was built with OpenAI Codex.
 
 Programmers Problem Helper is a local VS Code extension for solving Programmers coding-test problems.
 
-It creates `problem.md`, `solution.cpp`, and `.programmers-helper/programmers.json` from a Programmers lesson number, opens the problem preview beside the C++ solution file, and runs sample or custom C++ tests.
+It creates `problem.md`, a language-specific solution file, and `.programmers-helper/programmers.json` from a Programmers lesson number, opens the problem preview beside the solution file, and runs sample or custom tests. Java is supported through the `programmersHelper.language` setting.
 
 This project was built with OpenAI Codex.

@@ -37,7 +37,11 @@ function formatTestErrorForPanel(error) {
 }
 
 // 컴파일러 오류를 VS Code 진단 목록으로 바꿉니다.
-function parseCompilerDiagnostics(vscode, message, solutionUri) {
+function parseCompilerDiagnostics(vscode, message, solutionUri, languageId = "cpp") {
+  if (languageId === "java") {
+    return parseJavaCompilerDiagnostics(vscode, message, solutionUri);
+  }
+
   const diagnostics = [];
   const targetName = path.basename(solutionUri.fsPath);
   const lines = message.split(/\r?\n/);
@@ -61,6 +65,38 @@ function parseCompilerDiagnostics(vscode, message, solutionUri) {
       : severityText === "note"
         ? vscode.DiagnosticSeverity.Information
         : vscode.DiagnosticSeverity.Error;
+    const diagnostic = new vscode.Diagnostic(range, detail.trim(), severity);
+    diagnostic.source = "Programmers Helper";
+    diagnostics.push(diagnostic);
+  }
+
+  return diagnostics;
+}
+
+function parseJavaCompilerDiagnostics(vscode, message, solutionUri) {
+  const diagnostics = [];
+  const targetName = path.basename(solutionUri.fsPath);
+  const lines = message.split(/\r?\n/);
+
+  for (let index = 0; index < lines.length; index++) {
+    const match = lines[index].match(/([^:\s]+\.java):(\d+):\s+(error|warning):\s+(.*)$/);
+    if (!match) {
+      continue;
+    }
+
+    const [, fileName, lineNo, severityText, detail] = match;
+    if (path.basename(fileName) !== targetName) {
+      continue;
+    }
+
+    const caretLine = lines[index + 2] || "";
+    const caretColumn = caretLine.indexOf("^");
+    const lineIndex = Math.max(0, Number(lineNo) - 1);
+    const columnIndex = Math.max(0, caretColumn);
+    const range = new vscode.Range(lineIndex, columnIndex, lineIndex, columnIndex + 1);
+    const severity = severityText === "warning"
+      ? vscode.DiagnosticSeverity.Warning
+      : vscode.DiagnosticSeverity.Error;
     const diagnostic = new vscode.Diagnostic(range, detail.trim(), severity);
     diagnostic.source = "Programmers Helper";
     diagnostics.push(diagnostic);
@@ -113,6 +149,11 @@ function summarizeRuntimeErrorForPanel(message) {
 
 // 컴파일 오류의 긴 경로를 짧게 줄입니다.
 function shortenCompilerPaths(line) {
+  const javaMatch = line.match(/([^/\\:\s]+\.java:\d+:\s+(?:error|warning):\s+.*)$/);
+  if (javaMatch) {
+    return javaMatch[1];
+  }
+
   const sourceMatch = line.match(/([^/\\:\s]+\.cpp:\d+:\d+:\s+(?:fatal\s+)?error:\s+.*)$/);
   if (sourceMatch) {
     return sourceMatch[1];
@@ -160,7 +201,7 @@ function buildProcessFailureError(command, options, code, signal, stderr, stdout
 }
 
 function isCompilerCommand(commandName) {
-  return commandName === "clang++" || commandName === "g++";
+  return commandName === "clang++" || commandName === "g++" || commandName === "javac";
 }
 
 // Error message prefix만 보고 컴파일 실패인지 빠르게 판정합니다.
@@ -183,6 +224,9 @@ function condenseRuntimeOutput(text) {
   const runtime = buildRuntimeSummary(userFrame, lines.filter((line) => /runtime error:/i.test(line)));
   if (runtime) return runtime;
 
+  const javaException = buildRuntimeSummary(userFrame, lines.filter((line) => /Exception\b|Error\b/.test(line) && !/^\[FAIL\]/.test(line)));
+  if (javaException) return javaException;
+
   const sanitizer = buildRuntimeSummary(userFrame, lines.filter((line) => /^==\d+==ERROR: /i.test(line) || /AddressSanitizer:/i.test(line) || /UndefinedBehaviorSanitizer/i.test(line)));
   if (sanitizer) return sanitizer;
 
@@ -204,12 +248,12 @@ function buildRuntimeSummary(userFrame, lines) {
 
 // 런타임 출력에서 사용자 코드 위치를 찾습니다.
 function extractUserRuntimeFrame(lines) {
-  const frame = lines.find((line) => /solution\.cpp:\d+:\d+/.test(line));
+  const frame = lines.find((line) => /solution\.cpp:\d+:\d+/.test(line) || /Solution\.java:\d+/.test(line));
   if (!frame) {
     return "";
   }
 
-  const match = frame.match(/solution\.cpp:\d+:\d+/);
+  const match = frame.match(/solution\.cpp:\d+:\d+|Solution\.java:\d+/);
   if (!match) {
     return "";
   }
@@ -245,6 +289,10 @@ function translateRuntimeDiagnosticLine(line) {
   next = next.replace(/\bsigned integer overflow\b/gi, "정수 오버플로우(signed integer overflow)");
   next = next.replace(/\buse-after-free\b/gi, "해제 후 사용(use-after-free)");
   next = next.replace(/\bSegmentation fault\b/gi, "잘못된 메모리 접근(segmentation fault)");
+  next = next.replace(/\bNullPointerException\b/g, "널 참조 오류(NullPointerException)");
+  next = next.replace(/\bArrayIndexOutOfBoundsException\b/g, "배열 인덱스 범위 초과(ArrayIndexOutOfBoundsException)");
+  next = next.replace(/\bStringIndexOutOfBoundsException\b/g, "문자열 인덱스 범위 초과(StringIndexOutOfBoundsException)");
+  next = next.replace(/\bArithmeticException\b/g, "산술 오류(ArithmeticException)");
   return next;
 }
 

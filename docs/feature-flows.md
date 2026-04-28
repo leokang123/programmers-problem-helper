@@ -27,11 +27,17 @@
   - 파일 시스템 저장소 접근을 담당한다.
   - 문제 목록, 메타데이터, 예제, 커스텀 테스트, 풀이 기록, 초기 코드 파일을 읽고 쓴다.
 - `src/testRunner.js`
-  - 샘플/커스텀 테스트 러너 생성, Docker 컴파일, 테스트 바이너리 실행, 오류 진단을 담당한다.
+  - 샘플/커스텀 테스트 러너 생성, 언어별 컴파일/실행, 오류 진단을 담당한다.
+- `src/languages.js`
+  - 지원 언어의 Programmers 파라미터, 풀이 파일명, 초기 템플릿 파일명, runner 파일명, snapshot 확장자를 정의한다.
+- `src/languageRunnerRegistry.js`
+  - 현재 언어에 맞는 runner builder를 선택한다.
 - `src/dockerRuntime.js`
   - Docker CLI 확인, runtime image 확인/빌드, runtime container 생성/시작/정리를 담당한다.
 - `src/cppRunnerBuilder.js`
   - `solution.cpp`의 `solution(...)` 시그니처를 파싱하고 C++ `test_runner.cpp` 코드를 만든다.
+- `src/javaRunnerBuilder.js`
+  - `Solution.java`의 `solution(...)` 시그니처를 파싱하고 Java `TestRunner.java` 코드를 만든다.
 - `src/problemParsing.js`
   - Programmers HTML fetch, HTML to Markdown 변환, `problem.md` 입출력 예 fallback 파싱을 담당한다.
 - `src/errorFormatting.js`
@@ -46,16 +52,21 @@ Programmers/
   <lessonId>_<slug>/
     problem.md
     solution.cpp
+    Solution.java
     .programmers-helper/
       programmers.json
       initial-solution.cpp
+      initial-solution.java
       custom-tests.json
       review.json
       notes.md
       solution-history.json
       solutions/
         solution-<timestamp>.cpp
+        solution-<timestamp>.java
       test_runner.cpp
+      TestRunner.java
+      java-classes/
       test_runner_fast
       test_runner_debug
 ```
@@ -67,7 +78,34 @@ Programmers/
 - 커스텀 테스트: `.programmers-helper/custom-tests.json`
 - 현재 문제: Webview 내부 `currentProblemDir`
 - 마지막 문제: `context.workspaceState.lastProblemDir`
-- 초기 코드: `.programmers-helper/initial-solution.cpp`, 없으면 `programmers.json.initialCode`
+- 현재 언어: VS Code 설정 `programmersHelper.language`
+- 초기 코드: `.programmers-helper/initial-solution.<ext>`, 없으면 기존 호환용 `programmers.json.initialCode`
+
+## 다중 언어 flow
+
+지원 언어는 `src/languages.js`가 source of truth다. 새 언어를 추가할 때는 최소한 아래 값을 정의한다.
+
+- `programmersParam`: Programmers URL의 `?language=` 값
+- `solutionFileName`: 문제 폴더의 현재 풀이 파일명
+- `initialSolutionFileName`: `.programmers-helper` 아래 초기 템플릿 파일명
+- `runnerFileName`: 생성되는 테스트 러너 파일명
+- `snapshotExtension`: 풀이 기록 snapshot 확장자
+
+현재 지원 언어:
+
+- `cpp`: `solution.cpp`, `.programmers-helper/initial-solution.cpp`, `.programmers-helper/test_runner.cpp`
+- `java`: `Solution.java`, `.programmers-helper/initial-solution.java`, `.programmers-helper/TestRunner.java`
+
+문제를 열 때 `ProblemCommands.openProblemFromDir()`는 `getExecutionSettings().language`를 읽고 `ensureSolutionForLanguage(problemDir, language)`를 먼저 호출한다.
+
+`ensureSolutionForLanguage()`:
+
+1. 현재 언어의 풀이 파일과 초기 템플릿 파일이 있는지 확인한다.
+2. 둘 중 하나가 없으면 `?language=<current>` URL로 Programmers 페이지를 다시 가져온다.
+3. 문제 설명은 덮어쓰지 않고 현재 언어의 풀이 파일과 초기 템플릿만 없을 때 생성한다.
+4. `programmers.json.languages[language]`에 언어별 `url`, `solutionFile`, `initialCodePath`를 기록한다.
+
+기존 C++ 문제는 `programmers.json.languages`가 없어도 계속 동작한다. Java로 전환 후 문제를 열면 Java 템플릿이 추가된다.
 
 ## 사이드바 메시지 흐름
 
@@ -139,7 +177,7 @@ Programmers/
 1. 사이드바에서 문제 번호 입력
 2. `생성 및 열기` 클릭 또는 `Enter` 입력
 3. Programmers 페이지 fetch
-4. `problem.md`, `solution.cpp`, `.programmers-helper/programmers.json`, `.programmers-helper/initial-solution.cpp` 생성
+4. 현재 언어 기준으로 `problem.md`, 풀이 파일, `.programmers-helper/programmers.json`, 언어별 초기 템플릿 생성
 5. 문제를 열고 Docker runtime 준비
 6. 사이드바 현재 문제 상태 갱신
 
@@ -157,7 +195,7 @@ Programmers/
    - `createProblem(programmersDir, lessonId)`
    - `findExistingProblem(...)`으로 같은 lessonId 문제를 먼저 찾는다.
    - 없으면 `fetchText(url)`로 Programmers HTML을 가져온다.
-   - 제목, 본문, 난이도, 분류, 기본 C++ 템플릿을 추출한다.
+   - 제목, 본문, 난이도, 분류, 현재 언어 기본 템플릿을 추출한다.
    - `htmlToMarkdown(markdownHtml)`로 `problem.md` 본문을 만든다.
    - `extractExamplesFromMarkdown(problemMd)` 결과를 `programmers.json.examples`에 저장한다.
 5. `problemCommands.js`
@@ -174,6 +212,15 @@ Programmers/
   "url": "https://school.programmers.co.kr/learn/courses/30/lessons/12906?language=cpp",
   "initialCode": "...",
   "initialCodePath": ".programmers-helper/initial-solution.cpp",
+  "language": "cpp",
+  "solutionFile": "solution.cpp",
+  "languages": {
+    "cpp": {
+      "url": "https://school.programmers.co.kr/learn/courses/30/lessons/12906?language=cpp",
+      "solutionFile": "solution.cpp",
+      "initialCodePath": ".programmers-helper/initial-solution.cpp"
+    }
+  },
   "examples": [
     {
       "inputs": ["[1,1,3,3,0,1,1]"],
@@ -187,7 +234,7 @@ Programmers/
 
 - `problem.md`는 사용자에게 보이는 문제 설명이고, 샘플 테스트의 primary source는 `programmers.json.examples`다.
 - 기존 문제에 `examples`가 없으면 `loadProblemExamples()`가 `problem.md`에서 fallback 파싱 후 `programmers.json`에 backfill한다.
-- `writeFileIfAbsent()`는 기존 `problem.md`, `solution.cpp`, `initial-solution.cpp`를 덮어쓰지 않는다.
+- `writeFileIfAbsent()`는 기존 `problem.md`, 풀이 파일, 초기 템플릿을 덮어쓰지 않는다.
 
 ## 문제 열기 flow
 
@@ -208,7 +255,7 @@ Programmers/
 3. `ProblemCommands.openProblemFromDir(problemDir)`
 4. `validateProblemDir(problemDir)`로 안전한 문제 폴더인지 확인한다.
 5. `workspaceState.lastProblemDir`을 갱신한다.
-6. `openProblem(problem.md, solution.cpp)` 호출
+6. 현재 언어 풀이 파일을 보장한 뒤 `openProblem(problem.md, solutionFile)` 호출
 7. Docker runtime 준비
 8. `showOpenedProblemState(problemDir, runtimeStatus)` 호출
 
@@ -221,14 +268,14 @@ Programmers/
    - 우선 `vscode.openWith(..., "vscode.markdown.preview.editor")`를 사용한다.
    - 실패하면 `markdown.showPreview`와 `markdown.preview.toggleLock` fallback을 사용한다.
 3. `closeInactiveProblemTabs(mdUri, cppUri)`로 같은 `Programmers` 루트의 비활성 `problem.md` 탭을 정리한다.
-4. `showSolution(cppUri)`로 현재 풀이 C++ 파일을 `ViewColumn.Two`에 연다.
-5. `closeStaleSolutionTabs(cppUri)`로 같은 `Programmers` 루트의 오래된 C++ 풀이 탭을 정리한다.
+4. `showSolution(solutionUri)`로 현재 언어 풀이 파일을 `ViewColumn.Two`에 연다.
+5. `closeStaleSolutionTabs(solutionUri)`로 같은 `Programmers` 루트의 오래된 풀이 탭을 정리한다.
 6. `keepOnlyProblemLayoutTabs(mdUri, cppUri)`로 현재 문제 레이아웃에 맞지 않는 탭을 정리한다.
 
 주의:
 
 - 현재 구현은 전체 에디터를 닫지 않고 필요한 문제 탭만 선별 정리한다.
-- 저장된 풀이 스냅샷을 열 때는 오른쪽 C++ 파일이 `solution.cpp`가 아니라 `.programmers-helper/solutions/solution-*.cpp`일 수 있다.
+- 저장된 풀이 스냅샷을 열 때는 오른쪽 풀이 파일이 기본 파일이 아니라 `.programmers-helper/solutions/solution-*.<ext>`일 수 있다.
 
 ### 사이드바 상태 갱신
 
@@ -273,7 +320,7 @@ Programmers/
 3. `vscode.workspace.fs.readDirectory(programmersDir)`
 4. 디렉터리만 필터링
 5. 각 디렉터리에 대해 병렬로:
-   - `hasProblemFiles(problemDir)`로 `problem.md`, `solution.cpp` 존재 확인
+   - `hasProblemFiles(problemDir)`로 `problem.md`와 지원 언어 중 하나의 풀이 파일 존재 확인
    - `loadProblemSummary(problemDir.fsPath)`
 6. lessonId 숫자 순, 그 외 폴더명 순으로 정렬
 7. 재생성한 목록을 `.programmers-helper/problem-index.json`에 저장한다.
@@ -285,7 +332,7 @@ Programmers/
 - `.programmers-helper/solution-history.json`
 
 문제 목록에는 `solutionHistory` 전체가 아니라 `solutionHistoryCount`만 포함한다.
-현재 열린 문제의 상세 정보가 필요할 때만 `loadProblemInfo()`가 같은 summary에 `solutionHistory`를 추가한다.
+현재 열린 문제의 상세 정보가 필요할 때만 `loadProblemInfo()`가 같은 summary에 현재 언어 `solutionHistory`와 다른 언어 `otherSolutionHistory`를 추가한다.
 
 ### 성능 주의점
 
@@ -304,8 +351,8 @@ Programmers/
    - 기본 keybinding: `Ctrl+Alt+T`
 4. 사이드바 버튼 경로는 현재 문제 경로를 메시지에 포함한다.
 5. VS Code 명령 경로는 `ProblemCommands.getProblemDir()`로 실행 대상을 찾는다.
-6. 저장된 샘플 예제로 `test_runner.cpp`를 만든다.
-7. Docker runtime container 안에서 컴파일하고 테스트별로 실행한다.
+6. 저장된 샘플 예제로 현재 언어 runner를 만든다.
+7. Docker runtime container 안에서 언어별로 컴파일하고 테스트별로 실행한다.
 
 ### Webview에서 TestRunner까지
 
@@ -323,31 +370,33 @@ Programmers/
 4. `testRunner.js`
    - `runFromCommand(...)`
    - `normalizeRunTarget(providedProblemDir)`
-   - `runSamples(target.problemDir, "", target.cppPath)`
+   - `runSamples(target.problemDir, "", target.solutionPath, target.language)`
 
-### 실행 대상 C++ 결정
+### 실행 대상 풀이 파일 결정
 
 `ProblemCommands.getActiveCodeTarget(problemDir)`:
 
-1. 활성 에디터가 실행 가능한 C++ 파일이면 그 파일을 우선한다.
-2. 아니면 현재 문제에서 보이는 C++ 파일을 찾는다.
-3. 둘 다 없으면 현재 문제의 `solution.cpp`를 사용한다.
+1. 활성 에디터가 실행 가능한 지원 언어 풀이 파일이면 그 파일을 우선한다.
+2. 아니면 현재 문제에서 보이는 현재 언어 풀이 파일을 찾는다.
+3. 둘 다 없으면 현재 설정 언어의 기본 풀이 파일을 보장하고 사용한다.
 
-실행 가능한 C++ 파일은 아래 둘만 허용한다.
+실행 가능한 풀이 파일은 아래 형태만 허용한다.
 
 - `Programmers/<problem>/solution.cpp`
+- `Programmers/<problem>/Solution.java`
 - `Programmers/<problem>/.programmers-helper/solutions/solution-<timestamp>.cpp`
+- `Programmers/<problem>/.programmers-helper/solutions/solution-<timestamp>.java`
 
 주의:
 
-- `.programmers-helper/test_runner.cpp`는 내부 생성 파일이라 실행 대상으로 사용하지 않는다.
-- 현재 문제 밖의 C++ 파일은 활성 에디터나 보이는 에디터에 있어도 무시한다.
+- `.programmers-helper/test_runner.cpp`와 `.programmers-helper/TestRunner.java`는 내부 생성 파일이라 실행 대상으로 사용하지 않는다.
+- 현재 문제 밖의 풀이 파일은 활성 에디터나 보이는 에디터에 있어도 무시한다.
 
 ### 테스트 데이터 결정
 
 `TestRunner.runSamples(problemDir, customTestsText, selectedCppPath)`:
 
-1. `solution.cpp` 또는 선택된 C++ 파일을 읽는다.
+1. 현재 언어 기본 풀이 파일 또는 선택된 풀이 파일을 읽는다.
 2. 샘플 테스트면 `loadProblemExamples(problemDir)`를 호출한다.
 3. `loadProblemExamples()`:
    - `programmers.json.examples`가 있으면 즉시 반환
@@ -355,17 +404,22 @@ Programmers/
    - fallback 결과가 있으면 `programmers.json.examples`로 저장
    - 실패하면 빈 배열 반환
 4. 예제가 비어 있으면 테스트를 중단한다.
-5. `parseSolutionSignature(cpp)`로 `solution(...)` 시그니처를 찾는다.
+5. 언어별 runner builder의 `parseSolutionSignature()`로 `solution(...)` 시그니처를 찾는다.
 
 ### runner 생성
 
 1. `.programmers-helper` 폴더를 만든다.
-2. `.programmers-helper/test_runner.cpp`를 쓴다.
-3. `buildRunner(signature, examples, includePath)`가 생성하는 C++ 코드는:
+2. 현재 언어의 runner 파일을 쓴다.
+3. C++ `buildRunner(signature, examples, includePath)`가 생성하는 코드는:
    - `solution.cpp` 또는 현재 C++ 파일을 `#include`한다.
    - 각 예제별 블록을 만든다.
    - `argv[1]`의 테스트 번호와 일치하는 블록만 실행한다.
    - 결과는 `cerr`에 `[PASS]`, `[FAIL]` 형태로 출력한다.
+4. Java `buildRunner(signature, examples)`가 생성하는 코드는:
+   - `new Solution().solution(...)`을 호출한다.
+   - 각 예제별 블록을 만든다.
+   - `args[0]`의 테스트 번호와 일치하는 블록만 실행한다.
+   - 결과는 `System.err`에 `[PASS]`, `[FAIL]` 형태로 출력한다.
 
 ### Docker 준비
 
@@ -375,7 +429,7 @@ Programmers/
 2. 컨테이너 이름: `programmers-helper-runtime-<hash(programmersDir)>`
 3. 컨테이너 문제 경로: `/workspace/Programmers/<problemFolder>`
 4. Docker CLI 확인: `docker version --format {{.Server.Version}}`
-5. 이미지 확인: `docker image inspect programmers-helper-cpp-runtime:1`
+5. 이미지 확인: `docker image inspect programmers-helper-runtime:2`
 6. 이미지가 없으면 Dockerfile로 build
 7. 컨테이너 확인: `docker inspect --format {{.State.Running}} <containerName>`
 8. 컨테이너가 없으면 create 후 start
@@ -389,7 +443,7 @@ docker create
   --workdir /workspace/Programmers
   -v <Programmers host dir>:/workspace/Programmers
   --entrypoint tail
-  programmers-helper-cpp-runtime:1
+  programmers-helper-runtime:2
   -f /dev/null
 ```
 
@@ -406,6 +460,18 @@ docker exec -i
   clang++ -std=c++17 -Wall -O2
   .programmers-helper/test_runner.cpp
   -o .programmers-helper/test_runner_fast
+```
+
+Java 실행용:
+
+```text
+docker exec -i
+  -w /workspace/Programmers/<problemFolder>
+  <containerName>
+  javac -encoding UTF-8
+  -d .programmers-helper/java-classes
+  Solution.java
+  .programmers-helper/TestRunner.java
 ```
 
 그 뒤:
@@ -430,6 +496,12 @@ docker exec -i
   <testIndex>
 ```
 
+Java는 같은 timeout wrapper 안에서 아래 형태로 실행한다.
+
+```text
+java -cp .programmers-helper/java-classes TestRunner <testIndex>
+```
+
 `TEST_TIMEOUT_MS` 기본값은 3000ms다.
 
 ### sanitizer 재시도
@@ -448,7 +520,7 @@ docker exec -i
 ### 성능 주의점
 
 - 현재는 실행할 때마다 runner 파일을 쓰고 빠른 바이너리를 다시 컴파일한다.
-- 같은 `solution.cpp`, 같은 예제, 같은 include path, 같은 compile flags라면 fingerprint 기반 compile skip을 고려할 수 있다.
+- 같은 풀이 파일, 같은 예제, 같은 include path, 같은 언어/compile flags라면 fingerprint 기반 compile skip을 고려할 수 있다.
 - 현재는 테스트 결과 output 문자열을 누적한 뒤 PASS/FAIL/TIMEOUT을 센다.
   - 많은 테스트나 큰 출력에서는 count만 따로 누적하고 전체 문자열 보관을 줄일 수 있다.
 - Docker runtime 준비는 매번 Docker CLI와 image/container 상태를 확인한다.
@@ -461,7 +533,7 @@ docker exec -i
 커스텀 테스트 카드는 아래 값을 가진다.
 
 - `.test-input`: `solution(...)` 인자 순서대로 쉼표로 구분한 문자열
-- `.test-expected`: 기대 결과를 C++ 리터럴 형태로 쓴 문자열
+- `.test-expected`: 기대 결과를 현재 언어 리터럴 형태로 쓴 문자열
 
 `collectTests()`는 빈 카드 제외 후 아래 형태로 모은다.
 
@@ -501,7 +573,7 @@ docker exec -i
 
 - 커스텀 테스트는 실행 직전에 저장된다.
 - 커스텀 테스트는 `programmers.json.examples`를 사용하지 않는다.
-- `parseCustomTests()`는 문자열 입력을 C++ 리터럴로 해석 가능한 형태라고 가정한다.
+- `parseCustomTests()`는 문자열 입력을 현재 runner builder가 리터럴로 변환 가능한 형태라고 가정한다.
 
 ## 테스트 중지 flow
 
@@ -523,7 +595,7 @@ docker exec -i
 
 ### 컴파일 오류
 
-1. `compileRunner()`의 `docker exec clang++`가 non-zero로 종료한다.
+1. `compileRunner()`의 언어별 컴파일 명령이 non-zero로 종료한다.
 2. `execFile()`이 `buildProcessFailureError(...)`를 만든다.
 3. `runSamples()` catch에서 `applyCompilerDiagnostics(problemDir, error)` 호출
 4. `parseCompilerDiagnostics(vscode, message, solutionUri)` 결과를 diagnostic collection에 설정한다.
@@ -574,22 +646,22 @@ docker exec -i
 
 ### `createSolutionAttempt()` 세부 동작
 
-1. 현재 `solution.cpp`를 읽는다.
-2. `.programmers-helper/solutions/solution-<timestamp>.cpp`로 저장한다.
+1. 현재 언어 풀이 파일을 읽는다.
+2. `.programmers-helper/solutions/solution-<timestamp>.<ext>`로 저장한다.
 3. `.programmers-helper/solution-history.json` 맨 앞에 새 attempt 기록을 추가한다.
-4. 초기 코드가 있으면 `solution.cpp`를 초기 코드로 되돌린다.
+4. 초기 코드가 있으면 현재 언어 풀이 파일을 초기 코드로 되돌린다.
 
 ## 초기화 flow
 
 1. 사이드바 `초기화` 버튼은 `currentProblemDir`이 있을 때만 활성화된다.
 2. `ProblemCommands.resetCurrentSolution(problemDir)`
 3. `getActiveCodeTarget(problemDir)`
-   - 활성 에디터가 해당 문제의 `.cpp`이면 그 파일을 대상으로 한다.
-   - 아니면 현재 문제의 `solution.cpp`를 대상으로 한다.
+   - 활성 에디터가 해당 문제의 지원 언어 풀이 파일이면 그 파일을 대상으로 한다.
+   - 아니면 현재 문제의 현재 언어 풀이 파일을 대상으로 한다.
 4. 사용자 확인 모달
 5. `vscode.workspace.saveAll(false)`
-6. `resetSolutionToInitial(target.problemDir, target.cppPath)`
-7. 대상 C++ 파일을 초기 코드로 덮어쓴다.
+6. `resetSolutionToInitial(target.problemDir, target.solutionPath, target.language)`
+7. 대상 풀이 파일을 초기 코드로 덮어쓴다.
 8. 문제를 다시 열고 사이드바 상태를 갱신한다.
 
 주의:
@@ -602,15 +674,16 @@ docker exec -i
 ### 기록 목록
 
 1. 문제 목록 refresh 때 `loadProblemInfo()`가 `solution-history.json`을 읽는다.
-2. Webview `풀이기록` 필터는 현재 문제의 `solutionHistory`만 렌더링한다.
-3. 기록은 `createdAt` 역순으로 정렬된다.
-4. 스냅샷 경로가 안전한 풀이 기록만 목록에 포함한다.
+2. Webview `풀이기록` 필터는 현재 문제의 현재 언어 `solutionHistory`를 먼저 렌더링한다.
+3. 다른 언어 기록은 `otherSolutionHistory`로 받아 `다른 언어 풀이` 접힘 섹션에 렌더링한다.
+4. 기록은 `createdAt` 역순으로 정렬된다.
+5. 스냅샷 경로가 안전한 풀이 기록만 목록에 포함한다.
 
 스냅샷 경로 검증:
 
 - 상대 경로여야 한다.
 - `.programmers-helper/solutions/` 아래여야 한다.
-- 파일명은 `solution-*.cpp` 형태여야 한다.
+- 파일명은 `solution-*.<supported ext>` 형태여야 한다.
 - `path.resolve()` 결과가 문제 폴더의 `.programmers-helper/solutions` 밖으로 나가면 무시한다.
 
 ### 이전 풀이 열기
@@ -618,7 +691,7 @@ docker exec -i
 1. Webview `openSolutionSnapshot`
 2. `ProblemCommands.openSolutionSnapshot(problemDir, snapshotPath)`
 3. `getSolutionSnapshotPath(safeDir, snapshotPath)`
-4. `problem.md`와 snapshot C++ 파일을 나란히 연다.
+4. `problem.md`와 snapshot 풀이 파일을 나란히 연다.
 
 ### 이전 풀이 삭제
 
@@ -661,9 +734,9 @@ docker exec -i
 
 ### 이미지
 
-- 이미지 이름: `programmers-helper-cpp-runtime:1`
+- 이미지 이름: `programmers-helper-runtime:2`
 - Dockerfile: `docker/cpp-runtime.Dockerfile`
-- 없으면 `docker build -t programmers-helper-cpp-runtime:1 -f <Dockerfile> <extensionDir>`
+- 없으면 `docker build -t programmers-helper-runtime:2 -f <Dockerfile> <extensionDir>`
 
 ### 컨테이너
 
@@ -714,7 +787,7 @@ Dev Container:
 - fallback 파싱 성공 시 `programmers.json`에 `examples`를 저장한다.
 - 사이드바 테스트 버튼은 현재 문제가 없으면 비활성화되어, `lastProblemDir`로 몰래 테스트가 실행되지 않는다.
 - Docker 사용 가능 여부와 runtime image 존재 여부는 확장 세션 동안 캐시한다.
-- `solution.cpp` 내용, 생성된 `test_runner.cpp` 내용, 컴파일 플래그 fingerprint가 같으면 기존 `test_runner_fast` / `test_runner_debug` 바이너리를 재사용한다.
+- 풀이 파일 내용, 생성된 runner 내용, 언어, 컴파일 플래그 fingerprint가 같으면 기존 실행 산출물을 재사용한다.
 - 테스트 결과 요약은 전체 output 문자열을 누적하지 않고 케이스별 PASS/FAIL/TIMEOUT count로 집계한다.
 - 사이드바 문제 목록은 메모리의 problem summary cache를 우선 사용하고, 명시적 강제 새로고침 때만 전체 스캔한다.
 - 문제 목록 인덱스가 현재 `Programmers` 루트 밖의 항목을 포함하면 폐기하고 전체 스캔으로 재생성한다.

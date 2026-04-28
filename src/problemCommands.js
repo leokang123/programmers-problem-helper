@@ -13,6 +13,7 @@ const {
   createProblem,
   createSolutionAttempt,
   deleteSolutionSnapshot,
+  ensureSolutionForLanguage,
   getSolutionSnapshotPath,
   getDefaultProgrammersDir,
   hasProblemFiles,
@@ -26,6 +27,12 @@ const {
   saveCustomTests,
   updateProblemIndexEntry,
 } = require("./problemStore");
+const {
+  getLanguage,
+  getSolutionPath,
+  inferLanguageFromRunnablePath,
+  isSupportedSourceExtension,
+} = require("./languages");
 
 // 문제 관련 VS Code 액션들을 묶어 관리합니다.
 class ProblemCommands {
@@ -76,7 +83,8 @@ class ProblemCommands {
         },
         async (progress) => {
           progress.report({ message: "기존 문제를 확인하는 중..." });
-          const created = await createProblem(programmersDir, lessonId);
+          const settings = getExecutionSettings();
+          const created = await createProblem(programmersDir, lessonId, settings.language);
           progress.report({ message: "에디터를 여는 중..." });
           return created;
         }
@@ -113,7 +121,9 @@ class ProblemCommands {
     }
 
     await this.context.workspaceState.update("lastProblemDir", safeDir);
-    await openProblem(vscode.Uri.file(path.join(safeDir, "problem.md")), vscode.Uri.file(path.join(safeDir, "solution.cpp")));
+    const settings = getExecutionSettings();
+    const solution = await ensureSolutionForLanguage(safeDir, settings.language);
+    await openProblem(vscode.Uri.file(path.join(safeDir, "problem.md")), solution.solutionUri);
     const runtimeStatus = await this.prepareDockerRuntimeOnOpen(safeDir);
     await this.showOpenedProblemState(safeDir, runtimeStatus, { forceRefreshProblems: Boolean(options.forceRefreshProblems) });
     return runtimeStatus;
@@ -128,17 +138,18 @@ class ProblemCommands {
     }
 
     await vscode.workspace.saveAll(false);
-    const result = await createSolutionAttempt(safeDir);
+    const settings = getExecutionSettings();
+    const result = await createSolutionAttempt(safeDir, settings.language);
     await writeReviewState(safeDir, true);
     await this.context.workspaceState.update("lastProblemDir", safeDir);
-    await showSolution(vscode.Uri.file(path.join(safeDir, "solution.cpp")));
+    await showSolution(vscode.Uri.file(getSolutionPath(safeDir, settings.language)));
     const runtimeStatus = await this.prepareDockerRuntimeOnOpen(safeDir);
     await this.showOpenedProblemState(safeDir, runtimeStatus, { forceRefreshProblems: true });
 
     if (result.resetToInitialCode) {
       vscode.window.showInformationMessage("이전 풀이를 보관하고 새 풀이 템플릿을 열었습니다.");
     } else {
-      vscode.window.showWarningMessage("이전 풀이를 보관했습니다. 이 문제에는 초기 템플릿 기록이 없어 solution.cpp는 그대로 두었습니다.");
+      vscode.window.showWarningMessage("이전 풀이를 보관했습니다. 이 문제에는 초기 템플릿 기록이 없어 현재 풀이 파일은 그대로 두었습니다.");
     }
   }
 
@@ -150,7 +161,8 @@ class ProblemCommands {
       return;
     }
 
-    const problem = await loadProblemInfo(safeDir);
+    const settings = getExecutionSettings();
+    const problem = await loadProblemInfo(safeDir, settings.language);
     const notesUri = vscode.Uri.file(path.join(safeDir, ".programmers-helper", "notes.md"));
     await ensureNotesFile(notesUri, problem);
     await this.context.workspaceState.update("lastProblemDir", safeDir);
@@ -165,7 +177,7 @@ class ProblemCommands {
     });
   }
 
-  // 현재 보고 있는 C++ 파일을 기록하지 않고 초기 템플릿으로 되돌립니다.
+  // 현재 보고 있는 풀이 파일을 기록하지 않고 초기 템플릿으로 되돌립니다.
   async resetCurrentSolution(problemDir) {
     const target = await this.getActiveCodeTarget(problemDir);
     if (!target) {
@@ -173,9 +185,9 @@ class ProblemCommands {
       return;
     }
 
-    const relativeCppPath = path.relative(target.problemDir, target.cppPath) || "solution.cpp";
+    const relativeSolutionPath = path.relative(target.problemDir, target.solutionPath) || getLanguage(target.language).solutionFileName;
     const picked = await vscode.window.showWarningMessage(
-      `${relativeCppPath} 파일을 초기 코드로 되돌릴까요?`,
+      `${relativeSolutionPath} 파일을 초기 코드로 되돌릴까요?`,
       { modal: true, detail: "현재 작성 중인 내용은 풀이기록에 저장되지 않습니다. 보관하려면 새풀이를 먼저 사용하세요." },
       "초기화"
     );
@@ -184,16 +196,16 @@ class ProblemCommands {
     }
 
     await vscode.workspace.saveAll(false);
-    const reset = await resetSolutionToInitial(target.problemDir, target.cppPath);
+    const reset = await resetSolutionToInitial(target.problemDir, target.solutionPath, target.language);
     if (!reset) {
       vscode.window.showWarningMessage("이 문제에는 초기 템플릿 기록이 없어 초기화할 수 없습니다.");
       return;
     }
 
     await this.context.workspaceState.update("lastProblemDir", target.problemDir);
-    await showSolution(vscode.Uri.file(target.cppPath));
+    await showSolution(vscode.Uri.file(target.solutionPath));
     await this.showOpenedProblemState(target.problemDir);
-    vscode.window.showInformationMessage(`${relativeCppPath} 파일을 초기 코드로 되돌렸습니다.`);
+    vscode.window.showInformationMessage(`${relativeSolutionPath} 파일을 초기 코드로 되돌렸습니다.`);
   }
 
   // 선택한 이전 풀이 기록을 엽니다.
@@ -265,7 +277,7 @@ class ProblemCommands {
     const folderName = path.basename(safeDir);
     const picked = await vscode.window.showWarningMessage(
       `${folderName} 문제 폴더를 삭제할까요?`,
-      { modal: true, detail: "problem.md, solution.cpp, .programmers-helper가 함께 삭제됩니다." },
+      { modal: true, detail: "problem.md, 풀이 파일, .programmers-helper가 함께 삭제됩니다." },
       "삭제"
     );
     if (picked !== "삭제") {
@@ -320,7 +332,8 @@ class ProblemCommands {
 
   // 열린 문제 상태를 사이드바에 반영합니다.
   async showOpenedProblemState(problemDir, runtimeStatus = { kind: "", detail: "" }, options = {}) {
-    const problem = await loadProblemInfo(problemDir);
+    const settings = getExecutionSettings();
+    const problem = await loadProblemInfo(problemDir, settings.language);
     const examples = await loadProblemExamples(problemDir);
     const savedCustomTests = await loadSavedCustomTests(problemDir);
 
@@ -395,7 +408,9 @@ class ProblemCommands {
         await this.context.workspaceState.update("lastProblemDir", validActive);
         return {
           problemDir: validActive,
-          cppPath: fromActive.cppPath,
+          solutionPath: fromActive.solutionPath,
+          cppPath: fromActive.solutionPath,
+          language: fromActive.language,
         };
       }
     }
@@ -404,9 +419,13 @@ class ProblemCommands {
     if (typeof last === "string") {
       const validLast = await this.validateProblemDir(last);
       if (validLast) {
+        const settings = getExecutionSettings();
+        const solution = await ensureSolutionForLanguage(validLast, settings.language);
         return {
           problemDir: validLast,
-          cppPath: path.join(validLast, "solution.cpp"),
+          solutionPath: solution.solutionUri.fsPath,
+          cppPath: solution.solutionUri.fsPath,
+          language: settings.language,
         };
       }
       await this.context.workspaceState.update("lastProblemDir", undefined);
@@ -437,13 +456,17 @@ class ProblemCommands {
       return undefined;
     }
     const problemDir = picked.problemDir;
+    const settings = getExecutionSettings();
+    const solution = await ensureSolutionForLanguage(problemDir, settings.language);
     return {
       problemDir,
-      cppPath: path.join(problemDir, "solution.cpp"),
+      solutionPath: solution.solutionUri.fsPath,
+      cppPath: solution.solutionUri.fsPath,
+      language: settings.language,
     };
   }
 
-  // 현재 에디터의 C++ 파일을 우선하고, 없으면 전달된 문제의 solution.cpp를 사용합니다.
+  // 현재 에디터의 풀이 파일을 우선하고, 없으면 전달된 문제의 현재 언어 solution 파일을 사용합니다.
   async getActiveCodeTarget(problemDir) {
     const activeFile = vscode.window.activeTextEditor?.document.uri.fsPath;
     const fromActive = activeFile ? getRunTargetFromPath(activeFile) : undefined;
@@ -452,7 +475,9 @@ class ProblemCommands {
       if (validActive) {
         return {
           problemDir: validActive,
-          cppPath: fromActive.cppPath,
+          solutionPath: fromActive.solutionPath,
+          cppPath: fromActive.solutionPath,
+          language: fromActive.language,
         };
       }
     }
@@ -463,12 +488,18 @@ class ProblemCommands {
       return fromVisible;
     }
 
-    return safeDir
-      ? {
-        problemDir: safeDir,
-        cppPath: path.join(safeDir, "solution.cpp"),
-      }
-      : undefined;
+    if (!safeDir) {
+      return undefined;
+    }
+
+    const settings = getExecutionSettings();
+    const solution = await ensureSolutionForLanguage(safeDir, settings.language);
+    return {
+      problemDir: safeDir,
+      solutionPath: solution.solutionUri.fsPath,
+      cppPath: solution.solutionUri.fsPath,
+      language: settings.language,
+    };
   }
 
   // 문제를 열 때 현재 설정에 맞는 실행 환경을 준비합니다.
@@ -477,7 +508,7 @@ class ProblemCommands {
     if (settings.executionMode === "local") {
       return {
         kind: "ready",
-        detail: `로컬 실행\n${settings.compilerCommand} -std=${settings.cppStandard}`,
+        detail: `로컬 실행\n${getLanguage(settings.language).compilerSettingsLabel(settings)}`,
       };
     }
 
@@ -492,20 +523,20 @@ class ProblemCommands {
   }
 }
 
-// Markdown 미리보기와 solution.cpp를 나란히 엽니다.
-async function openProblem(mdUri, cppUri) {
+// Markdown 미리보기와 현재 언어 풀이 파일을 나란히 엽니다.
+async function openProblem(mdUri, solutionUri) {
   await vscode.workspace.saveAll(false);
   await openLockedMarkdownPreview(mdUri, vscode.ViewColumn.One);
-  await closeInactiveProblemTabs(mdUri, cppUri);
-  await showSolution(cppUri);
-  await closeStaleSolutionTabs(cppUri);
-  await keepOnlyProblemLayoutTabs(mdUri, cppUri);
+  await closeInactiveProblemTabs(mdUri, solutionUri);
+  await showSolution(solutionUri);
+  await closeStaleSolutionTabs(solutionUri);
+  await keepOnlyProblemLayoutTabs(mdUri, solutionUri);
 }
 
 // 풀이 파일을 오른쪽 그룹에 보여주되 기존 탭은 닫지 않고 재사용합니다.
-async function showSolution(cppUri) {
+async function showSolution(solutionUri) {
   await vscode.workspace.saveAll(false);
-  await vscode.window.showTextDocument(cppUri, {
+  await vscode.window.showTextDocument(solutionUri, {
     viewColumn: vscode.ViewColumn.Two,
     preserveFocus: false,
     preview: false,
@@ -544,8 +575,8 @@ async function closeOpenTabsForUri(uri) {
   return true;
 }
 
-async function closeInactiveProblemTabs(mdUri, cppUri) {
-  const keep = new Set([path.resolve(mdUri.fsPath), path.resolve(cppUri.fsPath)]);
+async function closeInactiveProblemTabs(mdUri, solutionUri) {
+  const keep = new Set([path.resolve(mdUri.fsPath), path.resolve(solutionUri.fsPath)]);
   const programmersRoot = path.dirname(path.dirname(mdUri.fsPath));
   const tabs = [];
   for (const group of vscode.window.tabGroups?.all || []) {
@@ -588,11 +619,11 @@ function getTabUris(tab) {
   ].filter((uri) => uri?.scheme === "file");
 }
 
-// 현재 문제 풀이 파일 외에 같은 Programmers 루트의 C++ 풀이 탭을 정리합니다.
-async function closeStaleSolutionTabs(cppUri) {
-  const keep = path.resolve(cppUri.fsPath);
-  const target = getRunTargetFromPath(cppUri.fsPath);
-  const programmersRoot = target ? path.dirname(target.problemDir) : path.dirname(path.dirname(cppUri.fsPath));
+// 현재 문제 풀이 파일 외에 같은 Programmers 루트의 오래된 풀이 탭을 정리합니다.
+async function closeStaleSolutionTabs(solutionUri) {
+  const keep = path.resolve(solutionUri.fsPath);
+  const target = getRunTargetFromPath(solutionUri.fsPath);
+  const programmersRoot = target ? path.dirname(target.problemDir) : path.dirname(path.dirname(solutionUri.fsPath));
   const tabs = [];
   for (const group of vscode.window.tabGroups?.all || []) {
     for (const tab of group.tabs || []) {
@@ -600,7 +631,7 @@ async function closeStaleSolutionTabs(cppUri) {
       if (uris.some((uri) => {
         const target = path.resolve(uri.fsPath);
         return target !== keep
-          && target.endsWith(".cpp")
+          && isSupportedSourceExtension(path.extname(target))
           && target.startsWith(path.resolve(programmersRoot) + path.sep);
       })) {
         tabs.push(tab);
@@ -613,10 +644,10 @@ async function closeStaleSolutionTabs(cppUri) {
   }
 }
 
-// 문제 열기 후 좌/우 editor group에 현재 problem.md와 cpp만 남깁니다.
-async function keepOnlyProblemLayoutTabs(mdUri, cppUri) {
+// 문제 열기 후 좌/우 editor group에 현재 problem.md와 풀이 파일만 남깁니다.
+async function keepOnlyProblemLayoutTabs(mdUri, solutionUri) {
   const keepLeft = path.resolve(mdUri.fsPath);
-  const keepRight = path.resolve(cppUri.fsPath);
+  const keepRight = path.resolve(solutionUri.fsPath);
   const tabs = [];
 
   for (const group of vscode.window.tabGroups?.all || []) {
@@ -696,10 +727,10 @@ async function ensureNotesFile(notesUri, problem) {
   await vscode.workspace.fs.writeFile(notesUri, Buffer.from(template, "utf8"));
 }
 
-// 파일 경로에서 문제 폴더와 실행 cpp를 추정합니다.
+// 파일 경로에서 문제 폴더와 실행 풀이 파일을 추정합니다.
 function getRunTargetFromPath(filePath) {
   const normalized = path.normalize(filePath);
-  if (path.extname(normalized) !== ".cpp") {
+  if (!isSupportedSourceExtension(path.extname(normalized))) {
     return undefined;
   }
 
@@ -710,37 +741,30 @@ function getRunTargetFromPath(filePath) {
   }
 
   const relativeParts = parts.slice(index + 2);
-  if (!isRunnableCppPath(relativeParts)) {
+  const language = inferLanguageFromRunnablePath(relativeParts);
+  if (!language) {
     return undefined;
   }
 
   return {
     problemDir: parts.slice(0, index + 2).join(path.sep),
+    solutionPath: normalized,
     cppPath: normalized,
+    language,
   };
 }
 
 function getVisibleCodeTarget(problemDir) {
   const safeDir = path.resolve(problemDir);
-  const defaultCppPath = path.resolve(safeDir, "solution.cpp");
+  const settings = getExecutionSettings();
+  const defaultSolutionPath = path.resolve(safeDir, getLanguage(settings.language).solutionFileName);
   const visibleTargets = vscode.window.visibleTextEditors
     .map((editor) => getRunTargetFromPath(editor.document.uri.fsPath))
     .filter((target) => target && path.resolve(target.problemDir) === safeDir);
 
-  const snapshotTarget = visibleTargets.find((target) => path.resolve(target.cppPath) !== defaultCppPath);
-  return snapshotTarget || visibleTargets[0];
-}
-
-// 실행 대상으로 인정하는 C++ 파일은 현재 풀이 또는 저장된 풀이 snapshot뿐입니다.
-function isRunnableCppPath(relativeParts) {
-  if (relativeParts.length === 1) {
-    return relativeParts[0] === "solution.cpp";
-  }
-
-  return relativeParts.length === 3
-    && relativeParts[0] === ".programmers-helper"
-    && relativeParts[1] === "solutions"
-    && /^solution-.+\.cpp$/.test(relativeParts[2]);
+  const sameLanguageTargets = visibleTargets.filter((target) => target.language === settings.language);
+  const snapshotTarget = sameLanguageTargets.find((target) => path.resolve(target.solutionPath) !== defaultSolutionPath);
+  return snapshotTarget || sameLanguageTargets[0] || visibleTargets[0];
 }
 
 module.exports = {

@@ -1,8 +1,8 @@
 {
   "name": "programmers-problem-helper",
   "displayName": "Programmers Problem Helper",
-  "description": "Create Programmers problem files, open a preview/solution split view, and run sample or custom C++ tests.",
-  "version": "0.1.1",
+  "description": "Create Programmers problem files, open a preview/solution split view, and run sample or custom tests.",
+  "version": "0.2.0",
   "publisher": "local",
   "license": "MIT",
   "engines": {
@@ -18,6 +18,7 @@
     "programmers",
     "algorithm",
     "cpp",
+    "java",
     "coding-test",
     "korean"
   ],
@@ -38,6 +39,19 @@
     "configuration": {
       "title": "Programmers Helper",
       "properties": {
+        "programmersHelper.language": {
+          "type": "string",
+          "enum": [
+            "cpp",
+            "java"
+          ],
+          "enumItemLabels": [
+            "C++",
+            "Java"
+          ],
+          "default": "cpp",
+          "markdownDescription": "Choose the language used when opening problem solution templates and running tests."
+        },
         "programmersHelper.executionMode": {
           "type": "string",
           "enum": [

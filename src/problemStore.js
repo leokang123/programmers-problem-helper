@@ -1,6 +1,18 @@
 const path = require("path");
 const vscode = require("vscode");
 const {
+  DEFAULT_LANGUAGE_ID,
+  getInitialSolutionPath,
+  getInitialSolutionRelativePath,
+  getLanguage,
+  getLanguageIds,
+  getSnapshotFileName,
+  getSolutionPath,
+  inferLanguageFromRunnablePath,
+  isSupportedSourceExtension,
+  getSolutionFileName,
+} = require("./languages");
+const {
   decodeHtml,
   extractExamplesFromMarkdown,
   fetchText,
@@ -120,12 +132,18 @@ function shouldUseWorkspaceProgrammersDir(context, workspaceUri) {
 }
 
 // 문제 폴더의 표시 정보를 읽습니다.
-async function loadProblemInfo(problemDir) {
+async function loadProblemInfo(problemDir, languageId = DEFAULT_LANGUAGE_ID) {
   const summary = await loadProblemSummary(problemDir);
+  const language = getLanguage(languageId);
   const history = await readSolutionHistory(problemDir);
+  const currentLanguageHistory = history.attempts.filter((attempt) => attempt.language === language.id);
+  const otherLanguageHistory = history.attempts.filter((attempt) => attempt.language !== language.id);
   return {
     ...summary,
-    solutionHistory: history.attempts,
+    solutionHistory: currentLanguageHistory,
+    otherSolutionHistory: otherLanguageHistory,
+    language: language.id,
+    solutionFileName: getSolutionFileName(languageId),
   };
 }
 
@@ -273,47 +291,63 @@ async function saveCustomTests(problemDir, tests) {
 }
 
 // Programmers 페이지에서 문제 파일을 생성합니다.
-async function createProblem(programmersDir, lessonId) {
+async function createProblem(programmersDir, lessonId, languageId = DEFAULT_LANGUAGE_ID) {
+  const language = getLanguage(languageId);
   const existing = await findExistingProblem(programmersDir, lessonId);
   if (existing) {
-    return existing;
+    const solution = await ensureSolutionForLanguage(existing.problemDir.fsPath, language.id);
+    return {
+      ...existing,
+      solutionUri: solution.solutionUri,
+      cppUri: language.id === "cpp" ? solution.solutionUri : existing.cppUri,
+      language: language.id,
+    };
   }
 
-  const url = `https://school.programmers.co.kr/learn/courses/30/lessons/${lessonId}?language=cpp`;
+  const url = getProgrammersProblemUrl(lessonId, language.id);
   const html = await fetchText(url);
-  const page = parseProgrammersProblemPage(html, url);
+  const page = parseProgrammersProblemPage(html, url, language);
   const { title, initialCode } = page;
   const folderName = `${lessonId}_${slugify(title)}`;
   const problemDir = vscode.Uri.joinPath(programmersDir, folderName);
   const mdUri = vscode.Uri.joinPath(problemDir, "problem.md");
-  const cppUri = vscode.Uri.joinPath(problemDir, "solution.cpp");
+  const solutionUri = vscode.Uri.joinPath(problemDir, language.solutionFileName);
   const helperDir = vscode.Uri.joinPath(problemDir, ".programmers-helper");
   const metadataUri = vscode.Uri.joinPath(helperDir, "programmers.json");
-  const initialCppUri = vscode.Uri.joinPath(helperDir, "initial-solution.cpp");
+  const initialSolutionUri = vscode.Uri.joinPath(helperDir, language.initialSolutionFileName);
 
   await vscode.workspace.fs.createDirectory(problemDir);
   await vscode.workspace.fs.createDirectory(helperDir);
 
   const problemMd = buildProblemMarkdown(lessonId, url, page);
   await writeFileIfAbsent(mdUri, problemMd);
-  await writeFileIfAbsent(cppUri, initialCode);
-  await writeFileIfAbsent(initialCppUri, initialCode);
+  await writeFileIfAbsent(solutionUri, initialCode);
+  await writeFileIfAbsent(initialSolutionUri, initialCode);
 
   const metadata = {
     lessonId,
     title,
     url,
     initialCode,
-    initialCodePath: ".programmers-helper/initial-solution.cpp",
+    initialCodePath: getInitialSolutionRelativePath(language.id),
+    language: language.id,
+    solutionFile: language.solutionFileName,
+    languages: {
+      [language.id]: {
+        url,
+        solutionFile: language.solutionFileName,
+        initialCodePath: getInitialSolutionRelativePath(language.id),
+      },
+    },
     examples: extractExamplesFromMarkdown(problemMd),
   };
   await vscode.workspace.fs.writeFile(metadataUri, Buffer.from(JSON.stringify(metadata, null, 2) + "\n", "utf8"));
 
-  return { folderName, problemDir, mdUri, cppUri, examples: metadata.examples };
+  return { folderName, problemDir, mdUri, solutionUri, cppUri: language.id === "cpp" ? solutionUri : undefined, language: language.id, examples: metadata.examples };
 }
 
 // HTML에서 문제 생성에 필요한 원천 데이터를 추출하고 필수 항목을 검증합니다.
-function parseProgrammersProblemPage(html, url) {
+function parseProgrammersProblemPage(html, url, language = getLanguage(DEFAULT_LANGUAGE_ID)) {
   const title = decodeHtml(
     matchFirst(html, /data-lesson-title="([^"]+)"/, /<span class="challenge-title">([\s\S]*?)<\/span>/, /<title>코딩테스트 연습 - ([^|]+?)\s*\|/)
   ).trim();
@@ -330,7 +364,7 @@ function parseProgrammersProblemPage(html, url) {
     matchFirst(html, /<textarea hidden id="code" name="code">([\s\S]*?)<\/textarea>/, /name="initial_code_\d+"[^>]*value="([\s\S]*?)"/)
   ).replace(/\r\n/g, "\n");
   if (!code.trim()) {
-    throw new Error("C++ 기본 코드 템플릿을 찾지 못했습니다.");
+    throw new Error(`${language.label} 기본 코드 템플릿을 찾지 못했습니다.`);
   }
 
   return {
@@ -340,6 +374,70 @@ function parseProgrammersProblemPage(html, url) {
     level: matchFirst(html, /data-challenge-level="([^"]+)"/),
     category: matchFirst(html, /data-challenge-category="([^"]+)"/),
   };
+}
+
+async function ensureSolutionForLanguage(problemDir, languageId = DEFAULT_LANGUAGE_ID) {
+  const language = getLanguage(languageId);
+  const solutionUri = vscode.Uri.file(getSolutionPath(problemDir, language.id));
+  const initialSolutionUri = vscode.Uri.file(getInitialSolutionPath(problemDir, language.id));
+  const helperDir = vscode.Uri.file(path.join(problemDir, ".programmers-helper"));
+  const metadataUri = vscode.Uri.joinPath(helperDir, "programmers.json");
+  const metadata = await readJson(metadataUri);
+  const lessonId = String(metadata?.lessonId || parseProblemFolderName(path.basename(problemDir)).lessonId || "");
+  if (!lessonId) {
+    throw new Error("문제 번호를 확인하지 못해 언어 템플릿을 가져올 수 없습니다.");
+  }
+
+  try {
+    await Promise.all([
+      vscode.workspace.fs.stat(solutionUri),
+      vscode.workspace.fs.stat(initialSolutionUri),
+    ]);
+    return { solutionUri, language: language.id };
+  } catch {
+    // Missing language files are fetched below.
+  }
+
+  const url = getProgrammersProblemUrl(lessonId, language.id);
+  const html = await fetchText(url);
+  const page = parseProgrammersProblemPage(html, url, language);
+  const initialCode = page.initialCode;
+
+  await vscode.workspace.fs.createDirectory(helperDir);
+  await writeFileIfAbsent(solutionUri, initialCode);
+  await writeFileIfAbsent(initialSolutionUri, initialCode);
+
+  const nextMetadata = {
+    ...(metadata && typeof metadata === "object" ? metadata : {}),
+    lessonId,
+    title: metadata?.title || page.title,
+    languages: {
+      ...(metadata?.languages && typeof metadata.languages === "object" ? metadata.languages : {}),
+      [language.id]: {
+        url,
+        solutionFile: language.solutionFileName,
+        initialCodePath: getInitialSolutionRelativePath(language.id),
+      },
+    },
+  };
+  if (!nextMetadata.url) nextMetadata.url = url;
+  if (!nextMetadata.initialCode) nextMetadata.initialCode = initialCode;
+  if (!nextMetadata.initialCodePath) nextMetadata.initialCodePath = getInitialSolutionRelativePath(language.id);
+  if (!nextMetadata.examples) {
+    try {
+      const markdown = await readText(vscode.Uri.file(path.join(problemDir, "problem.md")));
+      nextMetadata.examples = extractExamplesFromMarkdown(markdown);
+    } catch {
+      nextMetadata.examples = [];
+    }
+  }
+  await writeJson(metadataUri, nextMetadata);
+
+  return { solutionUri, language: language.id };
+}
+
+function getProgrammersProblemUrl(lessonId, languageId = DEFAULT_LANGUAGE_ID) {
+  return `https://school.programmers.co.kr/learn/courses/30/lessons/${lessonId}?language=${getLanguage(languageId).programmersParam}`;
 }
 
 // 저장할 problem.md를 조립합니다.
@@ -397,14 +495,15 @@ async function findExistingProblem(programmersDir, lessonId) {
   return undefined;
 }
 
-// 현재 solution.cpp를 풀이 기록으로 저장하고 새 풀이 상태를 준비합니다.
-async function createSolutionAttempt(problemDir) {
-  const solutionUri = vscode.Uri.file(path.join(problemDir, "solution.cpp"));
+// 현재 언어 풀이 파일을 풀이 기록으로 저장하고 새 풀이 상태를 준비합니다.
+async function createSolutionAttempt(problemDir, languageId = DEFAULT_LANGUAGE_ID) {
+  const language = getLanguage(languageId);
+  const solutionUri = vscode.Uri.file(getSolutionPath(problemDir, language.id));
   const helperDir = vscode.Uri.file(path.join(problemDir, ".programmers-helper"));
   const solutionsDir = vscode.Uri.joinPath(helperDir, "solutions");
   const currentCode = await readText(solutionUri);
   const timestamp = formatTimestamp(new Date());
-  const snapshotName = `solution-${timestamp}.cpp`;
+  const snapshotName = getSnapshotFileName(language.id, timestamp);
   const snapshotUri = vscode.Uri.joinPath(solutionsDir, snapshotName);
 
   await vscode.workspace.fs.createDirectory(solutionsDir);
@@ -417,13 +516,14 @@ async function createSolutionAttempt(problemDir) {
         path: path.posix.join(".programmers-helper", "solutions", snapshotName),
         createdAt: new Date().toISOString(),
         label: `풀이 ${history.attempts.length + 1}`,
+        language: language.id,
       },
       ...history.attempts,
     ],
   };
   await writeJson(vscode.Uri.joinPath(helperDir, "solution-history.json"), nextHistory);
 
-  const initialCode = await loadInitialSolutionCode(problemDir);
+  const initialCode = await loadInitialSolutionCode(problemDir, language.id);
   const resetToInitialCode = Boolean(initialCode);
   if (resetToInitialCode) {
     await vscode.workspace.fs.writeFile(solutionUri, Buffer.from(initialCode, "utf8"));
@@ -435,16 +535,16 @@ async function createSolutionAttempt(problemDir) {
   };
 }
 
-// 지정한 C++ 파일을 처음 받아온 원본 코드로 되돌립니다.
-async function resetSolutionToInitial(problemDir, cppPath = path.join(problemDir, "solution.cpp")) {
-  const initialCode = await loadInitialSolutionCode(problemDir);
+// 지정한 풀이 파일을 처음 받아온 원본 코드로 되돌립니다.
+async function resetSolutionToInitial(problemDir, solutionPath = getSolutionPath(problemDir, DEFAULT_LANGUAGE_ID), languageId = inferLanguageFromPath(solutionPath) || DEFAULT_LANGUAGE_ID) {
+  const initialCode = await loadInitialSolutionCode(problemDir, languageId);
   if (!initialCode) {
     return false;
   }
 
   const root = path.resolve(problemDir);
-  const target = path.resolve(cppPath);
-  if (!isSameOrInsidePath(root, target) || path.extname(target) !== ".cpp") {
+  const target = path.resolve(solutionPath);
+  if (!isSameOrInsidePath(root, target) || !isSupportedSourceExtension(path.extname(target))) {
     return false;
   }
 
@@ -455,12 +555,17 @@ async function resetSolutionToInitial(problemDir, cppPath = path.join(problemDir
   return true;
 }
 
-// 처음 받아온 solution.cpp 원본 코드를 읽습니다.
-async function loadInitialSolutionCode(problemDir) {
+// 처음 받아온 현재 언어 풀이 원본 코드를 읽습니다.
+async function loadInitialSolutionCode(problemDir, languageId = DEFAULT_LANGUAGE_ID) {
   try {
-    return await readText(vscode.Uri.file(path.join(problemDir, ".programmers-helper", "initial-solution.cpp")));
+    return await readText(vscode.Uri.file(getInitialSolutionPath(problemDir, languageId)));
   } catch {
     const metadata = await readJson(vscode.Uri.file(path.join(problemDir, ".programmers-helper", "programmers.json")));
+    const language = getLanguage(languageId);
+    const languageMetadata = metadata?.languages?.[language.id];
+    if (typeof languageMetadata?.initialCode === "string" && languageMetadata.initialCode.trim()) {
+      return languageMetadata.initialCode;
+    }
     return typeof metadata?.initialCode === "string" && metadata.initialCode.trim()
       ? metadata.initialCode
       : "";
@@ -509,17 +614,19 @@ async function deleteSolutionSnapshot(problemDir, snapshotPath) {
 }
 
 // 풀이 기록 메타데이터를 읽습니다.
-async function readSolutionHistory(problemDir) {
+async function readSolutionHistory(problemDir, languageId) {
   const history = await readJson(vscode.Uri.file(path.join(problemDir, ".programmers-helper", "solution-history.json")));
   return {
     attempts: Array.isArray(history?.attempts)
       ? history.attempts
         .filter((attempt) => attempt && typeof attempt.path === "string")
         .filter((attempt) => Boolean(resolveSolutionSnapshotPath(problemDir, attempt.path)))
+        .filter((attempt) => !languageId || (attempt.language || inferLanguageFromSnapshotPath(attempt.path)) === getLanguage(languageId).id)
         .map((attempt) => ({
           path: attempt.path,
           createdAt: typeof attempt.createdAt === "string" ? attempt.createdAt : "",
           label: typeof attempt.label === "string" ? attempt.label : path.basename(attempt.path),
+          language: attempt.language || inferLanguageFromSnapshotPath(attempt.path) || DEFAULT_LANGUAGE_ID,
         }))
         .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
       : [],
@@ -533,7 +640,13 @@ function resolveSolutionSnapshotPath(problemDir, snapshotPath) {
 
   const normalized = snapshotPath.split(path.win32.sep).join(path.posix.sep);
   const expectedPrefix = ".programmers-helper/solutions/";
-  if (!normalized.startsWith(expectedPrefix) || !/^solution-.+\.cpp$/.test(path.posix.basename(normalized))) {
+  if (!normalized.startsWith(expectedPrefix)) {
+    return undefined;
+  }
+
+  const relativeParts = normalized.split("/");
+  const languageId = inferLanguageFromRunnablePath(relativeParts);
+  if (!languageId) {
     return undefined;
   }
 
@@ -553,14 +666,31 @@ function isPathInside(root, target) {
 // 문제 폴더에 필수 파일이 있는지 확인합니다.
 async function hasProblemFiles(problemDir) {
   try {
-    await Promise.all([
-      vscode.workspace.fs.stat(vscode.Uri.joinPath(problemDir, "problem.md")),
-      vscode.workspace.fs.stat(vscode.Uri.joinPath(problemDir, "solution.cpp")),
-    ]);
+    await vscode.workspace.fs.stat(vscode.Uri.joinPath(problemDir, "problem.md"));
+    const stats = await Promise.allSettled(
+      getLanguageIds().map((languageId) => vscode.workspace.fs.stat(vscode.Uri.joinPath(problemDir, getLanguage(languageId).solutionFileName)))
+    );
+    if (!stats.some((result) => result.status === "fulfilled")) {
+      return false;
+    }
     return true;
   } catch {
     return false;
   }
+}
+
+function inferLanguageFromPath(filePath) {
+  const extension = path.extname(filePath);
+  const languageByExtension = getLanguageIds().filter((languageId) => getLanguage(languageId).sourceExtensions.includes(extension));
+  if (languageByExtension.length === 1) {
+    return languageByExtension[0];
+  }
+  return undefined;
+}
+
+function inferLanguageFromSnapshotPath(snapshotPath) {
+  const normalized = String(snapshotPath || "").split(path.win32.sep).join(path.posix.sep);
+  return inferLanguageFromRunnablePath(normalized.split("/"));
 }
 
 // UTF-8 텍스트 파일을 읽습니다.
@@ -630,6 +760,7 @@ module.exports = {
   createProblem,
   createSolutionAttempt,
   deleteSolutionSnapshot,
+  ensureSolutionForLanguage,
   getSolutionSnapshotPath,
   getDefaultProgrammersDir,
   hasProblemFiles,

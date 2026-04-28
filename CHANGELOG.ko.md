@@ -1,5 +1,14 @@
 # 변경 이력
 
+## 0.2.0
+
+- `programmersHelper.language` 설정을 추가하고 C++/Java 풀이 파일, 초기 템플릿, 풀이 기록을 언어별로 관리하도록 확장했습니다.
+- Java 템플릿 fetch, `Solution.java`/`TestRunner.java` 생성, `javac`/`java` 기반 샘플 및 커스텀 테스트 실행을 추가했습니다.
+- 언어별 runner builder와 에러 진단 파싱 구조를 도입해 이후 지원 언어를 추가하기 쉽게 정리했습니다.
+- 풀이기록에서 현재 언어 기록을 먼저 보여주고 다른 언어 기록은 접힌 섹션으로 분리해 볼 수 있게 했습니다.
+- helper Docker 런타임을 C++/Java 도구와 UTF-8 locale을 포함한 `programmers-helper-runtime:2`로 갱신해 한글 문제 경로의 Java 컴파일을 지원합니다.
+- `package.json`과 `package-lock.json` 버전을 `0.2.0`으로 올렸습니다.
+
 ## 0.1.1
 
 - Windows 로컬 실행에서 생성된 C++ 테스트 러너가 `.exe` 바이너리로 빌드되도록 수정했습니다.
