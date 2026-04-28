@@ -1,5 +1,10 @@
 # 변경 이력
 
+## 0.3.1
+
+- Docker 실행 컨테이너 준비 중 사이드바 진행 표시와 단계별 상태 메시지를 함께 보여주도록 개선했습니다.
+- 런타임 이미지 캐시가 있어도 실제 Docker image 존재 여부를 다시 확인하고, 이미지가 없으면 항상 Docker Hub pull을 먼저 시도한 뒤 실패할 때만 로컬 build fallback을 사용하도록 했습니다.
+
 ## 0.3.0
 
 - Python 템플릿 fetch, `solution.py`/`test_runner.py` 생성, `python3` 기반 샘플 및 커스텀 테스트 실행을 추가했습니다.

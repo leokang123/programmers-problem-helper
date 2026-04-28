@@ -648,6 +648,7 @@ class TestRunner {
         extensionDir: this.extensionDir,
         problemDir,
         execCommand: this.execCommand,
+        postStatus: (message) => this.postStatus?.(message),
       });
     }
 

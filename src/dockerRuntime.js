@@ -8,6 +8,8 @@ const {
   getDockerfilePath,
 } = require("./config");
 
+const SIDEBAR_VIEW_ID = "programmersHelper.sidebar";
+
 const runtimeCache = {
   dockerAvailable: false,
   imageAvailable: false,
@@ -15,14 +17,10 @@ const runtimeCache = {
 
 // 문제를 열 때 Docker 런타임을 준비하고 상태 메시지를 만듭니다.
 async function prepareDockerRuntimeOnOpen({ vscode, extensionDir, problemDir, execCommand, limitStatusText, postStatus }) {
-  postStatus?.({
-    type: "status",
-    kind: "running",
-    text: "실행 컨테이너 준비 중...\n\n컴파일 및 테스트용 Docker 컨테이너를 확인하고 있습니다.",
-  });
+  reportRuntimeStatus({ postStatus }, "컴파일 및 테스트용 Docker 컨테이너를 확인하고 있습니다.");
 
   try {
-    const runtime = await ensureDockerRuntimeReady({ vscode, extensionDir, problemDir, execCommand });
+    const runtime = await ensureDockerRuntimeReady({ vscode, extensionDir, problemDir, execCommand, postStatus });
     const mode = vscode.env.remoteName === "dev-container" ? "개발판: Dev Container + 실행 컨테이너" : "배포판: 로컬 + 실행 컨테이너";
     return { kind: "ready", detail: `${mode}\n${runtime.containerName}` };
   } catch (error) {
@@ -32,41 +30,63 @@ async function prepareDockerRuntimeOnOpen({ vscode, extensionDir, problemDir, ex
 }
 
 // Docker 이미지와 실행 컨테이너를 사용할 수 있게 보장합니다.
-async function ensureDockerRuntimeReady({ vscode, extensionDir, problemDir, execCommand }) {
+async function ensureDockerRuntimeReady({ vscode, extensionDir, problemDir, execCommand, postStatus, progress = true }) {
+  if (progress === true) {
+    return vscode.window.withProgress(
+      {
+        location: { viewId: SIDEBAR_VIEW_ID },
+        title: "실행 컨테이너 준비 중...",
+      },
+      (progressReporter) => ensureDockerRuntimeReady({
+        vscode,
+        extensionDir,
+        problemDir,
+        execCommand,
+        postStatus,
+        progress: progressReporter,
+      })
+    );
+  }
+
+  const progressReporter = progress && typeof progress.report === "function" ? progress : undefined;
+  const statusContext = { postStatus, progress: progressReporter };
   const hadCachedReadiness = runtimeCache.dockerAvailable || runtimeCache.imageAvailable;
   try {
-    return await ensureDockerRuntimeReadyOnce({ vscode, extensionDir, problemDir, execCommand });
+    return await ensureDockerRuntimeReadyOnce({ vscode, extensionDir, problemDir, execCommand, statusContext });
   } catch (error) {
     if (!hadCachedReadiness) {
       throw error;
     }
 
+    reportRuntimeStatus(statusContext, "캐시된 Docker 상태를 다시 확인하고 있습니다.");
     invalidateRuntimeCache();
-    return ensureDockerRuntimeReadyOnce({ vscode, extensionDir, problemDir, execCommand });
+    return ensureDockerRuntimeReadyOnce({ vscode, extensionDir, problemDir, execCommand, statusContext });
   }
 }
 
-async function ensureDockerRuntimeReadyOnce({ vscode, extensionDir, problemDir, execCommand }) {
+async function ensureDockerRuntimeReadyOnce({ vscode, extensionDir, problemDir, execCommand, statusContext }) {
   const programmersDir = path.dirname(problemDir);
   const containerName = getDockerContainerName(programmersDir);
   const mountSource = getDockerMountSource(vscode, programmersDir);
   const problemPath = getDockerProblemPath(programmersDir, problemDir);
 
-  await ensureDockerAvailable({ vscode, execCommand });
-  await ensureDockerImageAvailable({ extensionDir, execCommand });
-  await ensureDockerContainerRunning({ containerName, mountSource, execCommand });
+  await ensureDockerAvailable({ vscode, execCommand, statusContext });
+  await ensureDockerImageAvailable({ extensionDir, execCommand, statusContext });
+  await ensureDockerContainerRunning({ containerName, mountSource, execCommand, statusContext });
 
   return { containerName, problemPath, mountSource };
 }
 
 // Programmers 루트별 장기 실행 컨테이너를 만들거나 다시 시작합니다.
 // 이미지/CLI 준비는 호출자가 끝낸 상태라고 가정하고 컨테이너 상태만 담당한다.
-async function ensureDockerContainerRunning({ containerName, mountSource, execCommand }) {
+async function ensureDockerContainerRunning({ containerName, mountSource, execCommand, statusContext }) {
+  reportRuntimeStatus(statusContext, `실행 컨테이너를 확인하고 있습니다.\n${containerName}`);
   const inspect = await execCommand("docker", ["inspect", "--format", "{{.State.Running}}", containerName], {
     allowNonZeroExit: true,
   });
 
   if (inspect.code !== 0) {
+    reportRuntimeStatus(statusContext, `실행 컨테이너를 생성하고 있습니다.\n${containerName}`);
     await execCommand("docker", [
       "create",
       "--name",
@@ -81,8 +101,10 @@ async function ensureDockerContainerRunning({ containerName, mountSource, execCo
       "-f",
       "/dev/null",
     ]);
+    reportRuntimeStatus(statusContext, `실행 컨테이너를 시작하고 있습니다.\n${containerName}`);
     await execCommand("docker", ["start", containerName]);
   } else if (inspect.stdout.trim() !== "true") {
+    reportRuntimeStatus(statusContext, `중지된 실행 컨테이너를 시작하고 있습니다.\n${containerName}`);
     await execCommand("docker", ["start", containerName]);
   }
 }
@@ -165,11 +187,13 @@ run(["stop", ...names]);
 }
 
 // Docker CLI가 실행 가능한지 확인합니다.
-async function ensureDockerAvailable({ vscode, execCommand }) {
+async function ensureDockerAvailable({ vscode, execCommand, statusContext }) {
   if (runtimeCache.dockerAvailable) {
+    reportRuntimeStatus(statusContext, "Docker 실행 환경은 이미 확인되었습니다.");
     return;
   }
 
+  reportRuntimeStatus(statusContext, "Docker 실행 환경을 확인하고 있습니다.");
   let result;
   try {
     result = await execCommand("docker", ["version", "--format", "{{.Server.Version}}"], {
@@ -201,10 +225,12 @@ function getRemoteDockerHint(vscode) {
   return "현재 개발판은 Dev Container 안에서 실행되지만, 컴파일 및 실행은 호스트 Docker daemon에 붙는 sibling 실행 컨테이너에서 진행됩니다. Dev Container를 다시 빌드한 뒤 다시 시도해주세요.";
 }
 
-// 런타임 이미지가 없으면 Dockerfile로 빌드합니다.
-async function ensureDockerImageAvailable({ extensionDir, execCommand }) {
+// 런타임 이미지를 확인하고, 없으면 pull을 먼저 시도한 뒤 마지막 fallback으로만 Dockerfile build를 사용합니다.
+async function ensureDockerImageAvailable({ extensionDir, execCommand, statusContext }) {
   if (runtimeCache.imageAvailable) {
-    return;
+    reportRuntimeStatus(statusContext, `캐시된 런타임 이미지를 다시 확인하고 있습니다.\n${DOCKER_IMAGE}`);
+  } else {
+    reportRuntimeStatus(statusContext, `런타임 이미지를 확인하고 있습니다.\n${DOCKER_IMAGE}`);
   }
 
   const inspect = await execCommand("docker", ["image", "inspect", DOCKER_IMAGE], {
@@ -212,22 +238,37 @@ async function ensureDockerImageAvailable({ extensionDir, execCommand }) {
   });
   if (inspect.code === 0) {
     runtimeCache.imageAvailable = true;
+    reportRuntimeStatus(statusContext, `런타임 이미지가 이미 있습니다.\n${DOCKER_IMAGE}`);
     return;
   }
 
+  reportRuntimeStatus(statusContext, `Docker Hub에서 런타임 이미지를 다운로드하고 있습니다.\n${DOCKER_IMAGE}`);
   const pull = await execCommand("docker", ["pull", DOCKER_IMAGE], {
     allowNonZeroExit: true,
   });
   if (pull.code === 0) {
     runtimeCache.imageAvailable = true;
+    reportRuntimeStatus(statusContext, `런타임 이미지 다운로드가 완료되었습니다.\n${DOCKER_IMAGE}`);
     return;
   }
 
+  reportRuntimeStatus(statusContext, `이미지 다운로드에 실패해 로컬에서 빌드하고 있습니다.\n${DOCKER_LOCAL_IMAGE}`);
   await execCommand("docker", ["build", "-t", DOCKER_LOCAL_IMAGE, "-f", getDockerfilePath(extensionDir), extensionDir], {
     cwd: extensionDir,
   });
+  reportRuntimeStatus(statusContext, `로컬 빌드 이미지를 런타임 이미지로 태그하고 있습니다.\n${DOCKER_IMAGE}`);
   await execCommand("docker", ["tag", DOCKER_LOCAL_IMAGE, DOCKER_IMAGE]);
   runtimeCache.imageAvailable = true;
+}
+
+function reportRuntimeStatus(statusContext, detail) {
+  const firstLine = String(detail || "").split(/\r?\n/)[0];
+  statusContext?.progress?.report?.({ message: firstLine });
+  statusContext?.postStatus?.({
+    type: "status",
+    kind: "running",
+    text: `실행 컨테이너 준비 중...\n\n${detail}`,
+  });
 }
 
 function invalidateRuntimeCache() {

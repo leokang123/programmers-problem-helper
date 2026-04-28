@@ -2,7 +2,7 @@
   "name": "programmers-problem-helper",
   "displayName": "Programmers Problem Helper",
   "description": "Solve Programmers coding-test problems in VS Code with language templates, split previews, and local sample test runs.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "leokang123",
   "license": "MIT",
   "icon": "media/icon.png",

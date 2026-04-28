@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1
+
+- Show sidebar progress and step-by-step status messages while preparing the Docker execution container.
+- Re-check the actual Docker image even when runtime readiness is cached, and always try Docker Hub pull before using the local build fallback when the image is missing.
+
 ## 0.3.0
 
 - Add Python template fetching, `solution.py`/`test_runner.py` generation, and `python3` sample and custom test runs.
