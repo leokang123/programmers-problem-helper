@@ -2,6 +2,7 @@
 
 ## 0.2.0
 
+- Add a current-problem Website button that copies the active solution file to the clipboard and opens the original Programmers page.
 - Add the `programmersHelper.language` setting and manage solution files, initial templates, and solution history by language.
 - Add Java template fetching, `Solution.java`/`TestRunner.java` generation, and `javac`/`java` sample and custom test runs.
 - Introduce language-specific runner builders and diagnostic parsing so future languages can be added more cleanly.

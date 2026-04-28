@@ -134,6 +134,7 @@ function shouldUseWorkspaceProgrammersDir(context, workspaceUri) {
 // 문제 폴더의 표시 정보를 읽습니다.
 async function loadProblemInfo(problemDir, languageId = DEFAULT_LANGUAGE_ID) {
   const summary = await loadProblemSummary(problemDir);
+  const metadata = await readJson(vscode.Uri.file(path.join(problemDir, ".programmers-helper", "programmers.json")));
   const language = getLanguage(languageId);
   const history = await readSolutionHistory(problemDir);
   const currentLanguageHistory = history.attempts.filter((attempt) => attempt.language === language.id);
@@ -144,6 +145,7 @@ async function loadProblemInfo(problemDir, languageId = DEFAULT_LANGUAGE_ID) {
     otherSolutionHistory: otherLanguageHistory,
     language: language.id,
     solutionFileName: getSolutionFileName(languageId),
+    url: getProblemUrlFromMetadata(metadata, language.id),
   };
 }
 
@@ -438,6 +440,14 @@ async function ensureSolutionForLanguage(problemDir, languageId = DEFAULT_LANGUA
 
 function getProgrammersProblemUrl(lessonId, languageId = DEFAULT_LANGUAGE_ID) {
   return `https://school.programmers.co.kr/learn/courses/30/lessons/${lessonId}?language=${getLanguage(languageId).programmersParam}`;
+}
+
+function getProblemUrlFromMetadata(metadata, languageId = DEFAULT_LANGUAGE_ID) {
+  const languageUrl = metadata?.languages?.[getLanguage(languageId).id]?.url;
+  if (typeof languageUrl === "string" && languageUrl.trim()) {
+    return languageUrl;
+  }
+  return typeof metadata?.url === "string" ? metadata.url : "";
 }
 
 // 저장할 problem.md를 조립합니다.

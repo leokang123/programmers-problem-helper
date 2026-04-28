@@ -2,6 +2,7 @@
 
 ## 0.2.0
 
+- 현재 활성 풀이 파일 코드를 클립보드에 복사하고 프로그래머스 원문 페이지를 여는 `웹` 버튼을 추가했습니다.
 - `programmersHelper.language` 설정을 추가하고 C++/Java 풀이 파일, 초기 템플릿, 풀이 기록을 언어별로 관리하도록 확장했습니다.
 - Java 템플릿 fetch, `Solution.java`/`TestRunner.java` 생성, `javac`/`java` 기반 샘플 및 커스텀 테스트 실행을 추가했습니다.
 - 언어별 runner builder와 에러 진단 파싱 구조를 도입해 이후 지원 언어를 추가하기 쉽게 정리했습니다.

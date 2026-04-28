@@ -154,7 +154,7 @@ function buildSidebarHtml(nonce) {
     .section:last-child { margin-bottom: 0; }
     .open-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
     .open-actions button { margin-top: 6px; }
-    .current-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
+    .current-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
     .current-actions button { margin-top: 0; }
     .list-actions { display: flex; gap: 8px; align-items: center; margin-bottom: 5px; flex-wrap: wrap; }
     .filter { display: flex; gap: 6px; align-items: center; margin: 0; font-size: 12px; color: var(--vscode-foreground); }
@@ -221,6 +221,7 @@ function buildSidebarHtml(nonce) {
           <button id="resetCurrentSolution" class="secondary" disabled>초기화</button>
           <button id="startCurrentReview" class="secondary" disabled>새풀이</button>
           <button id="openNotes" class="secondary" disabled>메모</button>
+          <button id="openWebsite" class="secondary" disabled title="현재 풀이 코드를 복사하고 프로그래머스 원문 열기">웹</button>
         </div>
       </div>
     </section>
@@ -288,6 +289,7 @@ function buildSidebarHtml(nonce) {
     const resetCurrentSolution = document.getElementById('resetCurrentSolution');
     const startCurrentReview = document.getElementById('startCurrentReview');
     const openNotes = document.getElementById('openNotes');
+    const openWebsite = document.getElementById('openWebsite');
     const runSamples = document.getElementById('run');
     const runCustom = document.getElementById('runCustom');
     let testCount = 0;
@@ -321,6 +323,7 @@ function buildSidebarHtml(nonce) {
       resetCurrentSolution.disabled = !currentProblemDir;
       startCurrentReview.disabled = !currentProblemDir;
       openNotes.disabled = !currentProblemDir;
+      openWebsite.disabled = !currentProblemDir;
       runSamples.disabled = !currentProblemDir;
       runCustom.disabled = !currentProblemDir;
     }
@@ -750,6 +753,13 @@ function buildSidebarHtml(nonce) {
       if (!currentProblemDir) return;
       vscode.postMessage({
         type: 'openNotes',
+        problemDir: currentProblemDir
+      });
+    });
+    openWebsite.addEventListener('click', () => {
+      if (!currentProblemDir) return;
+      vscode.postMessage({
+        type: 'openWebsite',
         problemDir: currentProblemDir
       });
     });

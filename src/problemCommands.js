@@ -21,6 +21,7 @@ const {
   loadProblemInfo,
   loadProblems,
   loadSavedCustomTests,
+  readText,
   removeProblemIndexEntry,
   resetSolutionToInitial,
   resolveProgrammersDir,
@@ -175,6 +176,32 @@ class ProblemCommands {
       preserveFocus: false,
       preview: false,
     });
+  }
+
+  // 현재 문제의 Programmers 웹 페이지를 엽니다.
+  async openWebsite(problemDir) {
+    const safeDir = await this.validateProblemDir(problemDir);
+    if (!safeDir) {
+      vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다.");
+      return;
+    }
+
+    const settings = getExecutionSettings();
+    const problem = await loadProblemInfo(safeDir, settings.language);
+    if (!problem.url) {
+      vscode.window.showWarningMessage("이 문제의 웹사이트 URL을 찾지 못했습니다.");
+      return;
+    }
+
+    const target = await this.getActiveCodeTarget(safeDir);
+    if (target) {
+      await vscode.workspace.saveAll(false);
+      const code = await readText(vscode.Uri.file(target.solutionPath));
+      await vscode.env.clipboard.writeText(code);
+    }
+
+    await vscode.env.openExternal(vscode.Uri.parse(problem.url));
+    vscode.window.showInformationMessage("현재 풀이 코드를 클립보드에 복사하고 웹사이트를 열었습니다.");
   }
 
   // 현재 보고 있는 풀이 파일을 기록하지 않고 초기 템플릿으로 되돌립니다.

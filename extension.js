@@ -62,6 +62,10 @@ function activate(context) {
       const { problemCommands } = ensureServices(context);
       await problemCommands.openNotes(String(message.problemDir || ""));
     },
+    openWebsite: async (message) => {
+      const { problemCommands } = ensureServices(context);
+      await problemCommands.openWebsite(String(message.problemDir || ""));
+    },
     openSolutionSnapshot: async (message) => {
       const { problemCommands } = ensureServices(context);
       await problemCommands.openSolutionSnapshot(String(message.problemDir || ""), String(message.snapshotPath || ""));

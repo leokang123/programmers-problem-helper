@@ -142,6 +142,8 @@ Programmers/
   - Extension handler: `testRunner.stop()`
 - `openNotes`
   - Extension handler: `problemCommands.openNotes(problemDir)`
+- `openWebsite`
+  - Extension handler: `problemCommands.openWebsite(problemDir)`
 - `resetCurrentSolution`
   - Extension handler: `problemCommands.resetCurrentSolution(problemDir)`
 - `startReviewAttempt`
@@ -630,6 +632,18 @@ java -cp .programmers-helper/java-classes TestRunner <testIndex>
 
 - 메모 열기는 현재 문제를 모르면 하지 않는다.
 - 문제 Markdown preview는 `openProblem()`에서 lock되므로 메모 파일을 열어도 preview가 notes로 따라가지 않는다.
+
+## 웹사이트 열기 flow
+
+1. 사이드바 `웹` 버튼은 `currentProblemDir`이 있을 때만 활성화된다.
+2. Webview가 `{ type: "openWebsite", problemDir }` 메시지를 보낸다.
+3. `ProblemCommands.openWebsite(problemDir)`이 문제 폴더를 검증한다.
+4. `loadProblemInfo(problemDir, currentLanguage)`에서 현재 언어 URL을 읽는다.
+5. `programmers.json.languages[currentLanguage].url`이 있으면 우선 사용하고, 없으면 기존 `programmers.json.url`을 사용한다.
+6. `getActiveCodeTarget(problemDir)`로 실행 대상과 같은 기준의 풀이 파일을 찾는다.
+7. 활성/보이는 snapshot이 있으면 그 파일을 우선하고, 없으면 현재 설정 언어의 기본 풀이 파일을 사용한다.
+8. 파일 저장 후 코드를 읽어 `vscode.env.clipboard.writeText()`로 클립보드에 복사한다.
+9. `vscode.env.openExternal()`로 브라우저에서 Programmers 원문 페이지를 연다.
 
 ## 새풀이 flow
 
