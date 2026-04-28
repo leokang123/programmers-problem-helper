@@ -38,6 +38,8 @@
   - `solution.cpp`의 `solution(...)` 시그니처를 파싱하고 C++ `test_runner.cpp` 코드를 만든다.
 - `src/javaRunnerBuilder.js`
   - `Solution.java`의 `solution(...)` 시그니처를 파싱하고 Java `TestRunner.java` 코드를 만든다.
+- `src/pythonRunnerBuilder.js`
+  - `solution.py`의 `def solution(...)` 시그니처를 파싱하고 Python `test_runner.py` 코드를 만든다.
 - `src/problemParsing.js`
   - Programmers HTML fetch, HTML to Markdown 변환, `problem.md` 입출력 예 fallback 파싱을 담당한다.
 - `src/errorFormatting.js`
@@ -53,10 +55,12 @@ Programmers/
     problem.md
     solution.cpp
     Solution.java
+    solution.py
     .programmers-helper/
       programmers.json
       initial-solution.cpp
       initial-solution.java
+      initial-solution.py
       custom-tests.json
       review.json
       notes.md
@@ -64,8 +68,10 @@ Programmers/
       solutions/
         solution-<timestamp>.cpp
         solution-<timestamp>.java
+        solution-<timestamp>.py
       test_runner.cpp
       TestRunner.java
+      test_runner.py
       java-classes/
       test_runner_fast
       test_runner_debug
@@ -95,6 +101,7 @@ Programmers/
 
 - `cpp`: `solution.cpp`, `.programmers-helper/initial-solution.cpp`, `.programmers-helper/test_runner.cpp`
 - `java`: `Solution.java`, `.programmers-helper/initial-solution.java`, `.programmers-helper/TestRunner.java`
+- `python`: `solution.py`, `.programmers-helper/initial-solution.py`, `.programmers-helper/test_runner.py`
 
 문제를 열 때 `ProblemCommands.openProblemFromDir()`는 `getExecutionSettings().language`를 읽고 `ensureSolutionForLanguage(problemDir, language)`를 먼저 호출한다.
 
@@ -386,12 +393,14 @@ Programmers/
 
 - `Programmers/<problem>/solution.cpp`
 - `Programmers/<problem>/Solution.java`
+- `Programmers/<problem>/solution.py`
 - `Programmers/<problem>/.programmers-helper/solutions/solution-<timestamp>.cpp`
 - `Programmers/<problem>/.programmers-helper/solutions/solution-<timestamp>.java`
+- `Programmers/<problem>/.programmers-helper/solutions/solution-<timestamp>.py`
 
 주의:
 
-- `.programmers-helper/test_runner.cpp`와 `.programmers-helper/TestRunner.java`는 내부 생성 파일이라 실행 대상으로 사용하지 않는다.
+- `.programmers-helper/test_runner.cpp`, `.programmers-helper/TestRunner.java`, `.programmers-helper/test_runner.py`는 내부 생성 파일이라 실행 대상으로 사용하지 않는다.
 - 현재 문제 밖의 풀이 파일은 활성 에디터나 보이는 에디터에 있어도 무시한다.
 
 ### 테스트 데이터 결정
@@ -422,6 +431,11 @@ Programmers/
    - 각 예제별 블록을 만든다.
    - `args[0]`의 테스트 번호와 일치하는 블록만 실행한다.
    - 결과는 `System.err`에 `[PASS]`, `[FAIL]` 형태로 출력한다.
+5. Python `buildRunner(signature, examples, solutionPath)`가 생성하는 코드는:
+   - `importlib.util.spec_from_file_location()`으로 `solution.py` 또는 선택된 Python snapshot을 로드한다.
+   - `mod.solution(...)`을 호출한다.
+   - 각 예제를 `TESTS`에 Python literal로 넣고, `sys.argv[1]`의 테스트 번호와 일치하는 케이스만 실행한다.
+   - 결과는 `sys.stderr`에 `[PASS]`, `[FAIL]` 형태로 출력한다.
 
 ### Docker 준비
 
@@ -431,11 +445,12 @@ Programmers/
 2. 컨테이너 이름: `programmers-helper-runtime-<hash(programmersDir)>`
 3. 컨테이너 문제 경로: `/workspace/Programmers/<problemFolder>`
 4. Docker CLI 확인: `docker version --format {{.Server.Version}}`
-5. 이미지 확인: `docker image inspect programmers-helper-runtime:2`
-6. 이미지가 없으면 Dockerfile로 build
-7. 컨테이너 확인: `docker inspect --format {{.State.Running}} <containerName>`
-8. 컨테이너가 없으면 create 후 start
-9. 컨테이너가 멈춰 있으면 start
+5. 이미지 확인: `docker image inspect kangjung/programmers-helper-runtime:3`
+6. 이미지가 없으면 `docker pull kangjung/programmers-helper-runtime:3`
+7. pull이 실패하면 Dockerfile로 `programmers-helper-runtime:3`을 build한 뒤 `kangjung/programmers-helper-runtime:3`으로 tag
+8. 컨테이너 확인: `docker inspect --format {{.State.Running}} <containerName>`
+9. 컨테이너가 없으면 create 후 start
+10. 컨테이너가 멈춰 있으면 start
 
 컨테이너 생성 명령의 핵심:
 
@@ -445,7 +460,7 @@ docker create
   --workdir /workspace/Programmers
   -v <Programmers host dir>:/workspace/Programmers
   --entrypoint tail
-  programmers-helper-runtime:2
+  kangjung/programmers-helper-runtime:3
   -f /dev/null
 ```
 
@@ -476,6 +491,8 @@ docker exec -i
   .programmers-helper/TestRunner.java
 ```
 
+Python은 별도 컴파일 단계가 없다. `compileRunner()`에서는 생성된 `.programmers-helper/test_runner.py`를 그대로 실행 산출물로 보고 컴파일을 생략한다.
+
 그 뒤:
 
 ```text
@@ -502,6 +519,12 @@ Java는 같은 timeout wrapper 안에서 아래 형태로 실행한다.
 
 ```text
 java -cp .programmers-helper/java-classes TestRunner <testIndex>
+```
+
+Python:
+
+```text
+python3 .programmers-helper/test_runner.py <testIndex>
 ```
 
 `TEST_TIMEOUT_MS` 기본값은 3000ms다.
@@ -748,9 +771,11 @@ java -cp .programmers-helper/java-classes TestRunner <testIndex>
 
 ### 이미지
 
-- 이미지 이름: `programmers-helper-runtime:2`
+- 이미지 이름: `kangjung/programmers-helper-runtime:3`
+- 로컬 build fallback 이미지 이름: `programmers-helper-runtime:3`
 - Dockerfile: `docker/cpp-runtime.Dockerfile`
-- 없으면 `docker build -t programmers-helper-runtime:2 -f <Dockerfile> <extensionDir>`
+- 없으면 `docker pull kangjung/programmers-helper-runtime:3`
+- pull이 실패하면 `docker build -t programmers-helper-runtime:3 -f <Dockerfile> <extensionDir>` 후 `docker tag programmers-helper-runtime:3 kangjung/programmers-helper-runtime:3`
 
 ### 컨테이너
 
@@ -795,9 +820,9 @@ Dev Container:
 ## Dev Container flow
 
 - 개발 컨테이너 Dockerfile: `.devcontainer/Dockerfile`
-- 개발 컨테이너에는 확장 개발과 local 실행 검증을 위해 `clang`, `lldb`, `default-jdk-headless`를 설치한다.
+- 개발 컨테이너에는 확장 개발과 local 실행 검증을 위해 `clang`, `lldb`, `default-jdk-headless`, `python3`를 설치한다.
 - `LANG=C.UTF-8`, `LC_ALL=C.UTF-8`을 설정해 한글 문제 폴더에서 Java local 컴파일이 깨지지 않도록 한다.
-- `programmersHelper.executionMode=local`이면 Dev Container 내부의 `clang++`/`g++` 또는 `javac`/`java`로 실행한다.
+- `programmersHelper.executionMode=local`이면 Dev Container 내부의 `clang++`/`g++`, `javac`/`java` 또는 `python3`로 실행한다.
 - `programmersHelper.executionMode=docker`이면 기존처럼 호스트 Docker daemon에 붙는 sibling 실행 컨테이너를 준비한다.
 
 ## 성능 점검 메모

@@ -5,8 +5,9 @@ const DEFAULT_TEST_TIMEOUT_MS = 3000;
 const PROGRAMMERS_HOST = "school.programmers.co.kr";
 const MAX_FETCH_BYTES = 5 * 1024 * 1024;
 const MAX_REDIRECTS = 5;
-const DOCKER_IMAGE = "programmers-helper-runtime:2";
-const DOCKER_CONTAINER_PREFIX = "programmers-helper-runtime-v2-";
+const DOCKER_IMAGE = "kangjung/programmers-helper-runtime:3";
+const DOCKER_LOCAL_IMAGE = "programmers-helper-runtime:3";
+const DOCKER_CONTAINER_PREFIX = "programmers-helper-runtime-v3-";
 const DOCKER_WORKSPACE_ROOT = "/workspace/Programmers";
 const DEFAULT_EXECUTION_MODE = "docker";
 const DEFAULT_LANGUAGE = "cpp";
@@ -14,6 +15,7 @@ const DEFAULT_COMPILER_COMMAND = "clang++";
 const DEFAULT_CPP_STANDARD = "c++17";
 const JAVA_COMMAND = "java";
 const JAVAC_COMMAND = "javac";
+const PYTHON_COMMAND = "python3";
 
 // 평소 실행용 컴파일 플래그입니다. 빠른 반복 실행을 우선합니다.
 function getFastCompileFlags(cppStandard = DEFAULT_CPP_STANDARD) {
@@ -64,11 +66,13 @@ module.exports = {
   DEFAULT_TEST_TIMEOUT_MS,
   DOCKER_CONTAINER_PREFIX,
   DOCKER_IMAGE,
+  DOCKER_LOCAL_IMAGE,
   DOCKER_WORKSPACE_ROOT,
   MAX_FETCH_BYTES,
   MAX_REDIRECTS,
   JAVA_COMMAND,
   JAVAC_COMMAND,
+  PYTHON_COMMAND,
   PROGRAMMERS_HOST,
   getDockerfilePath,
   getDebugCompileFlags,

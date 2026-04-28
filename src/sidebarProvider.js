@@ -393,7 +393,7 @@ function buildSidebarHtml(nonce) {
     }
 
     function formatLanguageLabel(language) {
-      return language === 'java' ? 'Java' : language === 'cpp' ? 'C++' : (language || 'Unknown');
+      return language === 'java' ? 'Java' : language === 'cpp' ? 'C++' : language === 'python' ? 'Python' : (language || 'Unknown');
     }
 
     // 빈 목록 메시지는 실제 row cache와 별개인 임시 DOM이다.

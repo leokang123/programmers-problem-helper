@@ -10,7 +10,7 @@
 
 - 왼쪽 Activity Bar에 `Programmers` 사이드바 추가
 - `Programmers/<문제번호>_<문제이름>/problem.md` 생성
-- `Programmers/<문제번호>_<문제이름>/solution.cpp` 또는 `Solution.java` 생성
+- `Programmers/<문제번호>_<문제이름>/solution.cpp`, `Solution.java` 또는 `solution.py` 생성
 - 예제 정보를 담은 `.programmers-helper/programmers.json` 생성
 - 왼쪽에는 `problem.md` Markdown Preview 열기
 - 오른쪽에는 현재 언어 풀이 파일 에디터 열기
@@ -30,6 +30,7 @@
 
 - C++: `solution.cpp`, `.programmers-helper/initial-solution.cpp`, `clang++` 또는 `g++`
 - Java: `Solution.java`, `.programmers-helper/initial-solution.java`, `javac` / `java`
+- Python: `solution.py`, `.programmers-helper/initial-solution.py`, `python3`
 
 기존 문제를 다른 언어로 열면 해당 언어의 풀이 템플릿이 없을 때만 프로그래머스 페이지를 다시 가져와 언어별 초기 파일을 추가합니다. 문제 설명 `problem.md`는 덮어쓰지 않습니다.
 
@@ -42,7 +43,7 @@
 - VS Code 1.85.0 이상
 - Docker
 
-테스트 실행 시 확장이 Docker 실행 컨테이너를 자동으로 준비하고, 그 안에서 현재 언어에 맞게 컴파일 및 실행합니다.
+테스트 실행 시 확장이 Docker 실행 컨테이너를 자동으로 준비하고, 그 안에서 현재 언어에 맞게 컴파일 또는 실행합니다.
 
 ```sh
 docker version
@@ -56,7 +57,7 @@ Windows에서는 Docker 실행 모드를 권장합니다. Docker 모드는 확�
 
 ## 보안 안내
 
-샘플/커스텀 테스트 실행은 Docker 컨테이너 안에서 현재 언어 풀이 파일을 컴파일하고 실행합니다. 신뢰할 수 없는 코드는 실행하지 마세요.
+샘플/커스텀 테스트 실행은 Docker 컨테이너 안에서 현재 언어 풀이 파일을 컴파일 또는 실행합니다. 신뢰할 수 없는 코드는 실행하지 마세요.
 
 ## 개인정보 안내
 
@@ -172,7 +173,7 @@ git push origin v0.1.0
 2. 왼쪽 Activity Bar의 `Programmers` 아이콘을 엽니다.
 3. 프로그래머스 문제 번호를 입력합니다.
 4. `문제 생성 및 열기`를 누르거나 `Enter`를 입력합니다.
-5. 문제를 열면 컴파일 및 실행용 Docker 컨테이너가 자동으로 준비됩니다.
+5. 문제를 열면 테스트 실행용 Docker 컨테이너가 자동으로 준비됩니다.
 6. 오른쪽 풀이 파일에 코드를 작성합니다.
 7. `샘플 테스트 실행` 또는 `커스텀 테스트 실행`을 누릅니다. 샘플 테스트는 `Ctrl+Alt+T`로도 실행할 수 있습니다.
 8. 다시 풀 때는 문제 목록의 `새풀이`를 눌러 현재 풀이를 보관하고 새 풀이를 시작합니다.
@@ -234,8 +235,8 @@ GitHub Release와 Marketplace 배포는 `v*.*.*` 태그를 push하면 GitHub Act
 이 저장소에는 Dev Container 설정이 포함되어 있습니다.
 
 - 컨테이너 안에서는 현재 워크스페이스를 `~/.vscode-server/extensions/local.programmers-problem-helper`로 자동 symlink합니다.
-- 개발판은 Dev Container 안에서 확장을 개발하고, Docker 실행 모드에서는 호스트 Docker daemon에 붙는 별도의 sibling 실행 컨테이너가 컴파일 및 실행을 담당합니다.
-- 개발판 Dev Container에는 `clang`, `lldb`, 기본 JDK(`javac`, `java`)가 포함되어 있어 `programmersHelper.executionMode`를 `local`로 바꾸면 C++/Java를 컨테이너 내부에서 바로 실행할 수 있습니다.
+- 개발판은 Dev Container 안에서 확장을 개발하고, Docker 실행 모드에서는 호스트 Docker daemon에 붙는 별도의 sibling 실행 컨테이너가 컴파일 또는 실행을 담당합니다.
+- 개발판 Dev Container에는 `clang`, `lldb`, 기본 JDK(`javac`, `java`), `python3`가 포함되어 있어 `programmersHelper.executionMode`를 `local`로 바꾸면 C++/Java/Python을 컨테이너 내부에서 바로 실행할 수 있습니다.
 - 즉 개발판은 "개발용 Dev Container 1개 + 실행용 컨테이너 1개" 구조이며, 실행용 컨테이너를 Dev Container 내부에 중첩 생성하지 않습니다.
 - 로컬 macOS VS Code에는 배포판 `.vsix` 또는 마켓 설치본을 그대로 사용하면 됩니다.
 - 즉 개발용 확장은 컨테이너 쪽 VS Code Server에서만 보이고, 로컬 배포판과 분리됩니다.
@@ -267,7 +268,7 @@ ls -l ~/.vscode-server/extensions/local.programmers-problem-helper
 
 ## 참고
 
-테스트 러너는 프로그래머스 C++/Java 함수형 문제에서 자주 쓰이는 타입을 지원합니다.
+테스트 러너는 프로그래머스 C++/Java/Python 함수형 문제에서 자주 쓰이는 타입을 지원합니다.
 
 - `int`
 - `long long`
@@ -278,6 +279,7 @@ ls -l ~/.vscode-server/extensions/local.programmers-problem-helper
 - `vector<vector<int>>`
 
 특수한 사용자 정의 타입이나 복잡한 시그니처는 추가 구현이 필요할 수 있습니다.
+Python은 `def solution(...):` 형태를 감지하고, 샘플/커스텀 테스트 값은 Python literal에 맞춰 실행합니다.
 
 ## Credits
 
@@ -289,6 +291,6 @@ This extension was built with OpenAI Codex.
 
 Programmers Problem Helper is a local VS Code extension for solving Programmers coding-test problems.
 
-It creates `problem.md`, a language-specific solution file, and `.programmers-helper/programmers.json` from a Programmers lesson number, opens the problem preview beside the solution file, and runs sample or custom tests. Java is supported through the `programmersHelper.language` setting.
+It creates `problem.md`, a language-specific solution file, and `.programmers-helper/programmers.json` from a Programmers lesson number, opens the problem preview beside the solution file, and runs sample or custom tests. C++, Java, and Python are supported through the `programmersHelper.language` setting.
 
 This project was built with OpenAI Codex.

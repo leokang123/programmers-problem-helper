@@ -2,7 +2,7 @@
   "name": "programmers-problem-helper",
   "displayName": "Programmers Problem Helper",
   "description": "Solve Programmers coding-test problems in VS Code with language templates, split previews, and local sample test runs.",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "publisher": "leokang123",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -22,6 +22,7 @@
     "cpp",
     "c++",
     "java",
+    "python",
     "coding-test",
     "competitive-programming",
     "korean"
@@ -51,11 +52,13 @@
           "type": "string",
           "enum": [
             "cpp",
-            "java"
+            "java",
+            "python"
           ],
           "enumItemLabels": [
             "C++",
-            "Java"
+            "Java",
+            "Python"
           ],
           "default": "cpp",
           "markdownDescription": "Choose the language used when opening problem solution templates and running tests."

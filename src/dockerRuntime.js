@@ -3,6 +3,7 @@ const path = require("path");
 const {
   DOCKER_CONTAINER_PREFIX,
   DOCKER_IMAGE,
+  DOCKER_LOCAL_IMAGE,
   DOCKER_WORKSPACE_ROOT,
   getDockerfilePath,
 } = require("./config");
@@ -214,9 +215,18 @@ async function ensureDockerImageAvailable({ extensionDir, execCommand }) {
     return;
   }
 
-  await execCommand("docker", ["build", "-t", DOCKER_IMAGE, "-f", getDockerfilePath(extensionDir), extensionDir], {
+  const pull = await execCommand("docker", ["pull", DOCKER_IMAGE], {
+    allowNonZeroExit: true,
+  });
+  if (pull.code === 0) {
+    runtimeCache.imageAvailable = true;
+    return;
+  }
+
+  await execCommand("docker", ["build", "-t", DOCKER_LOCAL_IMAGE, "-f", getDockerfilePath(extensionDir), extensionDir], {
     cwd: extensionDir,
   });
+  await execCommand("docker", ["tag", DOCKER_LOCAL_IMAGE, DOCKER_IMAGE]);
   runtimeCache.imageAvailable = true;
 }
 

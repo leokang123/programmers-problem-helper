@@ -7,6 +7,7 @@ const {
   DOCKER_IMAGE,
   JAVA_COMMAND,
   JAVAC_COMMAND,
+  PYTHON_COMMAND,
   getDebugCompileFlagsForMode,
   getFastCompileFlags,
 } = require("./config");
@@ -285,7 +286,9 @@ class TestRunner {
       return;
     }
 
-    if (runContext.language.id === "java") {
+    if (runContext.language.id === "python") {
+      this.outputChannel.appendLine(`[Programmers Helper] ${label} 생략: Python은 별도 컴파일 없이 생성된 runner를 실행합니다.`);
+    } else if (runContext.language.id === "java") {
       await this.compileJavaRunner(runtime, runContext, outputArtifactPath, label);
     } else if (runContext.settings.executionMode === "docker") {
       await this.execFile("docker", [
@@ -383,6 +386,9 @@ class TestRunner {
     if (runContext.language.id === "java") {
       return this.runJavaTest(runtime, runContext, artifactPath, testIndex, options);
     }
+    if (runContext.language.id === "python") {
+      return this.runPythonTest(runtime, runContext, artifactPath, testIndex, options);
+    }
     return this.runTestBinary(runtime, runContext.problemDir, artifactPath, testIndex, runContext.settings, options);
   }
 
@@ -466,6 +472,80 @@ class TestRunner {
       this.outputChannel.append(formatDisplayOutput(result.stderr, result.stderrTruncated));
     }
 
+    return displayed;
+  }
+
+  async runPythonTest(runtime, runContext, artifactPath, testIndex, options = {}) {
+    const testTimeoutMs = options.timeoutMs || runContext.settings.testTimeoutMs;
+    const timeoutSeconds = Math.max(0.1, testTimeoutMs / 1000);
+    const timeoutLabel = formatTimeoutLimitLabel(testTimeoutMs);
+    let result;
+
+    if (runContext.settings.executionMode === "docker") {
+      result = await this.execFile("docker", [
+        "exec",
+        "-i",
+        "-w",
+        runtime.problemPath,
+        runtime.containerName,
+        "env",
+        "LANG=C.UTF-8",
+        "LC_ALL=C.UTF-8",
+        "timeout",
+        "--signal=TERM",
+        "--kill-after=1s",
+        `${formatTimeoutCommandSeconds(timeoutSeconds)}s`,
+        PYTHON_COMMAND,
+        artifactPath,
+        String(testIndex),
+      ], runContext.problemDir, {
+        ...options,
+        resolveWithStatus: true,
+        streamOutput: false,
+        streamStderr: false,
+        timeoutMs: testTimeoutMs + TEST_PROCESS_TIMEOUT_GRACE_MS,
+        maxCaptureOutputChars: MAX_CAPTURE_OUTPUT_CHARS,
+      });
+    } else {
+      try {
+        await this.ensureLocalCommandAvailable(PYTHON_COMMAND, runContext.problemDir, "Python 실행기 확인");
+        result = await this.execFile(PYTHON_COMMAND, [
+          artifactPath,
+          String(testIndex),
+        ], runContext.problemDir, {
+          ...options,
+          resolveWithStatus: true,
+          streamOutput: false,
+          streamStderr: false,
+          timeoutMs: testTimeoutMs,
+          maxCaptureOutputChars: MAX_CAPTURE_OUTPUT_CHARS,
+        });
+      } catch (error) {
+        if (error?.code === "ETIMEOUT") {
+          return this.handleTimeoutResult(testIndex, timeoutLabel, {
+            elapsedMs: error.elapsedMs || testTimeoutMs,
+            stderr: error.stderr || "",
+            stdout: error.stdout || "",
+            stderrTruncated: Boolean(error.stderrTruncated),
+            stdoutTruncated: Boolean(error.stdoutTruncated),
+          }, options);
+        }
+        throw error;
+      }
+    }
+
+    if (result.code === 124 || result.code === 137) {
+      return this.handleTimeoutResult(testIndex, timeoutLabel, result, options);
+    }
+
+    if (result.code !== 0) {
+      throw buildProcessFailureError(runContext.settings.executionMode === "docker" ? "docker" : PYTHON_COMMAND, options, result.code, result.signal, result.stderr, result.stdout, result.elapsedMs);
+    }
+
+    const displayed = formatDisplayOutput(result.stderr + result.stdout, result.stdoutTruncated || result.stderrTruncated);
+    if (options.streamOutput && displayed) {
+      this.outputChannel.append(displayed);
+    }
     return displayed;
   }
 
@@ -573,6 +653,8 @@ class TestRunner {
 
     if (runContext.language.id === "java") {
       await this.ensureLocalCommandAvailable(JAVAC_COMMAND, problemDir, "Java 컴파일러 확인");
+    } else if (runContext.language.id === "python") {
+      await this.ensureLocalCommandAvailable(PYTHON_COMMAND, problemDir, "Python 실행기 확인");
     } else {
       await this.ensureLocalCommandAvailable(runContext.settings.compilerCommand, problemDir, "컴파일러 확인");
     }

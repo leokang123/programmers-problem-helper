@@ -15,6 +15,7 @@ RUN apt-get update \
     libc++abi-dev \
     lld \
     openjdk-21-jdk-headless \
+    python3 \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace/Programmers

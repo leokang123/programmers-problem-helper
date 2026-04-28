@@ -120,6 +120,11 @@ function summarizeCompilerError(message) {
 function summarizeRuntimeError(message) {
   const lines = message.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const header = lines[0] || "런타임 에러";
+  const condensed = condenseRuntimeOutput(lines.slice(2).join("\n"));
+  if (condensed) {
+    return limitStatusText(`${header}\n${condensed}`);
+  }
+
   const detail = lines.slice(1).find((line) => (
     /AddressSanitizer:/i.test(line)
     || /UndefinedBehaviorSanitizer/i.test(line)
@@ -142,7 +147,7 @@ function summarizeRuntimeErrorForPanel(message) {
   const reason = lines[1] || "";
   const condensed = condenseRuntimeOutput(lines.slice(2).join("\n"));
   const detailLines = condensed
-    ? condensed.split(/\r?\n/).map((line) => translateRuntimeDiagnosticLine(shortenRuntimeDiagnosticLine(line)))
+    ? condensed.split(/\r?\n/)
     : [];
   return uniqueLines([header, reason, ...detailLines].filter(Boolean)).join("\n");
 }
@@ -224,6 +229,9 @@ function condenseRuntimeOutput(text) {
   const runtime = buildRuntimeSummary(userFrame, lines.filter((line) => /runtime error:/i.test(line)));
   if (runtime) return runtime;
 
+  const pythonException = buildRuntimeSummary(userFrame, extractPythonExceptionLines(lines));
+  if (pythonException) return pythonException;
+
   const javaException = buildRuntimeSummary(userFrame, lines.filter((line) => /Exception\b|Error\b/.test(line) && !/^\[FAIL\]/.test(line)));
   if (javaException) return javaException;
 
@@ -248,9 +256,14 @@ function buildRuntimeSummary(userFrame, lines) {
 
 // 런타임 출력에서 사용자 코드 위치를 찾습니다.
 function extractUserRuntimeFrame(lines) {
-  const frame = lines.find((line) => /solution\.cpp:\d+:\d+/.test(line) || /Solution\.java:\d+/.test(line));
+  const frame = lines.find((line) => /solution\.cpp:\d+:\d+/.test(line) || /Solution\.java:\d+/.test(line) || /solution\.py", line \d+/.test(line));
   if (!frame) {
     return "";
+  }
+
+  const pythonMatch = frame.match(/solution\.py", line (\d+)/);
+  if (pythonMatch) {
+    return `사용자 코드 위치(user code): solution.py:${pythonMatch[1]}`;
   }
 
   const match = frame.match(/solution\.cpp:\d+:\d+|Solution\.java:\d+/);
@@ -259,6 +272,15 @@ function extractUserRuntimeFrame(lines) {
   }
 
   return `사용자 코드 위치(user code): ${match[0]}`;
+}
+
+function extractPythonExceptionLines(lines) {
+  if (!lines.some((line) => line === "Traceback (most recent call last):")) {
+    return [];
+  }
+
+  const exceptionLine = [...lines].reverse().find((line) => /^(?:[A-Za-z_][\w.]*Error|[A-Za-z_][\w.]*Exception):/.test(line));
+  return exceptionLine ? [exceptionLine] : [];
 }
 
 // 런타임 진단 한 줄을 짧게 줄입니다.
@@ -293,6 +315,11 @@ function translateRuntimeDiagnosticLine(line) {
   next = next.replace(/\bArrayIndexOutOfBoundsException\b/g, "배열 인덱스 범위 초과(ArrayIndexOutOfBoundsException)");
   next = next.replace(/\bStringIndexOutOfBoundsException\b/g, "문자열 인덱스 범위 초과(StringIndexOutOfBoundsException)");
   next = next.replace(/\bArithmeticException\b/g, "산술 오류(ArithmeticException)");
+  next = next.replace(/\bZeroDivisionError\b/g, "0으로 나누기 오류(ZeroDivisionError)");
+  next = next.replace(/\bIndexError\b/g, "인덱스 오류(IndexError)");
+  next = next.replace(/\bKeyError\b/g, "키 오류(KeyError)");
+  next = next.replace(/\bTypeError\b/g, "타입 오류(TypeError)");
+  next = next.replace(/\bValueError\b/g, "값 오류(ValueError)");
   return next;
 }
 

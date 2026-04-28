@@ -29,6 +29,20 @@ const LANGUAGE_DEFINITIONS = {
     compilerSettingsLabel: () => "javac/java",
     supportsDebugRetry: false,
   },
+  python: {
+    id: "python",
+    label: "Python",
+    programmersParam: "python3",
+    solutionFileName: "solution.py",
+    initialSolutionFileName: "initial-solution.py",
+    runnerFileName: "test_runner.py",
+    fastArtifactPath: ".programmers-helper/test_runner.py",
+    debugArtifactPath: ".programmers-helper/test_runner.py",
+    sourceExtensions: [".py"],
+    snapshotExtension: ".py",
+    compilerSettingsLabel: () => "python3",
+    supportsDebugRetry: false,
+  },
 };
 
 const DEFAULT_LANGUAGE_ID = "cpp";

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0
+
+- Add Python template fetching, `solution.py`/`test_runner.py` generation, and `python3` sample and custom test runs.
+- Run Python without a compile step by loading the user solution through `importlib` and calling `solution(...)`.
+- Pull the helper Docker runtime from `kangjung/programmers-helper-runtime:3` first, falling back to a local `programmers-helper-runtime:3` build when pull is unavailable.
+- Improve runtime error summaries for Python tracebacks with `solution.py` user-code locations and primary exceptions.
+
 ## 0.2.3
 
 - Publish tagged releases to the VS Code Marketplace from GitHub Actions using the `VSCE_PAT` repository secret.

@@ -1,5 +1,12 @@
 # 변경 이력
 
+## 0.3.0
+
+- Python 템플릿 fetch, `solution.py`/`test_runner.py` 생성, `python3` 기반 샘플 및 커스텀 테스트 실행을 추가했습니다.
+- Python은 별도 컴파일 없이 생성된 runner가 `importlib`로 사용자 풀이를 로드해 `solution(...)`을 호출합니다.
+- helper Docker 런타임을 `kangjung/programmers-helper-runtime:3`에서 먼저 pull하고 실패하면 `programmers-helper-runtime:3` 로컬 build로 fallback하도록 했습니다.
+- Python traceback에서 `solution.py` 사용자 코드 위치와 주요 예외를 요약하도록 런타임 오류 표시를 보강했습니다.
+
 ## 0.2.3
 
 - `VSCE_PAT` repository secret을 사용해 태그 배포 시 GitHub Actions에서 VS Code Marketplace까지 자동 publish하도록 했습니다.

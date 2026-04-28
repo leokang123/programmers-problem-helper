@@ -8,5 +8,6 @@ RUN apt-get update \
     clang \
     lldb \
     default-jdk-headless \
+    python3 \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
