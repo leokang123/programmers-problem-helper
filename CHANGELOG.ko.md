@@ -1,5 +1,10 @@
 # 변경 이력
 
+## 0.3.6
+
+- 자동 업데이트로 새 확장 버전이 설치되면 VS Code 재로드 안내를 표시하고, 사용자가 선택하면 창을 즉시 다시 로드하도록 했습니다.
+- `package.json`과 `package-lock.json` 버전을 `0.3.6`으로 올렸습니다.
+
 ## 0.3.5
 
 - 타이머 저장 위치를 workspace 저장소에서 `.programmers-helper/timer.json`으로 옮기고, 30초 checkpoint와 기존 타이머 상태 마이그레이션을 추가했습니다.

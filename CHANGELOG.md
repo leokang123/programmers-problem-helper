@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.6
+
+- Show a VS Code reload prompt when auto-update installs a newer extension version, and reload the window when the user confirms.
+- Bump the extension manifest and lockfile to `0.3.6`.
+
 ## 0.3.5
 
 - Move timer persistence from workspace storage to `.programmers-helper/timer.json`, add 30-second checkpoints, and migrate legacy timer state on open.
