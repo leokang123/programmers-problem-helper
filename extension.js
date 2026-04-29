@@ -7,6 +7,7 @@ const {
 let sidebarProvider;
 let problemCommands;
 let testRunner;
+let timerManager;
 let outputChannel;
 let diagnosticCollection;
 let lastExecutionMode;
@@ -18,7 +19,8 @@ function activate(context) {
   lastExecutionMode = getConfiguredExecutionMode();
   sidebarProvider = new ProgrammersSidebarProvider(context, {
     create: async (message) => {
-      const { problemCommands } = ensureServices(context);
+      const { problemCommands, timerManager } = ensureServices(context);
+      await timerManager.pauseAllRunning();
       await problemCommands.createProblemFromId(String(message.lessonId || ""));
     },
     runSamples: async (message) => {
@@ -43,7 +45,8 @@ function activate(context) {
       testRunner?.stop();
     },
     openLast: async () => {
-      const { problemCommands } = ensureServices(context);
+      const { problemCommands, timerManager } = ensureServices(context);
+      await timerManager.pauseAllRunning();
       await problemCommands.openLastProblem();
     },
     toggleReview: async (message) => {
@@ -75,12 +78,37 @@ function activate(context) {
       await problemCommands.deleteSolutionSnapshot(String(message.problemDir || ""), String(message.snapshotPath || ""));
     },
     openProblem: async (message) => {
-      const { problemCommands } = ensureServices(context);
-      await problemCommands.openProblemFromDir(String(message.problemDir || ""));
+      const { problemCommands, timerManager } = ensureServices(context);
+      const problemDir = String(message.problemDir || "");
+      await timerManager.pauseRunningForProblemSwitch(problemDir);
+      await problemCommands.openProblemFromDir(problemDir);
     },
     deleteProblem: async (message) => {
       const { problemCommands } = ensureServices(context);
       await problemCommands.deleteProblem(String(message.problemDir || ""));
+    },
+    getTimer: async (message) => {
+      const { timerManager } = ensureServices(context);
+      sidebarProvider?.post({ type: "timerState", timer: timerManager.getTimer(String(message.problemDir || "")) });
+    },
+    startTimer: async (message) => {
+      const { timerManager } = ensureServices(context);
+      sidebarProvider?.post({ type: "timerState", timer: await timerManager.start(String(message.problemDir || "")) });
+    },
+    pauseTimer: async (message) => {
+      const { timerManager } = ensureServices(context);
+      sidebarProvider?.post({ type: "timerState", timer: await timerManager.pause(String(message.problemDir || "")) });
+    },
+    resetTimer: async (message) => {
+      const { timerManager } = ensureServices(context);
+      sidebarProvider?.post({ type: "timerState", timer: await timerManager.reset(String(message.problemDir || "")) });
+    },
+    setTimerTarget: async (message) => {
+      const { timerManager } = ensureServices(context);
+      sidebarProvider?.post({
+        type: "timerState",
+        timer: await timerManager.setTarget(String(message.problemDir || ""), message.targetMinutes),
+      });
     },
   });
 
@@ -89,7 +117,8 @@ function activate(context) {
     diagnosticCollection,
     vscode.window.registerWebviewViewProvider("programmersHelper.sidebar", sidebarProvider),
     vscode.commands.registerCommand("programmersHelper.createProblem", async () => {
-      const { problemCommands } = ensureServices(context);
+      const { problemCommands, timerManager } = ensureServices(context);
+      await timerManager.pauseAllRunning();
       await problemCommands.createProblemFromInput();
     }),
     vscode.commands.registerCommand("programmersHelper.runSamples", async () => {
@@ -122,8 +151,8 @@ function activate(context) {
 
 // Webview 표시 전 activation 경로를 가볍게 유지하기 위해 명령 구현은 실제 사용 시점에 로드합니다.
 function ensureServices(context) {
-  if (problemCommands && testRunner) {
-    return { problemCommands, testRunner };
+  if (problemCommands && testRunner && timerManager) {
+    return { problemCommands, testRunner, timerManager };
   }
 
   const {
@@ -132,7 +161,11 @@ function ensureServices(context) {
   const {
     TestRunner,
   } = require("./src/testRunner");
+  const {
+    TimerManager,
+  } = require("./src/timerManager");
 
+  timerManager = timerManager || new TimerManager(context);
   testRunner = new TestRunner({
     outputChannel,
     diagnosticCollection,
@@ -151,12 +184,13 @@ function ensureServices(context) {
     },
   });
 
-  return { problemCommands, testRunner };
+  return { problemCommands, testRunner, timerManager };
 }
 
 // 확장 종료 시 테스트를 중지하고 Docker 정리는 백그라운드에 맡깁니다.
 async function deactivate() {
   testRunner?.stop();
+  await timerManager?.pauseAllRunning();
   try {
     const {
       stopDockerRuntimeContainersInBackground,

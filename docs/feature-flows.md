@@ -10,10 +10,11 @@
 - `extension.js`
   - `activate(context)`에서 Output 채널, 진단 컬렉션, `ProgrammersSidebarProvider`를 생성한다.
   - `TestRunner`와 `ProblemCommands`는 `ensureServices(context)`에서 명령이나 Webview 액션이 처음 실행될 때 lazy-load한다.
+  - `TimerManager`도 `ensureServices(context)`에서 생성하며 문제별 풀이 타이머 상태를 관리한다.
   - 사이드바 Webview 메시지를 실제 명령으로 연결한다.
   - VS Code 명령 `programmersHelper.createProblem`, `programmersHelper.runSamples`, `programmersHelper.stopTests`, `programmersHelper.runCustomTests`, `programmersHelper.openNotes`를 등록한다.
   - `programmersHelper.executionMode` 설정 변경을 감지해 실행 모드 전환 피드백과 Docker 컨테이너 정리를 처리한다.
-  - `deactivate()`에서 실행 중인 테스트를 멈추고 helper Docker 컨테이너 정리를 백그라운드 프로세스에 맡긴다.
+  - `deactivate()`에서 실행 중인 테스트와 타이머를 멈추고 helper Docker 컨테이너 정리를 백그라운드 프로세스에 맡긴다.
 
 ### 주요 모듈
 
@@ -36,6 +37,9 @@
   - Docker CLI 확인, runtime image 확인/빌드, runtime container 생성/시작/정리를 담당한다.
 - `src/problemCommands.js`
   - 문제를 열 때 실행 모드에 따라 Docker runtime 또는 local 언어 명령어 준비 상태를 확인한다.
+- `src/timerManager.js`
+  - 문제별 풀이 타이머 상태를 `context.workspaceState.problemTimers`에 저장한다.
+  - 시작/중지/초기화/목표 시간 변경을 처리하고, 문제 전환이나 확장 종료 시 실행 중인 타이머를 정산 후 중지한다.
 - `src/cppRunnerBuilder.js`
   - `solution.cpp`의 `solution(...)` 시그니처를 파싱하고 C++ `test_runner.cpp` 코드를 만든다.
 - `src/javaRunnerBuilder.js`
@@ -95,6 +99,7 @@ Programmers/
 - 커스텀 테스트: `.programmers-helper/custom-tests.json`
 - 현재 문제: Webview 내부 `currentProblemDir`
 - 마지막 문제: `context.workspaceState.lastProblemDir`
+- 문제별 타이머: `context.workspaceState.problemTimers`
 - 현재 언어: VS Code 설정 `programmersHelper.language`
 - 초기 코드: `.programmers-helper/initial/initial-solution.<ext>`, 없으면 기존 호환용 `.programmers-helper/initial-solution.<ext>`나 `programmers.json.initialCode`
 
@@ -142,9 +147,6 @@ Programmers/
 - `create`
   - Webview: 문제 번호 입력 후 생성 버튼
   - Extension handler: `problemCommands.createProblemFromId(...)`
-- `openLast`
-  - Webview: 마지막 열기 버튼
-  - Extension handler: `problemCommands.openLastProblem()`
 - `openProblem`
   - Webview: 문제 목록 행 클릭
   - Extension handler: `problemCommands.openProblemFromDir(problemDir)`
@@ -176,6 +178,16 @@ Programmers/
   - Extension handler: `problemCommands.deleteProblem(problemDir)`
 - `refreshProblems`
   - Extension handler: `sidebarProvider.refreshProblems()`
+- `getTimer`
+  - Extension handler: `timerManager.getTimer(problemDir)` 결과를 `timerState`로 보낸다.
+- `startTimer`
+  - Extension handler: 현재 문제 타이머를 시작한다. 다른 문제에서 실행 중인 타이머는 먼저 정산 후 중지한다.
+- `pauseTimer`
+  - Extension handler: 현재 문제 타이머를 정산 후 중지한다.
+- `resetTimer`
+  - Extension handler: 현재 문제 타이머를 0으로 초기화한다.
+- `setTimerTarget`
+  - Extension handler: 현재 문제 목표 시간을 30/60/90/120분 중 하나로 저장한다.
 
 ### 확장에서 Webview로 가는 메시지
 
@@ -189,6 +201,25 @@ Programmers/
   - 상단 상태 박스 텍스트와 상태 클래스를 갱신한다.
 - `testRunning`
   - 실행 중지 버튼 활성/비활성을 갱신한다.
+- `timerState`
+  - 현재 문제의 타이머 표시, 목표 시간 select, 시작/중지/초기화 버튼 상태를 갱신한다.
+
+## 타이머 flow
+
+### 사용자 흐름
+
+1. 문제를 연다.
+2. 필요하면 목표 시간을 30/60/90/120분 중 선택한다.
+3. `시작` 버튼을 누른 경우에만 타이머가 실행된다.
+4. `중지`를 누르거나 다른 문제를 열거나 VS Code가 종료되면 현재 경과 시간을 정산해 저장하고 멈춘다.
+5. `초기화`는 사용자가 직접 누를 때만 수행한다. 5분 이상 누적된 타이머는 Webview에서 확인을 한 번 더 받는다.
+
+### 성능 규칙
+
+- 시간의 source of truth는 `elapsedMs + (Date.now() - startedAt)` 계산이다. `setInterval`은 UI refresh 용도로만 쓴다.
+- Webview의 1초 interval은 현재 문제 타이머가 실행 중일 때만 생성하고, 중지되면 즉시 해제한다.
+- 타이머 저장은 시작/중지/초기화/목표 변경/문제 전환/확장 종료 같은 이벤트 시점에만 수행한다.
+- 현재 열린 문제 하나의 타이머만 매초 계산한다.
 
 ## 문제 생성 flow
 
@@ -252,16 +283,6 @@ Programmers/
 
 ## 문제 열기 flow
 
-### 마지막 열기
-
-1. Webview `openLast` 메시지
-2. `ProblemCommands.openLastProblem()`
-3. `getProblemDir()`로 실행 대상 문제를 결정한다.
-   - 활성 에디터가 `Programmers/<문제>/...cpp`이면 그 문제를 우선한다.
-   - 아니면 `workspaceState.lastProblemDir`을 검증한다.
-   - 둘 다 없으면 문제 폴더 Quick Pick을 띄운다.
-4. `openProblemFromDir(target.problemDir)`로 문제를 연다.
-
 ### 문제 목록에서 열기
 
 1. Webview 문제 행 클릭
@@ -313,10 +334,10 @@ Programmers/
   - 메모, 초기화, 새풀이, 사이드바 샘플/커스텀 테스트 버튼 활성 조건이다.
 - `workspaceState.lastProblemDir`
   - 마지막 문제 후보를 저장한다.
-  - `마지막 열기`나 VS Code 명령 fallback에 사용한다.
+  - VS Code 명령 fallback에서 실행 대상 후보로 사용한다.
 - 앱 시작 직후에는 `lastProblemDir`이 있어도 `currentProblemDir`은 비어 있을 수 있다.
   - 이 상태에서 메모와 사이드바 테스트 버튼은 비활성화된다.
-  - 사용자가 `마지막 열기`나 문제 목록 클릭으로 현재 문제를 명시해야 한다.
+  - 사용자가 문제 목록 클릭으로 현재 문제를 명시해야 한다.
 
 ## 문제 목록 flow
 
@@ -900,7 +921,7 @@ Dev Container:
 - 현재 문제 관련 수정 시:
   - Webview `currentProblemDir`과 `workspaceState.lastProblemDir`의 역할을 섞지 않는다.
   - 메모/초기화/새풀이/사이드바 테스트는 현재 문제가 있을 때만 동작해야 한다.
-  - `마지막 열기`는 last problem을 current problem으로 승격하는 명시적 액션이다.
+  - 앱 시작 직후에는 문제 목록 클릭 전까지 `lastProblemDir`이 있어도 Webview 현재 문제로 취급하지 않는다.
 
 - Docker 관련 수정 시:
   - 로컬과 Dev Container의 mount source 계산을 모두 확인한다.

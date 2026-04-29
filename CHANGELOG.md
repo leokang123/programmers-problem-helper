@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.4
+
+- Add a per-problem solving timer with manual start/stop/reset controls and 30/60/90/120 minute target presets.
+- Persist timer state in workspace storage, pause running timers on problem switches and extension shutdown, and only refresh the timer UI while it is running.
+- Move Create and Open beside the problem number input, remove the sidebar Last Open button, and place timer controls below the current-problem actions.
+- Fix the sidebar status box height so long readiness messages scroll inside the box instead of shifting the whole layout.
+- Bump the extension manifest and lockfile to `0.3.4`.
+
 ## 0.3.3
 
 - Reorganize `.programmers-helper` internals into clearer `initial`, `generated/runners`, `generated/artifacts`, and `generated/fingerprints` areas.

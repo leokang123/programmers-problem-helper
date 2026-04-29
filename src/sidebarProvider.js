@@ -152,10 +152,16 @@ function buildSidebarHtml(nonce) {
     .section-title { margin-bottom: 5px; font-size: 12px; font-weight: 600; color: var(--vscode-foreground); }
     .section { margin-bottom: 8px; }
     .section:last-child { margin-bottom: 0; }
-    .open-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-    .open-actions button { margin-top: 6px; }
+    .open-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: stretch; }
+    .open-row button { width: auto; min-width: 82px; margin-top: 0; }
     .current-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
     .current-actions button { margin-top: 0; }
+    .timer-panel { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; align-items: center; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--vscode-panel-border); }
+    .timer-display { min-width: 0; font-variant-numeric: tabular-nums; font-size: 12px; color: var(--vscode-descriptionForeground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .timer-panel.timer-over .timer-display { color: var(--vscode-errorForeground); font-weight: 600; }
+    .timer-target { width: auto; min-width: 58px; box-sizing: border-box; padding: 5px 6px; border: 1px solid var(--vscode-input-border); background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); font-size: 12px; }
+    .timer-buttons { display: flex; gap: 4px; align-items: center; }
+    .timer-buttons button { width: auto; min-width: 40px; margin-top: 0; padding: 5px 7px; }
     .list-actions { display: flex; gap: 8px; align-items: center; margin-bottom: 5px; flex-wrap: wrap; }
     .filter { display: flex; gap: 6px; align-items: center; margin: 0; font-size: 12px; color: var(--vscode-foreground); }
     .filter input { width: auto; margin: 0; }
@@ -189,7 +195,7 @@ function buildSidebarHtml(nonce) {
     .test-card { margin-top: 8px; padding: 8px; border: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); }
     .test-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; font-size: 12px; color: var(--vscode-descriptionForeground); }
     .remove { width: auto; margin: 0; padding: 3px 7px; background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
-    .status { margin-top: 5px; padding: 5px 6px; border: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBarSectionHeader-background); white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; font-size: 12px; color: var(--vscode-foreground); line-height: 1.25; }
+    .status { box-sizing: border-box; height: 102px; margin-top: 5px; padding: 5px 6px; border: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBarSectionHeader-background); white-space: pre-wrap; overflow: auto; overflow-wrap: anywhere; word-break: break-word; font-size: 12px; color: var(--vscode-foreground); line-height: 1.25; }
     .status.ready { border-color: var(--vscode-testing-iconPassed); }
     .status.error { border-color: var(--vscode-testing-iconFailed); }
     .status.running { border-color: var(--vscode-progressBar-background); }
@@ -208,10 +214,9 @@ function buildSidebarHtml(nonce) {
       <div class="pane-body">
         <div class="section">
           <label for="lessonId">Programmers 문제 번호</label>
-          <input id="lessonId" placeholder="468379" inputmode="numeric" />
-          <div class="open-actions">
+          <div class="open-row">
+            <input id="lessonId" placeholder="468379" inputmode="numeric" />
             <button id="create">생성 및 열기</button>
-            <button id="open" class="secondary">마지막 열기</button>
           </div>
         </div>
         <div id="status" class="status">대기 중
@@ -222,6 +227,19 @@ function buildSidebarHtml(nonce) {
           <button id="startCurrentReview" class="secondary" disabled>새풀이</button>
           <button id="openNotes" class="secondary" disabled>메모</button>
           <button id="openWebsite" class="secondary" disabled title="현재 풀이 코드를 복사하고 프로그래머스 원문 열기">웹</button>
+        </div>
+        <div id="timerPanel" class="timer-panel">
+          <div id="timerDisplay" class="timer-display">⏱ 00:00 / 60m</div>
+          <select id="timerTarget" class="timer-target" title="목표 시간" disabled>
+            <option value="30">30m</option>
+            <option value="60" selected>60m</option>
+            <option value="90">90m</option>
+            <option value="120">120m</option>
+          </select>
+          <div class="timer-buttons">
+            <button id="timerToggle" class="secondary" disabled>시작</button>
+            <button id="timerReset" class="secondary" disabled>초기화</button>
+          </div>
         </div>
       </div>
     </section>
@@ -292,10 +310,17 @@ function buildSidebarHtml(nonce) {
     const openWebsite = document.getElementById('openWebsite');
     const runSamples = document.getElementById('run');
     const runCustom = document.getElementById('runCustom');
+    const timerPanel = document.getElementById('timerPanel');
+    const timerDisplay = document.getElementById('timerDisplay');
+    const timerTarget = document.getElementById('timerTarget');
+    const timerToggle = document.getElementById('timerToggle');
+    const timerReset = document.getElementById('timerReset');
     let testCount = 0;
     let problems = [];
     let currentProblem = undefined;
     let currentProblemDir = '';
+    let activeTimer = undefined;
+    let timerRenderInterval = undefined;
     let searchRenderTimer = undefined;
     let renderedProblems = [];
     let renderedSnapshots = [];
@@ -326,6 +351,68 @@ function buildSidebarHtml(nonce) {
       openWebsite.disabled = !currentProblemDir;
       runSamples.disabled = !currentProblemDir;
       runCustom.disabled = !currentProblemDir;
+      updateTimerUi();
+    }
+
+    function normalizeTimer(timer) {
+      return {
+        problemDir: timer?.problemDir || currentProblemDir,
+        elapsedMs: Math.max(0, Number(timer?.elapsedMs) || 0),
+        startedAt: typeof timer?.startedAt === 'number' ? timer.startedAt : null,
+        isRunning: Boolean(timer?.isRunning && typeof timer?.startedAt === 'number'),
+        targetMinutes: [30, 60, 90, 120].includes(Number(timer?.targetMinutes)) ? Number(timer.targetMinutes) : 60,
+      };
+    }
+
+    function getTimerElapsedMs(timer) {
+      if (!timer) return 0;
+      const runningDelta = timer.isRunning && timer.startedAt ? Math.max(0, Date.now() - timer.startedAt) : 0;
+      return Math.max(0, timer.elapsedMs + runningDelta);
+    }
+
+    function formatTimerElapsed(ms) {
+      const totalSeconds = Math.floor(ms / 1000);
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+      const pad = (value) => String(value).padStart(2, '0');
+      return hours > 0 ? hours + ':' + pad(minutes) + ':' + pad(seconds) : pad(minutes) + ':' + pad(seconds);
+    }
+
+    function updateTimerRefresh() {
+      const shouldRun = Boolean(activeTimer?.isRunning && currentProblemDir);
+      if (shouldRun && !timerRenderInterval) {
+        timerRenderInterval = setInterval(updateTimerUi, 1000);
+      }
+      if (!shouldRun && timerRenderInterval) {
+        clearInterval(timerRenderInterval);
+        timerRenderInterval = undefined;
+      }
+    }
+
+    function updateTimerUi() {
+      const timer = normalizeTimer(activeTimer);
+      const elapsedMs = currentProblemDir ? getTimerElapsedMs(timer) : 0;
+      const targetMinutes = timer.targetMinutes;
+      const targetMs = targetMinutes * 60 * 1000;
+      const overTarget = elapsedMs > targetMs;
+      timerPanel.classList.toggle('timer-over', overTarget);
+      timerDisplay.textContent = '⏱ ' + formatTimerElapsed(elapsedMs) + ' / ' + targetMinutes + 'm' + (overTarget ? ' 초과' : '');
+      timerTarget.value = String(targetMinutes);
+      timerTarget.disabled = !currentProblemDir;
+      timerToggle.disabled = !currentProblemDir;
+      timerToggle.textContent = timer.isRunning ? '중지' : '시작';
+      timerReset.disabled = !currentProblemDir || (!timer.isRunning && elapsedMs === 0);
+      updateTimerRefresh();
+    }
+
+    function applyTimerState(timer) {
+      if (!timer || timer.problemDir !== currentProblemDir) {
+        activeTimer = undefined;
+      } else {
+        activeTimer = normalizeTimer(timer);
+      }
+      updateTimerUi();
     }
 
     function updatePaneSummaries() {
@@ -732,14 +819,37 @@ function buildSidebarHtml(nonce) {
     document.getElementById('stopRun').addEventListener('click', () => {
       vscode.postMessage({ type: 'stopTests' });
     });
-    document.getElementById('open').addEventListener('click', () => {
-      vscode.postMessage({ type: 'openLast' });
-    });
     resetCurrentSolution.addEventListener('click', () => {
       if (!currentProblemDir) return;
       vscode.postMessage({
         type: 'resetCurrentSolution',
         problemDir: currentProblemDir
+      });
+    });
+    timerToggle.addEventListener('click', () => {
+      if (!currentProblemDir) return;
+      vscode.postMessage({
+        type: activeTimer?.isRunning ? 'pauseTimer' : 'startTimer',
+        problemDir: currentProblemDir
+      });
+    });
+    timerReset.addEventListener('click', () => {
+      if (!currentProblemDir) return;
+      const elapsedMs = getTimerElapsedMs(normalizeTimer(activeTimer));
+      if (elapsedMs >= 5 * 60 * 1000 && !confirm('누적된 풀이 시간을 초기화할까요?')) {
+        return;
+      }
+      vscode.postMessage({
+        type: 'resetTimer',
+        problemDir: currentProblemDir
+      });
+    });
+    timerTarget.addEventListener('change', () => {
+      if (!currentProblemDir) return;
+      vscode.postMessage({
+        type: 'setTimerTarget',
+        problemDir: currentProblemDir,
+        targetMinutes: Number(timerTarget.value)
       });
     });
     startCurrentReview.addEventListener('click', () => {
@@ -803,8 +913,17 @@ function buildSidebarHtml(nonce) {
       if (event.data.type === 'currentProblem') {
         currentProblem = event.data.problem;
         currentProblemDir = currentProblem?.problemDir || '';
+        activeTimer = undefined;
         updateCurrentActions();
         renderProblems();
+        if (currentProblemDir) {
+          vscode.postMessage({ type: 'getTimer', problemDir: currentProblemDir });
+        } else {
+          updateTimerUi();
+        }
+      }
+      if (event.data.type === 'timerState') {
+        applyTimerState(event.data.timer);
       }
       if (event.data.type === 'runCustomRequest') {
         submitCustomTests();
