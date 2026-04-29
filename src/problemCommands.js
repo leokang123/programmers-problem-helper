@@ -1,6 +1,11 @@
 const path = require("path");
 const vscode = require("vscode");
 const {
+  JAVA_COMMAND,
+  JAVAC_COMMAND,
+  PYTHON_COMMAND,
+} = require("./config");
+const {
   prepareDockerRuntimeOnOpen: prepareDockerRuntimeOnOpenModule,
 } = require("./dockerRuntime");
 const {
@@ -533,10 +538,7 @@ class ProblemCommands {
   async prepareDockerRuntimeOnOpen(problemDir) {
     const settings = getExecutionSettings();
     if (settings.executionMode === "local") {
-      return {
-        kind: "ready",
-        detail: `로컬 실행\n${getLanguage(settings.language).compilerSettingsLabel(settings)}`,
-      };
+      return this.prepareLocalRuntimeOnOpen(settings, problemDir);
     }
 
     return prepareDockerRuntimeOnOpenModule({
@@ -548,6 +550,68 @@ class ProblemCommands {
       postStatus: (message) => this.postMessage?.(message),
     });
   }
+
+  async prepareLocalRuntimeOnOpen(settings, problemDir) {
+    const language = getLanguage(settings.language);
+    const commandChecks = getLocalRuntimeCommandChecks(settings);
+    this.postMessage?.({
+      type: "status",
+      kind: "running",
+      text: `로컬 실행 환경 확인 중...\n\n${language.label} 실행 명령을 확인하고 있습니다.`,
+    });
+
+    try {
+      for (const check of commandChecks) {
+        await checkLocalRuntimeCommand(this.execCommand, check, problemDir);
+      }
+      return {
+        kind: "ready",
+        detail: `로컬 실행 준비 완료\n${language.compilerSettingsLabel(settings)}`,
+      };
+    } catch (error) {
+      return {
+        kind: "error",
+        detail: `로컬 실행 준비 실패\n${formatLocalRuntimeError(error)}`,
+      };
+    }
+  }
+}
+
+function getLocalRuntimeCommandChecks(settings) {
+  if (settings.language === "java") {
+    return [
+      { command: JAVAC_COMMAND, args: ["-version"] },
+      { command: JAVA_COMMAND, args: ["-version"] },
+    ];
+  }
+  if (settings.language === "python") {
+    return [{ command: PYTHON_COMMAND, args: ["--version"] }];
+  }
+  return [{ command: settings.compilerCommand, args: ["--version"] }];
+}
+
+async function checkLocalRuntimeCommand(execCommand, check, cwd) {
+  const { command, args } = check;
+  try {
+    const result = await execCommand(command, args, {
+      cwd,
+      allowNonZeroExit: true,
+      timeoutMs: 5000,
+    });
+    if (result.code !== 0) {
+      const output = String(result.stderr || result.stdout || "").trim();
+      throw new Error(`${command} ${args.join(" ")} 실행에 실패했습니다.${output ? `\n${output}` : ""}`);
+    }
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      throw new Error(`${command} 명령어를 찾지 못했습니다.\nVS Code 설정에서 실행 명령을 바꾸거나 ${command}를 설치해주세요.`);
+    }
+    throw error;
+  }
+}
+
+function formatLocalRuntimeError(error) {
+  return limitStatusText(error instanceof Error ? error.message : String(error));
 }
 
 // Markdown 미리보기와 현재 언어 풀이 파일을 나란히 엽니다.

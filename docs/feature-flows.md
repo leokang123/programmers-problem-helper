@@ -34,6 +34,8 @@
   - 현재 언어에 맞는 runner builder를 선택한다.
 - `src/dockerRuntime.js`
   - Docker CLI 확인, runtime image 확인/빌드, runtime container 생성/시작/정리를 담당한다.
+- `src/problemCommands.js`
+  - 문제를 열 때 실행 모드에 따라 Docker runtime 또는 local 언어 명령어 준비 상태를 확인한다.
 - `src/cppRunnerBuilder.js`
   - `solution.cpp`의 `solution(...)` 시그니처를 파싱하고 C++ `test_runner.cpp` 코드를 만든다.
 - `src/javaRunnerBuilder.js`
@@ -187,7 +189,7 @@ Programmers/
 2. `생성 및 열기` 클릭 또는 `Enter` 입력
 3. Programmers 페이지 fetch
 4. 현재 언어 기준으로 `problem.md`, 풀이 파일, `.programmers-helper/programmers.json`, 언어별 초기 템플릿 생성
-5. 문제를 열고 Docker runtime 준비
+5. 문제를 열고 현재 실행 모드에 맞는 실행 환경 준비
 6. 사이드바 현재 문제 상태 갱신
 
 ### 코드 흐름
@@ -265,7 +267,7 @@ Programmers/
 4. `validateProblemDir(problemDir)`로 안전한 문제 폴더인지 확인한다.
 5. `workspaceState.lastProblemDir`을 갱신한다.
 6. 현재 언어 풀이 파일을 보장한 뒤 `openProblem(problem.md, solutionFile)` 호출
-7. Docker runtime 준비
+7. 현재 실행 모드에 맞는 실행 환경 준비
 8. `showOpenedProblemState(problemDir, runtimeStatus)` 호출
 
 ### 에디터 열기 세부 동작
@@ -361,7 +363,9 @@ Programmers/
 4. 사이드바 버튼 경로는 현재 문제 경로를 메시지에 포함한다.
 5. VS Code 명령 경로는 `ProblemCommands.getProblemDir()`로 실행 대상을 찾는다.
 6. 저장된 샘플 예제로 현재 언어 runner를 만든다.
-7. Docker runtime container 안에서 언어별로 컴파일하고 테스트별로 실행한다.
+7. 현재 실행 모드에 맞게 언어별로 컴파일하고 테스트별로 실행한다.
+   - Docker 모드는 helper runtime container 안에서 실행한다.
+   - local 모드는 사용자 환경의 `clang++`/`g++`, `javac`/`java`, `python3`를 사용한다.
 
 ### Webview에서 TestRunner까지
 
@@ -437,12 +441,27 @@ Programmers/
    - 각 예제를 `TESTS`에 Python literal로 넣고, `sys.argv[1]`의 테스트 번호와 일치하는 케이스만 실행한다.
    - 결과는 `sys.stderr`에 `[PASS]`, `[FAIL]` 형태로 출력한다.
 
+### 실행 환경 준비
+
+문제를 열 때 `ProblemCommands.prepareDockerRuntimeOnOpen(problemDir)`가 실행 모드를 확인한다.
+
+- `programmersHelper.executionMode=docker`
+  - `dockerRuntime.prepareDockerRuntimeOnOpen(...)`으로 Docker CLI, image, container를 확인한다.
+- `programmersHelper.executionMode=local`
+  - 현재 언어의 실행 명령어를 `--version` 또는 `-version`으로 확인한다.
+  - C++: 설정된 `clang++` 또는 `g++`
+  - Java: `javac`, `java`
+  - Python: `python3`
+  - 명령어가 없거나 non-zero exit이면 `준비 실패` 상태를 사이드바에 표시한다.
+
+테스트 실행 직전에도 `TestRunner.ensureRuntimeReady(...)`가 같은 실행 모드 기준으로 한 번 더 확인한다.
+
 ### Docker 준비
 
 `ensureDockerRuntimeReady(problemDir)`:
 
 1. `programmersDir = path.dirname(problemDir)`
-2. 컨테이너 이름: `programmers-helper-runtime-<hash(programmersDir)>`
+2. 컨테이너 이름: `programmers-helper-runtime-v3-<hash(programmersDir)>`
 3. 컨테이너 문제 경로: `/workspace/Programmers/<problemFolder>`
 4. Docker CLI 확인: `docker version --format {{.Server.Version}}`
 5. 이미지 확인: `docker image inspect kangjung/programmers-helper-runtime:3`
@@ -455,8 +474,8 @@ Programmers/
 컨테이너 생성 명령의 핵심:
 
 ```text
-docker create
-  --name programmers-helper-runtime-<hash>
+  docker create
+  --name programmers-helper-runtime-v3-<hash>
   --workdir /workspace/Programmers
   -v <Programmers host dir>:/workspace/Programmers
   --entrypoint tail
@@ -678,7 +697,7 @@ python3 .programmers-helper/test_runner.py <testIndex>
 6. `createSolutionAttempt(safeDir)`
 7. `.programmers-helper/review.json`에 review true 저장
 8. 문제 다시 열기
-9. Docker runtime 준비
+9. 현재 실행 모드에 맞는 실행 환경 준비
 10. 사이드바 현재 문제 상태 갱신
 
 ### `createSolutionAttempt()` 세부 동작
@@ -779,7 +798,7 @@ python3 .programmers-helper/test_runner.py <testIndex>
 
 ### 컨테이너
 
-- 컨테이너 이름 prefix: `programmers-helper-runtime-`
+- 컨테이너 이름 prefix: `programmers-helper-runtime-v3-`
 - hash 입력: `path.resolve(programmersDir)`
 - 같은 Programmers root는 같은 runtime container를 재사용한다.
 
@@ -816,6 +835,23 @@ Dev Container:
 
 1. 즉시 컨테이너를 만들지는 않는다.
 2. 사이드바 상태 영역에 Docker 실행으로 전환됐고 다음 문제 열기/테스트 실행 때 컨테이너를 준비한다고 표시한다.
+
+### Local runtime flow
+
+문제를 열 때 local 실행 모드이면 `ProblemCommands.prepareLocalRuntimeOnOpen(settings, problemDir)`가 현재 언어의 명령어를 확인한다.
+
+- C++: `settings.compilerCommand --version`
+- Java: `javac -version`, `java -version`
+- Python: `python3 --version`
+
+확인 결과:
+
+- exit code `0`: 준비 완료
+- non-zero exit: 준비 실패
+- `ENOENT`: 명령어 없음으로 준비 실패
+- timeout 또는 child process error: 준비 실패
+
+준비 실패여도 문제 파일은 열리며, 사이드바 상태에 실패 이유를 표시한다. 테스트 실행 시에도 같은 local 명령어 확인이 다시 수행되어 PATH 변경이나 설치 이후 상태를 반영한다.
 
 ## Dev Container flow
 

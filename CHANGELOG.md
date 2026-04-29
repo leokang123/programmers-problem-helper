@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.2
+
+- Check local execution commands when opening a problem in local mode, reporting ready or failed status for C++, Java, and Python.
+- Document Docker versus local runtime requirements and update the feature flow notes for local command readiness checks.
+
 ## 0.3.1
 
 - Show sidebar progress and step-by-step status messages while preparing the Docker execution container.
