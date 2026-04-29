@@ -28,6 +28,9 @@
 - `src/problemStore.js`
   - 파일 시스템 저장소 접근을 담당한다.
   - 문제 목록, 메타데이터, 예제, 커스텀 테스트, 풀이 기록, 초기 코드 파일을 읽고 쓴다.
+- `src/environment.js`
+  - VS Code `context.extensionMode`로 개발판과 패키징 설치본을 구분한다.
+  - Docker 실행 상태 메시지의 런타임 라벨을 만든다.
 - `src/testRunner.js`
   - 샘플/커스텀 테스트 러너 생성, 언어별 컴파일/실행, 오류 진단을 담당한다.
 - `src/languages.js`
@@ -50,6 +53,7 @@
   - `solution.py`의 `def solution(...)` 시그니처를 파싱하고 Python `test_runner.py` 코드를 만든다.
 - `src/problemParsing.js`
   - Programmers HTML fetch, HTML to Markdown 변환, `problem.md` 입출력 예 fallback 파싱을 담당한다.
+  - `502`, `503`, `504`와 일시적인 네트워크 오류는 짧게 재시도하고, `403`, `404` 같은 확정 실패는 즉시 오류로 올린다.
 - `src/errorFormatting.js`
   - 컴파일/런타임 오류를 사용자에게 보일 메시지와 VS Code diagnostic으로 바꾼다.
 
@@ -104,6 +108,12 @@ Programmers/
 - 문제별 타이머: `<problemDir>/.programmers-helper/timer.json`
 - 현재 언어: VS Code 설정 `programmersHelper.language`
 - 초기 코드: `.programmers-helper/initial/initial-solution.<ext>`, 없으면 기존 호환용 `.programmers-helper/initial-solution.<ext>`나 `programmers.json.initialCode`
+
+문제 저장소 루트:
+
+- 개발판, 즉 `context.extensionMode === vscode.ExtensionMode.Development`: 열린 workspace 아래 `Programmers/`
+- 패키징 설치본: `context.globalStorageUri/Programmers`
+- 이 분기는 `src/problemStore.js`의 `getDevelopmentRootUri()`, `getPackagedRootUri()`, `getProgrammersDirCandidates()`가 담당한다.
 
 ## 다중 언어 flow
 

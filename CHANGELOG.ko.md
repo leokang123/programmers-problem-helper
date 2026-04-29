@@ -1,5 +1,15 @@
 # 변경 이력
 
+## 0.4.0
+
+- Dev Container와 symlink 기반 개발 흐름을 제거하고 로컬 VS Code `Run Extension`을 개발 경로로 정리했습니다.
+- 개발용 Extension Host가 현재 workspace를 열도록 해 개발 중 만든 문제 파일이 `Programmers/` 아래에 유지되도록 했습니다.
+- VS Code 공식 extension mode 기준으로 개발판과 패키징 설치본을 구분하도록 정리했습니다.
+- 개발 모드에서는 업데이트 재로드 알림을 표시하지 않고, 패키징 설치본에서는 기존 재로드 알림을 유지합니다.
+- Programmers 페이지 요청에서 `502`, `503`, `504`와 일시적인 네트워크 오류가 발생하면 짧게 재시도하도록 했습니다.
+- 존재하지 않거나 접근할 수 없는 페이지처럼 확정적인 HTTP 실패는 즉시 오류로 표시합니다.
+- `package.json`과 `package-lock.json` 버전을 `0.4.0`으로 올렸습니다.
+
 ## 0.3.9
 
 - Dev Container 개발 흐름을 제거하고 로컬 `Run Extension`을 개발 경로로 정리했습니다.
