@@ -362,7 +362,21 @@ class ProblemCommands {
       return;
     }
     await saveCustomTests(safeDir, tests);
+    this.postMessage?.({ type: "customTestsSaved", tests });
     await this.runTests(JSON.stringify(tests || []), target);
+  }
+
+  // Webview에서 받은 커스텀 테스트를 실행 없이 저장합니다.
+  async saveCustomTestsFromMessage(tests, problemDir) {
+    const safeDir = await this.validateProblemDir(problemDir);
+    if (!safeDir) {
+      vscode.window.showInformationMessage("먼저 문제를 열어주세요.");
+      return;
+    }
+
+    await saveCustomTests(safeDir, tests);
+    this.postMessage?.({ type: "customTestsSaved", tests });
+    vscode.window.showInformationMessage("커스텀 테스트 저장 완료");
   }
 
   // 열린 문제 상태를 사이드바에 반영합니다.
@@ -560,6 +574,7 @@ class ProblemCommands {
     this.postMessage?.({
       type: "status",
       kind: "running",
+      problemDir,
       text: `로컬 실행 환경 확인 중...\n\n${language.label} 실행 명령을 확인하고 있습니다.`,
     });
 

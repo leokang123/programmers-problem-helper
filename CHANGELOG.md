@@ -2,10 +2,13 @@
 
 ## 0.3.4
 
-- Add a per-problem solving timer with manual start/stop/reset controls and 30/60/90/120 minute target presets.
-- Persist timer state in workspace storage, pause running timers on problem switches and extension shutdown, and only refresh the timer UI while it is running.
+- Add a per-problem solving timer with manual start/stop/reset controls and 20/30/60/90/120 minute target presets.
+- Persist timer state in `.programmers-helper/timer.json`, checkpoint running timers every 30 seconds, pause timers on problem switches and extension shutdown, and only refresh the timer UI while it is running.
+- Add one-time 3/2/1 minute and time-over timer notifications, preserve sidebar timer state across view toggles, and keep paused timers visually distinct.
+- Add an explicit custom-test save button, track unsaved custom-test edits, and avoid persisting transient typed input in Webview state.
+- Keep the latest sidebar status message in the extension host, replay it when the Webview is reopened, and include the problem folder name on problem-specific status messages.
 - Move Create and Open beside the problem number input, remove the sidebar Last Open button, and place timer controls below the current-problem actions.
-- Fix the sidebar status box height so long readiness messages scroll inside the box instead of shifting the whole layout.
+- Keep current-problem actions stable while long status messages scroll within a bounded status area.
 - Bump the extension manifest and lockfile to `0.3.4`.
 
 ## 0.3.3

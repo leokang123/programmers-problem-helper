@@ -49,7 +49,7 @@ async function ensureDockerRuntimeReady({ vscode, extensionDir, problemDir, exec
   }
 
   const progressReporter = progress && typeof progress.report === "function" ? progress : undefined;
-  const statusContext = { postStatus, progress: progressReporter };
+  const statusContext = { postStatus, progress: progressReporter, problemDir };
   const hadCachedReadiness = runtimeCache.dockerAvailable || runtimeCache.imageAvailable;
   try {
     return await ensureDockerRuntimeReadyOnce({ vscode, extensionDir, problemDir, execCommand, statusContext });
@@ -267,6 +267,7 @@ function reportRuntimeStatus(statusContext, detail) {
   statusContext?.postStatus?.({
     type: "status",
     kind: "running",
+    problemDir: statusContext?.problemDir,
     text: `실행 컨테이너 준비 중...\n\n${detail}`,
   });
 }

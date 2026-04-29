@@ -58,6 +58,7 @@ class TestRunner {
     this.execCommand = execCommand;
     this.postStatus = postStatus;
     this.activeTestProcess = undefined;
+    this.activeProblemDir = undefined;
     this.testRunInProgress = false;
     this.stopRequested = false;
   }
@@ -76,15 +77,17 @@ class TestRunner {
 
     this.testRunInProgress = true;
     this.stopRequested = false;
+    this.activeProblemDir = target.problemDir;
     this.postStatus?.({ type: "testRunning", running: true });
 
     try {
       const hasCustomTests = customTestsText.trim().length > 0;
-      this.postStatus?.({ type: "status", kind: "running", text: `${hasCustomTests ? "커스텀" : "샘플"} 테스트 실행 중...` });
+      this.postStatus?.({ type: "status", kind: "running", problemDir: target.problemDir, text: `${hasCustomTests ? "커스텀" : "샘플"} 테스트 실행 중...` });
       const result = await this.runSamples(target.problemDir, customTestsText, target.solutionPath, target.language);
       this.postStatus?.({
         type: "status",
         kind: result.failed === 0 ? "ready" : "error",
+        problemDir: target.problemDir,
         text: `${hasCustomTests ? "커스텀" : "샘플"} 테스트 완료\n\n${result.summary}`,
       });
       this.outputChannel.show(true);
@@ -93,10 +96,11 @@ class TestRunner {
       this.outputChannel.appendLine("");
       this.outputChannel.appendLine(`[Programmers Helper] ${panelMessage}`);
       this.outputChannel.show(true);
-      this.postStatus?.({ type: "status", kind: "error", text: `테스트 실행 오류\n\n${formatTestErrorForStatus(error)}` });
+      this.postStatus?.({ type: "status", kind: "error", problemDir: target.problemDir, text: `테스트 실행 오류\n\n${formatTestErrorForStatus(error)}` });
       vscode.window.showErrorMessage(formatTestErrorForStatus(error));
     } finally {
       this.activeTestProcess = undefined;
+      this.activeProblemDir = undefined;
       this.testRunInProgress = false;
       this.stopRequested = false;
       this.postStatus?.({ type: "testRunning", running: false });
@@ -121,7 +125,7 @@ class TestRunner {
     }
     this.outputChannel.appendLine("");
     this.outputChannel.appendLine("[Programmers Helper] 테스트 실행 중지 요청");
-    this.postStatus?.({ type: "status", kind: "error", text: "테스트 실행 중지 요청\n\n현재 실행 중인 프로세스를 종료하고 있습니다." });
+    this.postStatus?.({ type: "status", kind: "error", problemDir: this.activeProblemDir, text: "테스트 실행 중지 요청\n\n현재 실행 중인 프로세스를 종료하고 있습니다." });
   }
 
   // 테스트 러너를 생성하고 각 예제를 실행합니다.
@@ -129,6 +133,7 @@ class TestRunner {
     const runContext = await this.prepareTestRunContext(problemDir, customTestsText, selectedSolutionPath, selectedLanguage);
     this.writeRunHeader(runContext);
     const runtime = await this.ensureRuntimeReady(problemDir, runContext);
+    this.postStatus?.({ type: "status", kind: "running", problemDir, text: `${runContext.isCustomRun ? "커스텀" : "샘플"} 테스트 실행 중...` });
     this.clearProblemDiagnostics(runContext.solutionPath);
     try {
       await this.compileRunner(runtime, runContext, runContext.fastArtifactPath, runContext.fastCompileFlags, "컴파일", runContext.fastFingerprint);
@@ -667,7 +672,7 @@ class TestRunner {
         extensionDir: this.extensionDir,
         problemDir,
         execCommand: this.execCommand,
-        postStatus: (message) => this.postStatus?.(message),
+        postStatus: (message) => this.postStatus?.({ ...message, problemDir: message.problemDir || problemDir }),
       });
     }
 

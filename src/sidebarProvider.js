@@ -5,9 +5,10 @@ const SIDEBAR_VIEW_ID = "programmersHelper.sidebar";
 // 사이드바 Webview와 메시지 핸들링을 관리합니다.
 class ProgrammersSidebarProvider {
   // 컨텍스트와 메시지 핸들러를 저장합니다.
-  constructor(context, handlers = {}) {
+  constructor(context, handlers = {}, options = {}) {
     this.context = context;
     this.handlers = handlers;
+    this.onDidResolveView = options.onDidResolveView;
     this.view = undefined;
     this.problemListCache = undefined;
     this.problemListRefreshPromise = undefined;
@@ -18,9 +19,13 @@ class ProgrammersSidebarProvider {
     this.view = webviewView;
     webviewView.webview.options = { enableScripts: true };
     webviewView.webview.html = this.getHtml();
-    this.refreshProblems({ force: false, progress: true });
 
     webviewView.webview.onDidReceiveMessage(async (message) => {
+      if (message.type === "webviewReady") {
+        this.onDidResolveView?.();
+        return;
+      }
+
       if (message.type === "refreshProblems") {
         await this.refreshProblems({ force: Boolean(message.force), progress: true });
         return;
@@ -156,12 +161,19 @@ function buildSidebarHtml(nonce) {
     .open-row button { width: auto; min-width: 82px; margin-top: 0; }
     .current-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
     .current-actions button { margin-top: 0; }
-    .timer-panel { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; align-items: center; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--vscode-panel-border); }
-    .timer-display { min-width: 0; font-variant-numeric: tabular-nums; font-size: 12px; color: var(--vscode-descriptionForeground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .timer-panel { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: center; margin-top: 6px; padding: 6px 0 0; border-top: 1px solid var(--vscode-panel-border); }
+    .timer-display { flex: 1 1 98px; min-width: 92px; font-variant-numeric: tabular-nums; font-size: 12px; color: var(--vscode-descriptionForeground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+    .timer-panel.timer-paused .timer-display { color: var(--vscode-textLink-foreground); }
+    .timer-panel.timer-warning .timer-display { color: var(--vscode-editorWarning-foreground); font-weight: 600; }
     .timer-panel.timer-over .timer-display { color: var(--vscode-errorForeground); font-weight: 600; }
-    .timer-target { width: auto; min-width: 58px; box-sizing: border-box; padding: 5px 6px; border: 1px solid var(--vscode-input-border); background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); font-size: 12px; }
-    .timer-buttons { display: flex; gap: 4px; align-items: center; }
-    .timer-buttons button { width: auto; min-width: 40px; margin-top: 0; padding: 5px 7px; }
+    .timer-controls { flex: 0 1 146px; display: flex; gap: 3px; align-items: center; min-width: 140px; }
+    .timer-target { flex: 0 0 54px; width: auto; min-width: 54px; box-sizing: border-box; padding: 5px 4px; border: 1px solid var(--vscode-input-border); background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); font-size: 12px; }
+    .timer-buttons { flex: 1 1 84px; display: flex; gap: 3px; align-items: center; min-width: 82px; }
+    .timer-buttons button { flex: 1 1 0; width: auto; min-width: 39px; margin-top: 0; padding: 5px 4px; white-space: nowrap; }
+    @media (max-width: 244px) {
+      .timer-display { flex: 1 0 100%; min-width: 0; }
+      .timer-controls { flex: 1 1 100%; }
+    }
     .list-actions { display: flex; gap: 8px; align-items: center; margin-bottom: 5px; flex-wrap: wrap; }
     .filter { display: flex; gap: 6px; align-items: center; margin: 0; font-size: 12px; color: var(--vscode-foreground); }
     .filter input { width: auto; margin: 0; }
@@ -191,11 +203,15 @@ function buildSidebarHtml(nonce) {
     .test-actions { flex: 0 0 auto; padding: 2px; border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBar-background); }
     .test-actions-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 6px; }
     .test-actions-grid button { margin-top: 0; }
+    .custom-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; }
+    .custom-actions button { margin-top: 0; }
+    #saveCustomTests { min-width: 64px; }
     .tests-content { min-height: 0; flex: 1 1 auto; overflow: auto; padding: 8px 2px 2px; box-sizing: border-box; }
     .test-card { margin-top: 8px; padding: 8px; border: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); }
     .test-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; font-size: 12px; color: var(--vscode-descriptionForeground); }
     .remove { width: auto; margin: 0; padding: 3px 7px; background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
-    .status { box-sizing: border-box; height: 102px; margin-top: 5px; padding: 5px 6px; border: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBarSectionHeader-background); white-space: pre-wrap; overflow: auto; overflow-wrap: anywhere; word-break: break-word; font-size: 12px; color: var(--vscode-foreground); line-height: 1.25; }
+    .status-slot { height: 84px; margin-top: 5px; }
+    .status { box-sizing: border-box; max-height: 84px; padding: 5px 6px; border: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBarSectionHeader-background); white-space: pre-wrap; overflow: auto; overflow-wrap: anywhere; word-break: break-word; font-size: 12px; color: var(--vscode-foreground); line-height: 1.25; }
     .status.ready { border-color: var(--vscode-testing-iconPassed); }
     .status.error { border-color: var(--vscode-testing-iconFailed); }
     .status.running { border-color: var(--vscode-progressBar-background); }
@@ -219,9 +235,11 @@ function buildSidebarHtml(nonce) {
             <button id="create">생성 및 열기</button>
           </div>
         </div>
-        <div id="status" class="status">대기 중
+        <div class="status-slot">
+          <div id="status" class="status">대기 중
 
 문제 번호를 입력하고 생성 버튼을 누르세요.</div>
+        </div>
         <div class="current-actions">
           <button id="resetCurrentSolution" class="secondary" disabled>초기화</button>
           <button id="startCurrentReview" class="secondary" disabled>새풀이</button>
@@ -230,15 +248,18 @@ function buildSidebarHtml(nonce) {
         </div>
         <div id="timerPanel" class="timer-panel">
           <div id="timerDisplay" class="timer-display">⏱ 00:00 / 60m</div>
-          <select id="timerTarget" class="timer-target" title="목표 시간" disabled>
-            <option value="30">30m</option>
-            <option value="60" selected>60m</option>
-            <option value="90">90m</option>
-            <option value="120">120m</option>
-          </select>
-          <div class="timer-buttons">
-            <button id="timerToggle" class="secondary" disabled>시작</button>
-            <button id="timerReset" class="secondary" disabled>초기화</button>
+          <div class="timer-controls">
+            <select id="timerTarget" class="timer-target" title="목표 시간" disabled>
+              <option value="20">20m</option>
+              <option value="30">30m</option>
+              <option value="60" selected>60m</option>
+              <option value="90">90m</option>
+              <option value="120">120m</option>
+            </select>
+            <div class="timer-buttons">
+              <button id="timerToggle" class="secondary" disabled>시작</button>
+              <button id="timerReset" class="secondary" disabled>초기화</button>
+            </div>
           </div>
         </div>
       </div>
@@ -262,7 +283,10 @@ function buildSidebarHtml(nonce) {
           <div class="section">
             <label>커스텀 테스트케이스</label>
             <div id="customTests"></div>
-            <button id="addTest" class="secondary">+ 테스트 추가</button>
+            <div class="custom-actions">
+              <button id="addTest" class="secondary">+ 테스트 추가</button>
+              <button id="saveCustomTests" class="secondary" disabled>저장됨</button>
+            </div>
             <button id="runCustom">커스텀 테스트 실행</button>
             <div class="hint">Input은 solution 인자 순서대로 쉼표로 구분합니다. 예: 4, 5, 2, 2, [[0,0]]</div>
             <div class="hint">테스트는 현재 사용자 권한으로 현재 언어 풀이 파일을 컴파일하고 실행합니다.</div>
@@ -310,6 +334,7 @@ function buildSidebarHtml(nonce) {
     const openWebsite = document.getElementById('openWebsite');
     const runSamples = document.getElementById('run');
     const runCustom = document.getElementById('runCustom');
+    const saveCustomTestsButton = document.getElementById('saveCustomTests');
     const timerPanel = document.getElementById('timerPanel');
     const timerDisplay = document.getElementById('timerDisplay');
     const timerTarget = document.getElementById('timerTarget');
@@ -321,12 +346,58 @@ function buildSidebarHtml(nonce) {
     let currentProblemDir = '';
     let activeTimer = undefined;
     let timerRenderInterval = undefined;
+    let timerNotificationKey = '';
+    let notifiedTimerMarks = new Set();
+    let savedCustomTests = [];
+    let savedCustomTestsSignature = '';
     let searchRenderTimer = undefined;
+    let sidebarStateReady = false;
     let renderedProblems = [];
     let renderedSnapshots = [];
     const problemRowCache = new Map();
     const snapshotRowCache = new Map();
     const otherSnapshotRowCache = new Map();
+
+    function saveSidebarState() {
+      if (!sidebarStateReady) return;
+      vscode.setState({
+        currentProblem,
+        currentProblemDir,
+        activeTimer,
+        timerNotificationKey,
+        notifiedTimerMarks: Array.from(notifiedTimerMarks),
+        customTests: savedCustomTests,
+        problemFilter: document.querySelector('input[name="problemFilter"]:checked')?.value || 'all',
+        collapsed: {
+          top: topPane.classList.contains('collapsed'),
+          tests: testsPane.classList.contains('collapsed'),
+          list: listPane.classList.contains('collapsed')
+        }
+      });
+    }
+
+    function restoreSidebarState() {
+      const saved = vscode.getState();
+      if (!saved || typeof saved !== 'object') return;
+
+      currentProblem = saved.currentProblem;
+      currentProblemDir = typeof saved.currentProblemDir === 'string' ? saved.currentProblemDir : '';
+      activeTimer = saved.activeTimer ? normalizeTimer(saved.activeTimer) : undefined;
+      timerNotificationKey = typeof saved.timerNotificationKey === 'string' ? saved.timerNotificationKey : '';
+      notifiedTimerMarks = new Set(Array.isArray(saved.notifiedTimerMarks) ? saved.notifiedTimerMarks : []);
+      if (Array.isArray(saved.customTests)) {
+        setCustomTests(saved.customTests);
+      }
+      const filterValue = typeof saved.problemFilter === 'string' ? saved.problemFilter : 'all';
+      const filter = document.querySelector('input[name="problemFilter"][value="' + filterValue + '"]');
+      if (filter) {
+        filter.checked = true;
+      }
+      const collapsed = saved.collapsed && typeof saved.collapsed === 'object' ? saved.collapsed : {};
+      setPaneCollapsed(topPane, document.getElementById('toggleTop'), 'top-collapsed', Boolean(collapsed.top));
+      setPaneCollapsed(testsPane, document.getElementById('toggleTests'), 'tests-collapsed', Boolean(collapsed.tests));
+      setPaneCollapsed(listPane, document.getElementById('toggleList'), 'list-collapsed', Boolean(collapsed.list));
+    }
 
     function setPaneCollapsed(pane, button, className, collapsed) {
       const body = pane.querySelector('.pane-body');
@@ -338,6 +409,7 @@ function buildSidebarHtml(nonce) {
       button.setAttribute('aria-expanded', String(!collapsed));
       button.querySelector('.toggle-icon').textContent = collapsed ? '▸' : '▾';
       updatePaneSummaries();
+      saveSidebarState();
     }
 
     function togglePane(pane, button, className) {
@@ -352,6 +424,7 @@ function buildSidebarHtml(nonce) {
       runSamples.disabled = !currentProblemDir;
       runCustom.disabled = !currentProblemDir;
       updateTimerUi();
+      saveSidebarState();
     }
 
     function normalizeTimer(timer) {
@@ -360,7 +433,7 @@ function buildSidebarHtml(nonce) {
         elapsedMs: Math.max(0, Number(timer?.elapsedMs) || 0),
         startedAt: typeof timer?.startedAt === 'number' ? timer.startedAt : null,
         isRunning: Boolean(timer?.isRunning && typeof timer?.startedAt === 'number'),
-        targetMinutes: [30, 60, 90, 120].includes(Number(timer?.targetMinutes)) ? Number(timer.targetMinutes) : 60,
+        targetMinutes: [20, 30, 60, 90, 120].includes(Number(timer?.targetMinutes)) ? Number(timer.targetMinutes) : 60,
       };
     }
 
@@ -395,8 +468,12 @@ function buildSidebarHtml(nonce) {
       const elapsedMs = currentProblemDir ? getTimerElapsedMs(timer) : 0;
       const targetMinutes = timer.targetMinutes;
       const targetMs = targetMinutes * 60 * 1000;
-      const overTarget = elapsedMs > targetMs;
+      const overTarget = timer.isRunning && elapsedMs > targetMs;
+      const nearTarget = timer.isRunning && !overTarget && targetMs - elapsedMs <= 3 * 60 * 1000;
+      maybeNotifyTimer(timer, elapsedMs, targetMs);
       timerPanel.classList.toggle('timer-over', overTarget);
+      timerPanel.classList.toggle('timer-warning', nearTarget);
+      timerPanel.classList.toggle('timer-paused', Boolean(currentProblemDir && !timer.isRunning));
       timerDisplay.textContent = '⏱ ' + formatTimerElapsed(elapsedMs) + ' / ' + targetMinutes + 'm' + (overTarget ? ' 초과' : '');
       timerTarget.value = String(targetMinutes);
       timerTarget.disabled = !currentProblemDir;
@@ -406,6 +483,39 @@ function buildSidebarHtml(nonce) {
       updateTimerRefresh();
     }
 
+    function getTimerNotificationKey(timer) {
+      return (timer.problemDir || currentProblemDir || '') + '::' + timer.targetMinutes;
+    }
+
+    function resetTimerNotifications() {
+      timerNotificationKey = '';
+      notifiedTimerMarks = new Set();
+    }
+
+    function maybeNotifyTimer(timer, elapsedMs, targetMs) {
+      if (!currentProblemDir || !timer.isRunning) return;
+      const nextKey = getTimerNotificationKey(timer);
+      if (timerNotificationKey !== nextKey) {
+        timerNotificationKey = nextKey;
+        notifiedTimerMarks = new Set();
+      }
+      const remainingMs = targetMs - elapsedMs;
+      const marks = [
+        { key: '3m', minMs: 2 * 60 * 1000, maxMs: 3 * 60 * 1000, text: '3분 남았습니다.' },
+        { key: '2m', minMs: 1 * 60 * 1000, maxMs: 2 * 60 * 1000, text: '2분 남았습니다.' },
+        { key: '1m', minMs: 0, maxMs: 1 * 60 * 1000, text: '1분 남았습니다.' },
+        { key: 'over', minMs: -Infinity, maxMs: 0, text: '타임오버' }
+      ];
+      for (const mark of marks) {
+        if (remainingMs > mark.minMs && remainingMs <= mark.maxMs && !notifiedTimerMarks.has(mark.key)) {
+          notifiedTimerMarks.add(mark.key);
+          vscode.postMessage({ type: 'timerNotification', text: mark.text });
+          saveSidebarState();
+          break;
+        }
+      }
+    }
+
     function applyTimerState(timer) {
       if (!timer || timer.problemDir !== currentProblemDir) {
         activeTimer = undefined;
@@ -413,6 +523,7 @@ function buildSidebarHtml(nonce) {
         activeTimer = normalizeTimer(timer);
       }
       updateTimerUi();
+      saveSidebarState();
     }
 
     function updatePaneSummaries() {
@@ -716,22 +827,40 @@ function buildSidebarHtml(nonce) {
       card.querySelector('.remove').addEventListener('click', () => {
         card.remove();
         updatePaneSummaries();
+        updateCustomTestsSaveState();
+      });
+      card.querySelector('.test-input').addEventListener('input', () => {
+        updateCustomTestsSaveState();
+      });
+      card.querySelector('.test-expected').addEventListener('input', () => {
+        updateCustomTestsSaveState();
       });
       customTests.appendChild(card);
       updatePaneSummaries();
+      updateCustomTestsSaveState();
     }
 
-    function setCustomTests(tests) {
+    function setCustomTests(tests, markSaved = true) {
       customTests.innerHTML = '';
       testCount = 0;
       if (!Array.isArray(tests) || tests.length === 0) {
         addTest();
+        if (markSaved) {
+          savedCustomTests = collectTests();
+          savedCustomTestsSignature = JSON.stringify(savedCustomTests);
+          updateCustomTestsSaveState();
+        }
         return;
       }
       for (const test of tests) {
         const inputValue = typeof test.inputsText === 'string' ? test.inputsText : (test.inputs || []).join(', ');
         const expectedValue = typeof test.expectedText === 'string' ? test.expectedText : (test.expected || '');
         addTest(inputValue, expectedValue);
+      }
+      if (markSaved) {
+        savedCustomTests = collectTests();
+        savedCustomTestsSignature = JSON.stringify(savedCustomTests);
+        updateCustomTestsSaveState();
       }
     }
 
@@ -740,6 +869,16 @@ function buildSidebarHtml(nonce) {
         inputsText: card.querySelector('.test-input').value.trim(),
         expectedText: card.querySelector('.test-expected').value.trim()
       })).filter((test) => test.inputsText || test.expectedText);
+    }
+
+    function getCustomTestsSignature() {
+      return JSON.stringify(collectTests());
+    }
+
+    function updateCustomTestsSaveState() {
+      const dirty = getCustomTestsSignature() !== savedCustomTestsSignature;
+      saveCustomTestsButton.disabled = !currentProblemDir || !dirty;
+      saveCustomTestsButton.textContent = dirty ? '저장' : '저장됨';
     }
 
     function openSnapshot(row) {
@@ -757,6 +896,13 @@ function buildSidebarHtml(nonce) {
     function submitCustomTests() {
       if (!currentProblemDir) return;
       vscode.postMessage({ type: 'runCustom', problemDir: currentProblemDir, tests: collectTests() });
+    }
+
+    function submitSaveCustomTests() {
+      if (!currentProblemDir) return;
+      saveCustomTestsButton.disabled = true;
+      saveCustomTestsButton.textContent = '저장 중';
+      vscode.postMessage({ type: 'saveCustomTests', problemDir: currentProblemDir, tests: collectTests() });
     }
 
     function handleProblemListClick(event) {
@@ -801,6 +947,8 @@ function buildSidebarHtml(nonce) {
     }
 
     addTest();
+    restoreSidebarState();
+    sidebarStateReady = true;
     document.getElementById('create').addEventListener('click', submitCreateProblem);
     input.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
@@ -815,6 +963,7 @@ function buildSidebarHtml(nonce) {
     document.getElementById('addTest').addEventListener('click', () => {
       addTest();
     });
+    saveCustomTestsButton.addEventListener('click', submitSaveCustomTests);
     runCustom.addEventListener('click', submitCustomTests);
     document.getElementById('stopRun').addEventListener('click', () => {
       vscode.postMessage({ type: 'stopTests' });
@@ -835,10 +984,15 @@ function buildSidebarHtml(nonce) {
     });
     timerReset.addEventListener('click', () => {
       if (!currentProblemDir) return;
-      const elapsedMs = getTimerElapsedMs(normalizeTimer(activeTimer));
-      if (elapsedMs >= 5 * 60 * 1000 && !confirm('누적된 풀이 시간을 초기화할까요?')) {
-        return;
-      }
+      resetTimerNotifications();
+      activeTimer = {
+        ...normalizeTimer(activeTimer),
+        elapsedMs: 0,
+        startedAt: null,
+        isRunning: false
+      };
+      updateTimerUi();
+      saveSidebarState();
       vscode.postMessage({
         type: 'resetTimer',
         problemDir: currentProblemDir
@@ -846,6 +1000,8 @@ function buildSidebarHtml(nonce) {
     });
     timerTarget.addEventListener('change', () => {
       if (!currentProblemDir) return;
+      resetTimerNotifications();
+      saveSidebarState();
       vscode.postMessage({
         type: 'setTimerTarget',
         problemDir: currentProblemDir,
@@ -886,9 +1042,12 @@ function buildSidebarHtml(nonce) {
       filter.addEventListener('change', () => {
         renderProblems();
         updatePaneSummaries();
+        saveSidebarState();
       });
     });
-    problemSearch.addEventListener('input', scheduleRenderProblems);
+    problemSearch.addEventListener('input', () => {
+      scheduleRenderProblems();
+    });
     document.getElementById('refreshProblems').addEventListener('click', () => {
       vscode.postMessage({ type: 'refreshProblems', force: true });
     });
@@ -905,15 +1064,26 @@ function buildSidebarHtml(nonce) {
       if (event.data.type === 'customTests') {
         setCustomTests(event.data.tests || []);
         updatePaneSummaries();
+        saveSidebarState();
+      }
+      if (event.data.type === 'customTestsSaved') {
+        savedCustomTests = Array.isArray(event.data.tests) ? event.data.tests : [];
+        savedCustomTestsSignature = JSON.stringify(savedCustomTests);
+        updateCustomTestsSaveState();
+        saveSidebarState();
       }
       if (event.data.type === 'problems') {
         problems = event.data.problems || [];
         renderProblems();
+        saveSidebarState();
       }
       if (event.data.type === 'currentProblem') {
         currentProblem = event.data.problem;
         currentProblemDir = currentProblem?.problemDir || '';
+        savedCustomTests = [];
+        savedCustomTestsSignature = '';
         activeTimer = undefined;
+        resetTimerNotifications();
         updateCurrentActions();
         renderProblems();
         if (currentProblemDir) {
@@ -931,6 +1101,10 @@ function buildSidebarHtml(nonce) {
     });
     updateCurrentActions();
     updatePaneSummaries();
+    if (currentProblemDir) {
+      vscode.postMessage({ type: 'getTimer', problemDir: currentProblemDir });
+    }
+    vscode.postMessage({ type: 'webviewReady' });
     vscode.postMessage({ type: 'refreshProblems' });
   </script>
 </body>

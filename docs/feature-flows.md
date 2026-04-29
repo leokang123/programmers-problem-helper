@@ -38,8 +38,9 @@
 - `src/problemCommands.js`
   - 문제를 열 때 실행 모드에 따라 Docker runtime 또는 local 언어 명령어 준비 상태를 확인한다.
 - `src/timerManager.js`
-  - 문제별 풀이 타이머 상태를 `context.workspaceState.problemTimers`에 저장한다.
+  - 문제별 풀이 타이머 상태를 `.programmers-helper/timer.json`에 저장한다.
   - 시작/중지/초기화/목표 시간 변경을 처리하고, 문제 전환이나 확장 종료 시 실행 중인 타이머를 정산 후 중지한다.
+  - 기존 `context.workspaceState.problemTimers` 데이터는 해당 문제를 다시 열 때 `timer.json`으로 옮기고 legacy 값을 제거한다.
 - `src/cppRunnerBuilder.js`
   - `solution.cpp`의 `solution(...)` 시그니처를 파싱하고 C++ `test_runner.cpp` 코드를 만든다.
 - `src/javaRunnerBuilder.js`
@@ -99,7 +100,7 @@ Programmers/
 - 커스텀 테스트: `.programmers-helper/custom-tests.json`
 - 현재 문제: Webview 내부 `currentProblemDir`
 - 마지막 문제: `context.workspaceState.lastProblemDir`
-- 문제별 타이머: `context.workspaceState.problemTimers`
+- 문제별 타이머: `<problemDir>/.programmers-helper/timer.json`
 - 현재 언어: VS Code 설정 `programmersHelper.language`
 - 초기 코드: `.programmers-helper/initial/initial-solution.<ext>`, 없으면 기존 호환용 `.programmers-helper/initial-solution.<ext>`나 `programmers.json.initialCode`
 
@@ -187,7 +188,7 @@ Programmers/
 - `resetTimer`
   - Extension handler: 현재 문제 타이머를 0으로 초기화한다.
 - `setTimerTarget`
-  - Extension handler: 현재 문제 목표 시간을 30/60/90/120분 중 하나로 저장한다.
+  - Extension handler: 현재 문제 목표 시간을 20/30/60/90/120분 중 하나로 저장한다.
 
 ### 확장에서 Webview로 가는 메시지
 
@@ -209,16 +210,18 @@ Programmers/
 ### 사용자 흐름
 
 1. 문제를 연다.
-2. 필요하면 목표 시간을 30/60/90/120분 중 선택한다.
+2. 필요하면 목표 시간을 20/30/60/90/120분 중 선택한다.
 3. `시작` 버튼을 누른 경우에만 타이머가 실행된다.
 4. `중지`를 누르거나 다른 문제를 열거나 VS Code가 종료되면 현재 경과 시간을 정산해 저장하고 멈춘다.
-5. `초기화`는 사용자가 직접 누를 때만 수행한다. 5분 이상 누적된 타이머는 Webview에서 확인을 한 번 더 받는다.
+5. `초기화`는 사용자가 직접 누를 때만 수행한다.
 
 ### 성능 규칙
 
 - 시간의 source of truth는 `elapsedMs + (Date.now() - startedAt)` 계산이다. `setInterval`은 UI refresh 용도로만 쓴다.
 - Webview의 1초 interval은 현재 문제 타이머가 실행 중일 때만 생성하고, 중지되면 즉시 해제한다.
-- 타이머 저장은 시작/중지/초기화/목표 변경/문제 전환/확장 종료 같은 이벤트 시점에만 수행한다.
+- 타이머 저장은 시작/중지/초기화/목표 변경/문제 전환/확장 종료 같은 이벤트 시점에 수행한다.
+- 실행 중에는 VS Code 종료 시 비동기 저장이 끊기는 상황에 대비해 30초마다 `timer.json`에 정산 checkpoint를 남긴다.
+- 다음에 문제를 열 때 `isRunning: true`가 남아 있으면 마지막 `updatedAt` 기준으로 멈춘 상태로 복구한다.
 - 현재 열린 문제 하나의 타이머만 매초 계산한다.
 
 ## 문제 생성 flow
@@ -634,13 +637,22 @@ python3 .programmers-helper/generated/runners/test_runner.py <testIndex>
    - `parseCustomTests(customTestsText)`로 내부 examples 형태로 변환
    - 이후 샘플 테스트와 동일하게 runner 생성, 컴파일, 실행
 
+### 저장 흐름
+
+1. Webview `saveCustomTests` 버튼 클릭
+2. `{ type: "saveCustomTests", problemDir, tests }` 메시지
+3. `problemCommands.saveCustomTestsFromMessage(tests, problemDir)`
+4. `.programmers-helper/custom-tests.json` 저장
+5. Webview에 `{ type: "customTestsSaved", tests }`를 보내 저장됨 상태를 갱신한다.
+
 ### 저장 위치
 
 `.programmers-helper/custom-tests.json`
 
 ### 주의점
 
-- 커스텀 테스트는 실행 직전에 저장된다.
+- 커스텀 테스트는 저장 버튼을 누르거나 실행 직전에 저장된다.
+- Webview state에는 마지막 저장본만 보관하고, 저장 전 textarea 입력값은 토글 복원용으로 저장하지 않는다.
 - 커스텀 테스트는 `programmers.json.examples`를 사용하지 않는다.
 - `parseCustomTests()`는 문자열 입력을 현재 runner builder가 리터럴로 변환 가능한 형태라고 가정한다.
 
@@ -888,7 +900,47 @@ Dev Container:
 
 ## 성능 점검 메모
 
-### 이미 개선된 부분
+### 전체 구조 기준
+
+- 기본 activation은 가볍게 유지한다.
+  - `activate(context)`에서는 Output 채널, Diagnostic collection, Webview provider, 명령, 설정 listener만 등록한다.
+  - `ProblemCommands`, `TestRunner`, `TimerManager`는 `ensureServices(context)`에서 실제 명령이나 Webview 액션이 들어올 때 lazy-load한다.
+  - Docker 확인, 문제 폴더 전체 스캔, runner 생성, 컴파일은 activation 시점에 하지 않는다.
+- 대기 상태의 상시 작업은 최소화한다.
+  - 설정 변경 listener 외에는 workspace watcher나 반복 스캔을 두지 않는다.
+  - Webview 타이머 interval과 `TimerManager` checkpoint interval은 타이머 실행 중일 때만 켠다.
+- 무거운 작업은 사용자 액션 시점에만 수행한다.
+  - 문제 생성은 Programmers HTML fetch와 파일 생성 때문에 네트워크/I/O 비용이 있다.
+  - 테스트 실행은 Docker, 컴파일, 프로세스 실행, diagnostic 파싱이 포함되므로 확장 내에서 가장 무거운 흐름이다.
+  - 문제 목록 강제 새로고침은 문제 수만큼 metadata를 읽을 수 있으므로 캐시와 인덱스를 우선한다.
+
+### 사이드바와 Webview
+
+- 사이드바 문제 목록은 메모리의 problem summary cache를 우선 사용하고, 명시적 강제 새로고침 때만 전체 스캔한다.
+- 문제 검색 입력은 짧은 debounce 뒤에 렌더링해 연속 입력 중 불필요한 DOM 재생성을 줄인다.
+- 문제 목록과 풀이기록 목록 클릭은 event delegation으로 처리해 렌더 때마다 행별 이벤트 리스너를 다시 붙이지 않는다.
+- 문제 목록과 풀이기록 목록 row는 key 기반 cache로 재사용하고, 텍스트와 checkbox 상태만 갱신한다.
+- Webview `vscode.setState()`는 사이드바 UI 복원용이다.
+  - 현재 문제, 필터, 접힘 상태, 타이머 표시 상태, 알림 기록, 저장된 커스텀 테스트 값을 보관한다.
+  - 문제 번호 입력값, 문제 검색어, 저장 전 커스텀 테스트 textarea 입력값은 보관하지 않는다.
+  - 상태 메시지는 Webview state가 아니라 extension host의 `latestStatusMessage`에 최신 1개만 보관하고, Webview가 `webviewReady`를 보내면 다시 전송한다.
+  - 실제 타이머 기록의 source of truth는 `.programmers-helper/timer.json`이다.
+- 사이드바가 열릴 때 문제 목록 로드는 Webview 초기화 이후 `refreshProblems` 메시지 하나로 요청한다.
+- 특정 문제에서 발생한 상태 메시지는 `problemDir`을 함께 보내고, extension host가 `path.basename(problemDir)`으로 문제 폴더명을 붙인다. 파일을 다시 읽지는 않는다.
+
+### 타이머
+
+- 시간의 source of truth는 `elapsedMs + (Date.now() - startedAt)` 계산이다.
+- Webview의 1초 interval은 화면 refresh 용도이며, 현재 문제 타이머가 실행 중일 때만 생성하고 중지되면 즉시 해제한다.
+- 타이머 알림은 1초 UI refresh 중 남은 시간 구간을 숫자 비교로 확인한다.
+  - 3분/2분/1분/타임오버 mark는 `Set`으로 한 번만 보낸다.
+  - 알림 기록은 현재 문제와 목표 시간 key를 기준으로 유지하고, 목표 시간 변경/초기화/문제 전환 때 초기화한다.
+- 타이머 저장은 시작/중지/초기화/목표 변경/문제 전환/확장 종료 같은 이벤트 시점에 수행한다.
+- 실행 중에는 VS Code 종료 시 비동기 저장이 끊기는 상황에 대비해 30초마다 `timer.json`에 정산 checkpoint를 남긴다.
+- 다음에 문제를 열 때 `isRunning: true`가 남아 있으면 마지막 `updatedAt` 기준으로 멈춘 상태로 복구한다.
+- 현재 열린 문제 하나의 타이머만 매초 계산한다.
+
+### 테스트 실행과 Docker
 
 - 샘플 테스트는 `programmers.json.examples`를 우선 사용한다.
 - `problem.md` fallback 파싱은 저장된 예제가 없을 때만 실행한다.
@@ -897,19 +949,40 @@ Dev Container:
 - Docker 사용 가능 여부와 runtime image 존재 여부는 확장 세션 동안 캐시한다.
 - 풀이 파일 내용, 생성된 runner 내용, 언어, 컴파일 플래그 fingerprint가 같으면 기존 실행 산출물을 재사용한다.
 - 테스트 결과 요약은 전체 output 문자열을 누적하지 않고 케이스별 PASS/FAIL/TIMEOUT count로 집계한다.
-- 사이드바 문제 목록은 메모리의 problem summary cache를 우선 사용하고, 명시적 강제 새로고침 때만 전체 스캔한다.
+- Docker 컨테이너 정리는 사용자 데이터 보존 작업이 아니므로 extension deactivate에서 백그라운드 정리에 맡긴다.
+- 실행 중지 버튼은 컨테이너 stop이 아니라 현재 `docker exec` 또는 로컬 child process 종료다.
+- Docker 준비 메시지가 테스트 상태를 덮은 뒤에는 실제 컴파일/실행 단계로 넘어가며 다시 `샘플/커스텀 테스트 실행 중...` 상태를 전송한다.
+
+### 문제 저장소와 인덱스
+
 - 문제 목록 인덱스가 현재 `Programmers` 루트 밖의 항목을 포함하면 폐기하고 전체 스캔으로 재생성한다.
 - 문제 열기, 리뷰 토글, 삭제, 풀이기록 변경은 단일 문제 인덱스 갱신 결과로 사이드바 메모리 캐시를 교체한다.
-- 문제 검색 입력은 짧은 debounce 뒤에 렌더링해 연속 입력 중 불필요한 DOM 재생성을 줄인다.
-- 문제 목록과 풀이기록 목록 클릭은 event delegation으로 처리해 렌더 때마다 행별 이벤트 리스너를 다시 붙이지 않는다.
-- 문제 목록과 풀이기록 목록 row는 key 기반 cache로 재사용하고, 텍스트와 checkbox 상태만 갱신한다.
+- `problem-index.json`은 목록 렌더링용 캐시이고, 원본 상태는 각 문제 폴더의 `.programmers-helper` 파일들이다.
+
+### 메모리와 상시 리소스
+
+- 상시 메모리 상태는 서비스 singleton, 사이드바 provider, 문제 목록 cache, row cache, 현재 타이머 객체, 알림 `Set`, interval id 정도로 제한한다.
+- row cache는 렌더 결과에서 빠진 key를 prune해 검색/삭제 후 DOM 참조가 계속 남지 않게 한다.
+- OutputChannel 로그는 장시간 테스트를 많이 돌리는 경우 누적될 수 있지만, 현재는 테스트 실행 흐름의 보조 로그로 둔다.
 
 ### 다음 최적화 후보
 
-1. Webview 가상 스크롤
+1. Timer checkpoint read 생략
+   - 위치: `src/timerManager.js`
+   - 현재: 30초마다 `timer.json`을 읽고 정산 후 다시 쓴다.
+   - 방향: 실행 중 타이머 상태를 메모리에 유지해 checkpoint에서 read를 생략할 수 있다. 다만 현재 비용은 작다.
+2. Webview 가상 스크롤
    - 위치: `src/sidebarProvider.js`의 inline script
    - 현재: row DOM은 재사용하지만 보이는 목록 전체를 순회하고 배치한다.
    - 방향: 문제 수가 수천 개 이상으로 커져 검색/스크롤 끊김이 확인되면 화면 근처 row만 렌더링한다.
+3. 문제 인덱스 rebuild 병렬 제한
+   - 위치: `src/problemStore.js`
+   - 현재: 전체 스캔 시 여러 문제 metadata를 병렬로 읽는다.
+   - 방향: 문제 수가 매우 많아져 순간 I/O가 부담되면 concurrency limit을 둔다.
+4. OutputChannel 로그 관리
+   - 위치: `src/testRunner.js`
+   - 현재: 테스트 실행 로그를 OutputChannel에 누적한다.
+   - 방향: 장시간 사용에서 로그량이 문제가 되면 요약 중심 출력이나 clear 정책을 검토한다.
 
 ## 작업 시 체크리스트
 

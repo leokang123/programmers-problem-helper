@@ -1,5 +1,6 @@
 const vscode = require("vscode");
 const cp = require("child_process");
+const path = require("path");
 const {
   ProgrammersSidebarProvider,
 } = require("./src/sidebarProvider");
@@ -11,6 +12,50 @@ let timerManager;
 let outputChannel;
 let diagnosticCollection;
 let lastExecutionMode;
+let latestStatusMessage;
+
+function postSidebarMessage(message) {
+  const nextMessage = message?.type === "status"
+    ? { ...message, text: formatStatusText(message) }
+    : message;
+  if (message?.type === "status") {
+    latestStatusMessage = {
+      type: "status",
+      kind: nextMessage.kind || "",
+      text: String(nextMessage.text || ""),
+    };
+  }
+  return sidebarProvider?.post(nextMessage) || false;
+}
+
+function formatStatusText(message) {
+  const text = String(message?.text || "");
+  const problemDir = typeof message?.problemDir === "string" ? message.problemDir : "";
+  if (!problemDir) {
+    return text;
+  }
+
+  const problemLabel = path.basename(problemDir);
+  if (!problemLabel || text.includes(problemLabel)) {
+    return text;
+  }
+
+  const separator = "\n\n";
+  const separatorIndex = text.indexOf(separator);
+  if (separatorIndex === -1) {
+    return `${text}${separator}${problemLabel}`;
+  }
+
+  const title = text.slice(0, separatorIndex);
+  const detail = text.slice(separatorIndex + separator.length);
+  return `${title}${separator}${problemLabel}${detail ? `\n${detail}` : ""}`;
+}
+
+function replayLatestStatusMessage() {
+  if (latestStatusMessage) {
+    sidebarProvider?.post(latestStatusMessage);
+  }
+}
 
 // 확장 진입점을 초기화하고 명령을 등록합니다.
 function activate(context) {
@@ -40,6 +85,10 @@ function activate(context) {
     runCustom: async (message) => {
       const { problemCommands } = ensureServices(context);
       await problemCommands.runCustomTestsFromMessage(message.tests || [], String(message.problemDir || ""));
+    },
+    saveCustomTests: async (message) => {
+      const { problemCommands } = ensureServices(context);
+      await problemCommands.saveCustomTestsFromMessage(message.tests || [], String(message.problemDir || ""));
     },
     stopTests: async () => {
       testRunner?.stop();
@@ -89,27 +138,35 @@ function activate(context) {
     },
     getTimer: async (message) => {
       const { timerManager } = ensureServices(context);
-      sidebarProvider?.post({ type: "timerState", timer: timerManager.getTimer(String(message.problemDir || "")) });
+      postSidebarMessage({ type: "timerState", timer: await timerManager.getTimer(String(message.problemDir || "")) });
     },
     startTimer: async (message) => {
       const { timerManager } = ensureServices(context);
-      sidebarProvider?.post({ type: "timerState", timer: await timerManager.start(String(message.problemDir || "")) });
+      postSidebarMessage({ type: "timerState", timer: await timerManager.start(String(message.problemDir || "")) });
     },
     pauseTimer: async (message) => {
       const { timerManager } = ensureServices(context);
-      sidebarProvider?.post({ type: "timerState", timer: await timerManager.pause(String(message.problemDir || "")) });
+      postSidebarMessage({ type: "timerState", timer: await timerManager.pause(String(message.problemDir || "")) });
     },
     resetTimer: async (message) => {
       const { timerManager } = ensureServices(context);
-      sidebarProvider?.post({ type: "timerState", timer: await timerManager.reset(String(message.problemDir || "")) });
+      postSidebarMessage({ type: "timerState", timer: await timerManager.reset(String(message.problemDir || "")) });
     },
     setTimerTarget: async (message) => {
       const { timerManager } = ensureServices(context);
-      sidebarProvider?.post({
+      postSidebarMessage({
         type: "timerState",
         timer: await timerManager.setTarget(String(message.problemDir || ""), message.targetMinutes),
       });
     },
+    timerNotification: async (message) => {
+      const text = String(message.text || "").trim();
+      if (text) {
+        vscode.window.showInformationMessage(text);
+      }
+    },
+  }, {
+    onDidResolveView: replayLatestStatusMessage,
   });
 
   context.subscriptions.push(
@@ -130,7 +187,7 @@ function activate(context) {
       testRunner.stop();
     }),
     vscode.commands.registerCommand("programmersHelper.runCustomTests", async () => {
-      if (!sidebarProvider?.post({ type: "runCustomRequest" })) {
+      if (!postSidebarMessage({ type: "runCustomRequest" })) {
         vscode.window.showInformationMessage("사이드바에서 커스텀 테스트를 실행해주세요.");
       }
     }),
@@ -171,13 +228,13 @@ function ensureServices(context) {
     diagnosticCollection,
     extensionDir: __dirname,
     execCommand,
-    postStatus: (message) => sidebarProvider?.post(message),
+    postStatus: postSidebarMessage,
   });
   problemCommands = new ProblemCommands({
     context,
     extensionDir: __dirname,
     execCommand,
-    postMessage: (message) => sidebarProvider?.post(message),
+    postMessage: postSidebarMessage,
     refreshProblems: async (options) => sidebarProvider?.refreshProblems(options),
     runTests: async (customTestsText, providedProblemDir) => {
       await testRunner.runFromCommand(context, customTestsText, providedProblemDir, () => problemCommands.getProblemDir());
@@ -189,8 +246,8 @@ function ensureServices(context) {
 
 // 확장 종료 시 테스트를 중지하고 Docker 정리는 백그라운드에 맡깁니다.
 async function deactivate() {
-  testRunner?.stop();
   await timerManager?.pauseAllRunning();
+  testRunner?.stop();
   try {
     const {
       stopDockerRuntimeContainersInBackground,
@@ -215,7 +272,7 @@ async function handleExecutionModeChange() {
   }
 
   if (previousExecutionMode === "local" && nextExecutionMode === "docker") {
-    sidebarProvider?.post({
+    postSidebarMessage({
       type: "status",
       kind: "",
       text: "Docker 실행으로 전환됨\n\n문제를 열거나 테스트를 실행하면 Docker 컨테이너를 준비합니다.",
@@ -227,7 +284,7 @@ async function handleExecutionModeChange() {
     return;
   }
 
-  sidebarProvider?.post({
+  postSidebarMessage({
     type: "status",
     kind: "ready",
     text: "로컬 실행으로 전환됨\n\nDocker 컨테이너를 정리하고 있습니다.",
@@ -243,7 +300,7 @@ async function handleExecutionModeChange() {
       ? `${stopped.length}개 컨테이너 중지\n${stopped.join("\n")}`
       : "실행 중인 helper Docker 컨테이너가 없습니다.";
     outputChannel?.appendLine(`[Programmers Helper] Switched executionMode to local. ${detail.replace(/\n/g, " ")}`);
-    sidebarProvider?.post({
+    postSidebarMessage({
       type: "status",
       kind: "ready",
       text: `로컬 실행으로 전환됨\n\n${detail}`,
@@ -251,7 +308,7 @@ async function handleExecutionModeChange() {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     outputChannel?.appendLine(`[Programmers Helper] Docker cleanup after local switch failed: ${message}`);
-    sidebarProvider?.post({
+    postSidebarMessage({
       type: "status",
       kind: "error",
       text: `로컬 실행으로 전환됨\n\nDocker 컨테이너 정리에 실패했습니다.\n${message}`,
