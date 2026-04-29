@@ -5,6 +5,17 @@ const {
   PROGRAMMERS_HOST,
 } = require("./config");
 
+const FETCH_RETRY_DELAYS_MS = [300, 800];
+const RETRYABLE_HTTP_STATUS_CODES = new Set([502, 503, 504]);
+const RETRYABLE_NETWORK_ERROR_CODES = new Set([
+  "ECONNRESET",
+  "ETIMEDOUT",
+  "EAI_AGAIN",
+  "ECONNREFUSED",
+  "ENETUNREACH",
+  "EHOSTUNREACH",
+]);
+
 // problem.md에서 입출력 예 테이블을 추출합니다.
 function extractExamplesFromMarkdown(markdown) {
   const lines = markdown.split(/\r?\n/);
@@ -65,7 +76,27 @@ function cleanCell(value) {
 }
 
 // URL의 텍스트 응답을 가져옵니다.
-function fetchText(targetUrl, redirects = 0) {
+async function fetchText(targetUrl, redirects = 0) {
+  let lastError;
+
+  for (let attempt = 0; attempt <= FETCH_RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      return await fetchTextOnce(targetUrl, redirects);
+    } catch (error) {
+      lastError = error;
+
+      if (!shouldRetryFetchError(error) || attempt >= FETCH_RETRY_DELAYS_MS.length) {
+        throw error;
+      }
+
+      await delay(FETCH_RETRY_DELAYS_MS[attempt]);
+    }
+  }
+
+  throw lastError;
+}
+
+function fetchTextOnce(targetUrl, redirects = 0) {
   return new Promise((resolve, reject) => {
     if (!isAllowedProgrammersUrl(targetUrl)) {
       reject(new Error(`허용되지 않은 프로그래머스 URL입니다: ${targetUrl}`));
@@ -100,7 +131,9 @@ function fetchText(targetUrl, redirects = 0) {
         }
 
         if (response.statusCode !== 200) {
-          reject(new Error(`HTTP ${response.statusCode}: ${targetUrl}`));
+          const error = new Error(`HTTP ${response.statusCode}: ${targetUrl}`);
+          error.statusCode = response.statusCode;
+          reject(error);
           response.resume();
           return;
         }
@@ -122,9 +155,22 @@ function fetchText(targetUrl, redirects = 0) {
 
     request.on("error", reject);
     request.setTimeout(15000, () => {
-      request.destroy(new Error("프로그래머스 페이지 요청 시간이 초과되었습니다."));
+      const error = new Error("프로그래머스 페이지 요청 시간이 초과되었습니다.");
+      error.code = "ETIMEDOUT";
+      request.destroy(error);
     });
   });
+}
+
+function shouldRetryFetchError(error) {
+  return (
+    RETRYABLE_HTTP_STATUS_CODES.has(error?.statusCode) ||
+    RETRYABLE_NETWORK_ERROR_CODES.has(error?.code)
+  );
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // 네트워크 fetch는 프로그래머스 호스트만 허용한다.

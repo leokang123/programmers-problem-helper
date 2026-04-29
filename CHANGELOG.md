@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.10
+
+- Retry temporary Programmers page fetch failures for `502`, `503`, `504`, and short-lived network errors before surfacing the failure.
+- Keep permanent HTTP failures such as missing or forbidden pages as immediate errors.
+- Bump the extension manifest and lockfile to `0.3.10`.
+
 ## 0.3.9
 
 - Remove the Dev Container development workflow and use local `Run Extension` as the development path.
