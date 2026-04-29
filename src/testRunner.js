@@ -34,6 +34,15 @@ const {
 const {
   getExecutionSettings,
 } = require("./settings");
+const {
+  ARTIFACTS_DIR_NAME,
+  HELPER_DIR_NAME,
+  GENERATED_DIR_NAME,
+  RUNNERS_DIR_NAME,
+  fingerprintPath,
+  runnerPath,
+  runnerRelativePath,
+} = require("./helperPaths");
 
 const TEST_PROCESS_TIMEOUT_GRACE_MS = 2000;
 const MAX_DISPLAY_OUTPUT_CHARS = 20000;
@@ -214,20 +223,22 @@ class TestRunner {
       throw new Error(`${path.basename(solutionPath)}에서 solution 함수 시그니처를 찾지 못했습니다.`);
     }
 
-    const runnerDir = path.join(problemDir, ".programmers-helper");
-    await vscode.workspace.fs.createDirectory(vscode.Uri.file(runnerDir));
-    const runnerPath = path.join(runnerDir, language.runnerFileName);
     const binaryExtension = getLocalBinaryExtension(settings);
     const fastArtifactPath = language.id === "cpp" ? `${language.fastArtifactPath}${binaryExtension}` : language.fastArtifactPath;
     const debugArtifactPath = language.id === "cpp" ? `${language.debugArtifactPath}${binaryExtension}` : language.debugArtifactPath;
-    const includePath = path.relative(runnerDir, solutionPath).split(path.sep).join(path.posix.sep);
+    const generatedRunnerPath = language.id === "python"
+      ? path.join(problemDir, fastArtifactPath)
+      : runnerPath(problemDir, language.runnerFileName);
+    const runnerDir = path.dirname(generatedRunnerPath);
+    await vscode.workspace.fs.createDirectory(vscode.Uri.file(runnerDir));
+    const includePath = path.relative(path.dirname(generatedRunnerPath), solutionPath).split(path.sep).join(path.posix.sep);
     const memoryOptions = this.resolveRunnerMemoryOptions(settings, language);
     const runnerCode = builder.buildRunner(signature, examples, includePath, memoryOptions);
     const fastFingerprint = createRunnerFingerprint(runnerCode, solutionCode, fastCompileFlags, includePath, settings, language.id);
     const debugFingerprint = language.supportsDebugRetry
       ? createRunnerFingerprint(runnerCode, solutionCode, debugCompileFlags, includePath, settings, language.id)
       : fastFingerprint;
-    await writeFileIfChanged(runnerPath, runnerCode);
+    await writeFileIfChanged(generatedRunnerPath, runnerCode);
 
     return {
       settings,
@@ -241,7 +252,7 @@ class TestRunner {
       memoryOptions,
       fastArtifactPath,
       debugArtifactPath,
-      runnerPath,
+      runnerPath: generatedRunnerPath,
       includePath,
       fastFingerprint,
       debugFingerprint,
@@ -286,6 +297,8 @@ class TestRunner {
       return;
     }
 
+    await ensureParentDirectory(path.join(runContext.problemDir, outputArtifactPath));
+
     if (runContext.language.id === "python") {
       this.outputChannel.appendLine(`[Programmers Helper] ${label} 생략: Python은 별도 컴파일 없이 생성된 runner를 실행합니다.`);
     } else if (runContext.language.id === "java") {
@@ -299,7 +312,7 @@ class TestRunner {
         runtime.containerName,
         runContext.settings.compilerCommand,
         ...compileFlags,
-        path.posix.relative(runtime.problemPath, path.posix.join(runtime.problemPath, ".programmers-helper", runContext.language.runnerFileName)),
+        getDockerRunnerRelativePath(runtime, runContext),
         "-o",
         outputArtifactPath,
       ], runContext.problemDir, {
@@ -324,7 +337,7 @@ class TestRunner {
       await this.ensureLocalCommandAvailable(runContext.settings.compilerCommand, runContext.problemDir, "컴파일러 확인");
       await this.execFile(runContext.settings.compilerCommand, [
         ...compileFlags,
-        path.join(".programmers-helper", runContext.language.runnerFileName),
+        runnerRelativePath(runContext.language.runnerFileName),
         "-o",
         outputArtifactPath,
       ], runContext.problemDir, {
@@ -334,7 +347,9 @@ class TestRunner {
     }
 
     if (fingerprint) {
-      await writeJsonFile(path.join(runContext.problemDir, `${outputArtifactPath}.meta.json`), {
+      const fingerprintFilePath = getFingerprintPath(runContext.problemDir, runContext.language.id, outputArtifactPath);
+      await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(fingerprintFilePath)));
+      await writeJsonFile(fingerprintFilePath, {
         fingerprint,
         updatedAt: new Date().toISOString(),
       });
@@ -359,7 +374,7 @@ class TestRunner {
         "-d",
         outputArtifactPath,
         path.relative(runContext.problemDir, runContext.solutionPath).split(path.sep).join(path.posix.sep),
-        path.posix.relative(runtime.problemPath, path.posix.join(runtime.problemPath, ".programmers-helper", runContext.language.runnerFileName)),
+        getDockerRunnerRelativePath(runtime, runContext),
       ], runContext.problemDir, {
         timeoutMs: COMPILE_TIMEOUT_MS,
         label,
@@ -374,7 +389,7 @@ class TestRunner {
       "-d",
       outputArtifactPath,
       path.relative(runContext.problemDir, runContext.solutionPath),
-      path.join(".programmers-helper", runContext.language.runnerFileName),
+      runnerRelativePath(runContext.language.runnerFileName),
     ], runContext.problemDir, {
       timeoutMs: COMPILE_TIMEOUT_MS,
       label,
@@ -491,6 +506,7 @@ class TestRunner {
         "env",
         "LANG=C.UTF-8",
         "LC_ALL=C.UTF-8",
+        "PYTHONDONTWRITEBYTECODE=1",
         "timeout",
         "--signal=TERM",
         "--kill-after=1s",
@@ -519,6 +535,9 @@ class TestRunner {
           streamStderr: false,
           timeoutMs: testTimeoutMs,
           maxCaptureOutputChars: MAX_CAPTURE_OUTPUT_CHARS,
+          env: {
+            PYTHONDONTWRITEBYTECODE: "1",
+          },
         });
       } catch (error) {
         if (error?.code === "ETIMEOUT") {
@@ -850,6 +869,7 @@ function createRunnerFingerprint(runnerCode, solutionCode, compileFlags, include
 }
 
 async function writeFileIfChanged(filePath, contents) {
+  await ensureParentDirectory(filePath);
   try {
     const current = await readText(vscode.Uri.file(filePath));
     if (current === contents) {
@@ -862,14 +882,56 @@ async function writeFileIfChanged(filePath, contents) {
   await vscode.workspace.fs.writeFile(vscode.Uri.file(filePath), Buffer.from(contents, "utf8"));
 }
 
+async function ensureParentDirectory(filePath) {
+  const parent = path.dirname(filePath);
+  if (parent && parent !== filePath) {
+    await vscode.workspace.fs.createDirectory(vscode.Uri.file(parent));
+  }
+}
+
 async function isCompiledRunnerFresh(problemDir, binaryPath, fingerprint) {
   try {
-    await vscode.workspace.fs.stat(vscode.Uri.file(path.join(problemDir, binaryPath)));
-    const metadata = await readJsonFile(path.join(problemDir, `${binaryPath}.meta.json`));
+    const artifactPath = path.join(problemDir, binaryPath);
+    await vscode.workspace.fs.stat(vscode.Uri.file(artifactPath));
+    if (isJavaClassesArtifact(binaryPath)) {
+      await vscode.workspace.fs.stat(vscode.Uri.file(path.join(artifactPath, "TestRunner.class")));
+    }
+    const metadata = await readJsonFile(getFingerprintPath(problemDir, undefined, binaryPath));
     return metadata?.fingerprint === fingerprint;
   } catch {
     return false;
   }
+}
+
+function getFingerprintPath(problemDir, languageId, artifactRelativePath) {
+  const normalized = String(artifactRelativePath || "").split(path.win32.sep).join(path.posix.sep);
+  const artifactRoot = path.posix.join(HELPER_DIR_NAME, GENERATED_DIR_NAME, ARTIFACTS_DIR_NAME);
+  let fileName = `${languageId || path.posix.basename(normalized)}.json`;
+  if (normalized.startsWith(path.posix.join(artifactRoot, "cpp-fast"))) {
+    fileName = "cpp-fast.json";
+  } else if (normalized.startsWith(path.posix.join(artifactRoot, "cpp-debug"))) {
+    fileName = "cpp-debug.json";
+  } else if (normalized === path.posix.join(artifactRoot, "java-classes")) {
+    fileName = "java.json";
+  } else if (normalized === path.posix.join(HELPER_DIR_NAME, GENERATED_DIR_NAME, RUNNERS_DIR_NAME, "test_runner.py")) {
+    fileName = "python.json";
+  }
+  return fingerprintPath(problemDir, fileName);
+}
+
+function isJavaClassesArtifact(artifactRelativePath) {
+  const normalized = String(artifactRelativePath || "").split(path.win32.sep).join(path.posix.sep);
+  return normalized === path.posix.join(HELPER_DIR_NAME, GENERATED_DIR_NAME, ARTIFACTS_DIR_NAME, "java-classes");
+}
+
+function getDockerRunnerRelativePath(runtime, runContext) {
+  if (runContext.language.id === "python") {
+    return path.posix.relative(runtime.problemPath, path.posix.join(runtime.problemPath, runContext.fastArtifactPath));
+  }
+  return path.posix.relative(
+    runtime.problemPath,
+    path.posix.join(runtime.problemPath, HELPER_DIR_NAME, GENERATED_DIR_NAME, RUNNERS_DIR_NAME, runContext.language.runnerFileName)
+  );
 }
 
 async function readJsonFile(filePath) {

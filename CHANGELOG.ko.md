@@ -1,5 +1,13 @@
 # 변경 이력
 
+## 0.3.3
+
+- `.programmers-helper` 내부를 `initial`, `generated/runners`, `generated/artifacts`, `generated/fingerprints` 영역으로 나눠 정리했습니다.
+- 기존 문제 폴더의 초기 코드와 URL fallback은 유지하면서 `programmers.json`의 중복 메타데이터를 줄였습니다.
+- Python 테스트 실행 중 `__pycache__`가 생기지 않도록 하고, C++/Java/Python 생성물이 사용자 풀이 파일 주변에 섞이지 않도록 정리했습니다.
+- 새 helper 저장 구조와 메타데이터 소유 규칙을 작업자 문서에 반영했습니다.
+- `package.json`과 `package-lock.json` 버전을 `0.3.3`으로 올렸습니다.
+
 ## 0.3.2
 
 - 로컬 실행 모드에서 문제를 열 때 C++/Java/Python 실행 명령어를 확인하고 준비 완료 또는 준비 실패 상태를 표시하도록 했습니다.

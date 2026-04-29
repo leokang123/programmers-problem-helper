@@ -39,6 +39,9 @@ const {
   inferLanguageFromRunnablePath,
   isSupportedSourceExtension,
 } = require("./languages");
+const {
+  helperPath,
+} = require("./helperPaths");
 
 // 문제 관련 VS Code 액션들을 묶어 관리합니다.
 class ProblemCommands {
@@ -169,7 +172,7 @@ class ProblemCommands {
 
     const settings = getExecutionSettings();
     const problem = await loadProblemInfo(safeDir, settings.language);
-    const notesUri = vscode.Uri.file(path.join(safeDir, ".programmers-helper", "notes.md"));
+    const notesUri = vscode.Uri.file(helperPath(safeDir, "notes.md"));
     await ensureNotesFile(notesUri, problem);
     await this.context.workspaceState.update("lastProblemDir", safeDir);
     if (await closeOpenTabsForUri(notesUri)) {
@@ -776,12 +779,9 @@ function sameFsPath(left, right) {
 
 // 다시풀 상태 파일을 저장합니다.
 async function writeReviewState(problemDir, review) {
-  const helperDir = vscode.Uri.file(path.join(problemDir, ".programmers-helper"));
+  const helperDir = vscode.Uri.file(helperPath(problemDir));
   const reviewUri = vscode.Uri.joinPath(helperDir, "review.json");
-  const payload = {
-    review,
-    updatedAt: new Date().toISOString(),
-  };
+  const payload = { review };
 
   await vscode.workspace.fs.createDirectory(helperDir);
   await vscode.workspace.fs.writeFile(reviewUri, Buffer.from(JSON.stringify(payload, null, 2) + "\n", "utf8"));

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.3
+
+- Reorganize `.programmers-helper` internals into clearer `initial`, `generated/runners`, `generated/artifacts`, and `generated/fingerprints` areas.
+- Trim duplicated `programmers.json` metadata while preserving legacy initial-code and URL fallbacks for existing problem folders.
+- Prevent Python test runs from creating `__pycache__`, and keep generated C++/Java/Python artifacts out of user-facing problem files.
+- Update the feature-flow documentation for the new helper storage layout and metadata ownership rules.
+- Bump the extension manifest and lockfile to `0.3.3`.
+
 ## 0.3.2
 
 - Check local execution commands when opening a problem in local mode, reporting ready or failed status for C++, Java, and Python.

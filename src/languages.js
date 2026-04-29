@@ -1,4 +1,12 @@
 const path = require("path");
+const {
+  HELPER_DIR_NAME,
+  SOLUTIONS_DIR_NAME,
+  artifactRelativePath,
+  initialPath,
+  legacyInitialPath,
+  runnerRelativePath,
+} = require("./helperPaths");
 
 const LANGUAGE_DEFINITIONS = {
   cpp: {
@@ -8,8 +16,8 @@ const LANGUAGE_DEFINITIONS = {
     solutionFileName: "solution.cpp",
     initialSolutionFileName: "initial-solution.cpp",
     runnerFileName: "test_runner.cpp",
-    fastArtifactPath: ".programmers-helper/test_runner_fast",
-    debugArtifactPath: ".programmers-helper/test_runner_debug",
+    fastArtifactPath: artifactRelativePath("cpp-fast"),
+    debugArtifactPath: artifactRelativePath("cpp-debug"),
     sourceExtensions: [".cpp"],
     snapshotExtension: ".cpp",
     compilerSettingsLabel: (settings) => `${settings.compilerCommand} -std=${settings.cppStandard}`,
@@ -22,8 +30,8 @@ const LANGUAGE_DEFINITIONS = {
     solutionFileName: "Solution.java",
     initialSolutionFileName: "initial-solution.java",
     runnerFileName: "TestRunner.java",
-    fastArtifactPath: ".programmers-helper/java-classes",
-    debugArtifactPath: ".programmers-helper/java-classes",
+    fastArtifactPath: artifactRelativePath("java-classes"),
+    debugArtifactPath: artifactRelativePath("java-classes"),
     sourceExtensions: [".java"],
     snapshotExtension: ".java",
     compilerSettingsLabel: () => "javac/java",
@@ -36,8 +44,8 @@ const LANGUAGE_DEFINITIONS = {
     solutionFileName: "solution.py",
     initialSolutionFileName: "initial-solution.py",
     runnerFileName: "test_runner.py",
-    fastArtifactPath: ".programmers-helper/test_runner.py",
-    debugArtifactPath: ".programmers-helper/test_runner.py",
+    fastArtifactPath: runnerRelativePath("test_runner.py"),
+    debugArtifactPath: runnerRelativePath("test_runner.py"),
     sourceExtensions: [".py"],
     snapshotExtension: ".py",
     compilerSettingsLabel: () => "python3",
@@ -63,12 +71,12 @@ function getSolutionPath(problemDir, languageId) {
   return path.join(problemDir, getSolutionFileName(languageId));
 }
 
-function getInitialSolutionRelativePath(languageId) {
-  return path.posix.join(".programmers-helper", getLanguage(languageId).initialSolutionFileName);
+function getInitialSolutionPath(problemDir, languageId) {
+  return initialPath(problemDir, getLanguage(languageId).initialSolutionFileName);
 }
 
-function getInitialSolutionPath(problemDir, languageId) {
-  return path.join(problemDir, ".programmers-helper", getLanguage(languageId).initialSolutionFileName);
+function getLegacyInitialSolutionPath(problemDir, languageId) {
+  return legacyInitialPath(problemDir, getLanguage(languageId).initialSolutionFileName);
 }
 
 function getSnapshotFileName(languageId, timestamp) {
@@ -89,7 +97,7 @@ function isRunnableSolutionPath(relativeParts, languageId) {
     return relativeParts[0] === language.solutionFileName;
   }
 
-  if (relativeParts.length !== 3 || relativeParts[0] !== ".programmers-helper" || relativeParts[1] !== "solutions") {
+  if (relativeParts.length !== 3 || relativeParts[0] !== HELPER_DIR_NAME || relativeParts[1] !== SOLUTIONS_DIR_NAME) {
     return false;
   }
 
@@ -104,7 +112,7 @@ function inferLanguageFromRunnablePath(relativeParts) {
 module.exports = {
   DEFAULT_LANGUAGE_ID,
   getInitialSolutionPath,
-  getInitialSolutionRelativePath,
+  getLegacyInitialSolutionPath,
   getLanguage,
   getLanguageBySourceExtension,
   getLanguageIds,

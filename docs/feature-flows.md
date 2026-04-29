@@ -60,23 +60,32 @@ Programmers/
     solution.py
     .programmers-helper/
       programmers.json
-      initial-solution.cpp
-      initial-solution.java
-      initial-solution.py
       custom-tests.json
       review.json
       notes.md
       solution-history.json
+      initial/
+        initial-solution.cpp
+        initial-solution.java
+        initial-solution.py
       solutions/
         solution-<timestamp>.cpp
         solution-<timestamp>.java
         solution-<timestamp>.py
-      test_runner.cpp
-      TestRunner.java
-      test_runner.py
-      java-classes/
-      test_runner_fast
-      test_runner_debug
+      generated/
+        runners/
+          test_runner.cpp
+          TestRunner.java
+          test_runner.py
+        artifacts/
+          cpp-fast
+          cpp-debug
+          java-classes/
+        fingerprints/
+          cpp-fast.json
+          cpp-debug.json
+          java.json
+          python.json
 ```
 
 중요한 source of truth:
@@ -87,7 +96,7 @@ Programmers/
 - 현재 문제: Webview 내부 `currentProblemDir`
 - 마지막 문제: `context.workspaceState.lastProblemDir`
 - 현재 언어: VS Code 설정 `programmersHelper.language`
-- 초기 코드: `.programmers-helper/initial-solution.<ext>`, 없으면 기존 호환용 `programmers.json.initialCode`
+- 초기 코드: `.programmers-helper/initial/initial-solution.<ext>`, 없으면 기존 호환용 `.programmers-helper/initial-solution.<ext>`나 `programmers.json.initialCode`
 
 ## 다중 언어 flow
 
@@ -95,15 +104,15 @@ Programmers/
 
 - `programmersParam`: Programmers URL의 `?language=` 값
 - `solutionFileName`: 문제 폴더의 현재 풀이 파일명
-- `initialSolutionFileName`: `.programmers-helper` 아래 초기 템플릿 파일명
+- `initialSolutionFileName`: `.programmers-helper/initial` 아래 초기 템플릿 파일명
 - `runnerFileName`: 생성되는 테스트 러너 파일명
 - `snapshotExtension`: 풀이 기록 snapshot 확장자
 
 현재 지원 언어:
 
-- `cpp`: `solution.cpp`, `.programmers-helper/initial-solution.cpp`, `.programmers-helper/test_runner.cpp`
-- `java`: `Solution.java`, `.programmers-helper/initial-solution.java`, `.programmers-helper/TestRunner.java`
-- `python`: `solution.py`, `.programmers-helper/initial-solution.py`, `.programmers-helper/test_runner.py`
+- `cpp`: `solution.cpp`, `.programmers-helper/initial/initial-solution.cpp`, `.programmers-helper/generated/runners/test_runner.cpp`
+- `java`: `Solution.java`, `.programmers-helper/initial/initial-solution.java`, `.programmers-helper/generated/runners/TestRunner.java`
+- `python`: `solution.py`, `.programmers-helper/initial/initial-solution.py`, `.programmers-helper/generated/runners/test_runner.py`
 
 문제를 열 때 `ProblemCommands.openProblemFromDir()`는 `getExecutionSettings().language`를 읽고 `ensureSolutionForLanguage(problemDir, language)`를 먼저 호출한다.
 
@@ -112,7 +121,7 @@ Programmers/
 1. 현재 언어의 풀이 파일과 초기 템플릿 파일이 있는지 확인한다.
 2. 둘 중 하나가 없으면 `?language=<current>` URL로 Programmers 페이지를 다시 가져온다.
 3. 문제 설명은 덮어쓰지 않고 현재 언어의 풀이 파일과 초기 템플릿만 없을 때 생성한다.
-4. `programmers.json.languages[language]`에 언어별 `url`, `solutionFile`, `initialCodePath`를 기록한다.
+4. `programmers.json.languages[language]`에 언어별 `url`을 기록한다. 풀이 파일명과 초기 템플릿 경로는 `src/languages.js`에서 계산한다.
 
 기존 C++ 문제는 `programmers.json.languages`가 없어도 계속 동작한다. Java로 전환 후 문제를 열면 Java 템플릿이 추가된다.
 
@@ -220,16 +229,9 @@ Programmers/
 {
   "lessonId": "12906",
   "title": "같은 숫자는 싫어",
-  "url": "https://school.programmers.co.kr/learn/courses/30/lessons/12906?language=cpp",
-  "initialCode": "...",
-  "initialCodePath": ".programmers-helper/initial-solution.cpp",
-  "language": "cpp",
-  "solutionFile": "solution.cpp",
   "languages": {
     "cpp": {
-      "url": "https://school.programmers.co.kr/learn/courses/30/lessons/12906?language=cpp",
-      "solutionFile": "solution.cpp",
-      "initialCodePath": ".programmers-helper/initial-solution.cpp"
+      "url": "https://school.programmers.co.kr/learn/courses/30/lessons/12906?language=cpp"
     }
   },
   "examples": [
@@ -245,6 +247,7 @@ Programmers/
 
 - `problem.md`는 사용자에게 보이는 문제 설명이고, 샘플 테스트의 primary source는 `programmers.json.examples`다.
 - 기존 문제에 `examples`가 없으면 `loadProblemExamples()`가 `problem.md`에서 fallback 파싱 후 `programmers.json`에 backfill한다.
+- 기존 호환을 위해 오래된 `url`, `initialCode`, `initialCodePath`, `language`, `solutionFile`, `languages.*.initialCode`는 읽을 수 있지만 새로 저장할 때는 제거한다.
 - `writeFileIfAbsent()`는 기존 `problem.md`, 풀이 파일, 초기 템플릿을 덮어쓰지 않는다.
 
 ## 문제 열기 flow
@@ -344,6 +347,7 @@ Programmers/
 
 문제 목록에는 `solutionHistory` 전체가 아니라 `solutionHistoryCount`만 포함한다.
 현재 열린 문제의 상세 정보가 필요할 때만 `loadProblemInfo()`가 같은 summary에 현재 언어 `solutionHistory`와 다른 언어 `otherSolutionHistory`를 추가한다.
+`problem-index.json`의 `review`와 `solutionHistoryCount`는 목록 렌더링을 위한 캐시다. 원본 상태는 각각 문제 폴더의 `review.json`과 `solution-history.json`이고, 인덱스가 없거나 범위를 벗어나면 전체 스캔으로 다시 만든다.
 
 ### 성능 주의점
 
@@ -404,7 +408,7 @@ Programmers/
 
 주의:
 
-- `.programmers-helper/test_runner.cpp`, `.programmers-helper/TestRunner.java`, `.programmers-helper/test_runner.py`는 내부 생성 파일이라 실행 대상으로 사용하지 않는다.
+- `.programmers-helper/generated/runners/*`와 `.programmers-helper/generated/artifacts/*`는 내부 생성 파일이라 실행 대상으로 사용하지 않는다.
 - 현재 문제 밖의 풀이 파일은 활성 에디터나 보이는 에디터에 있어도 무시한다.
 
 ### 테스트 데이터 결정
@@ -494,8 +498,8 @@ docker exec -i
   -w /workspace/Programmers/<problemFolder>
   <containerName>
   clang++ -std=c++17 -Wall -O2
-  .programmers-helper/test_runner.cpp
-  -o .programmers-helper/test_runner_fast
+  .programmers-helper/generated/runners/test_runner.cpp
+  -o .programmers-helper/generated/artifacts/cpp-fast
 ```
 
 Java 실행용:
@@ -505,12 +509,12 @@ docker exec -i
   -w /workspace/Programmers/<problemFolder>
   <containerName>
   javac -encoding UTF-8
-  -d .programmers-helper/java-classes
+  -d .programmers-helper/generated/artifacts/java-classes
   Solution.java
-  .programmers-helper/TestRunner.java
+  .programmers-helper/generated/runners/TestRunner.java
 ```
 
-Python은 별도 컴파일 단계가 없다. `compileRunner()`에서는 생성된 `.programmers-helper/test_runner.py`를 그대로 실행 산출물로 보고 컴파일을 생략한다.
+Python은 별도 컴파일 단계가 없다. `compileRunner()`에서는 생성된 `.programmers-helper/generated/runners/test_runner.py`를 그대로 실행 대상으로 보고 컴파일을 생략한다.
 
 그 뒤:
 
@@ -518,7 +522,7 @@ Python은 별도 컴파일 단계가 없다. `compileRunner()`에서는 생성�
 docker exec -i
   -w /workspace/Programmers/<problemFolder>
   <containerName>
-  chmod +x .programmers-helper/test_runner_fast
+  chmod +x .programmers-helper/generated/artifacts/cpp-fast
 ```
 
 ### 실행
@@ -530,20 +534,20 @@ docker exec -i
   -w /workspace/Programmers/<problemFolder>
   <containerName>
   timeout --signal=TERM --kill-after=1s 3s
-  .programmers-helper/test_runner_fast
+  .programmers-helper/generated/artifacts/cpp-fast
   <testIndex>
 ```
 
 Java는 같은 timeout wrapper 안에서 아래 형태로 실행한다.
 
 ```text
-java -cp .programmers-helper/java-classes TestRunner <testIndex>
+java -cp .programmers-helper/generated/artifacts/java-classes TestRunner <testIndex>
 ```
 
 Python:
 
 ```text
-python3 .programmers-helper/test_runner.py <testIndex>
+python3 .programmers-helper/generated/runners/test_runner.py <testIndex>
 ```
 
 `TEST_TIMEOUT_MS` 기본값은 3000ms다.
@@ -681,7 +685,7 @@ python3 .programmers-helper/test_runner.py <testIndex>
 2. Webview가 `{ type: "openWebsite", problemDir }` 메시지를 보낸다.
 3. `ProblemCommands.openWebsite(problemDir)`이 문제 폴더를 검증한다.
 4. `loadProblemInfo(problemDir, currentLanguage)`에서 현재 언어 URL을 읽는다.
-5. `programmers.json.languages[currentLanguage].url`이 있으면 우선 사용하고, 없으면 기존 `programmers.json.url`을 사용한다.
+5. `programmers.json.languages[currentLanguage].url`이 있으면 우선 사용하고, 없으면 기존 `programmers.json.url`이나 `lessonId` 기반 계산 URL을 사용한다.
 6. `getActiveCodeTarget(problemDir)`로 실행 대상과 같은 기준의 풀이 파일을 찾는다.
 7. 활성/보이는 snapshot이 있으면 그 파일을 우선하고, 없으면 현재 설정 언어의 기본 풀이 파일을 사용한다.
 8. 파일 저장 후 코드를 읽어 `vscode.env.clipboard.writeText()`로 클립보드에 복사한다.
@@ -695,7 +699,7 @@ python3 .programmers-helper/test_runner.py <testIndex>
 4. `validateProblemDir(problemDir)`
 5. `vscode.workspace.saveAll(false)`
 6. `createSolutionAttempt(safeDir)`
-7. `.programmers-helper/review.json`에 review true 저장
+7. `.programmers-helper/review.json`에 `{ "review": true }` 저장
 8. 문제 다시 열기
 9. 현재 실행 모드에 맞는 실행 환경 준비
 10. 사이드바 현재 문제 상태 갱신

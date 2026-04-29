@@ -21,16 +21,16 @@
 - PASS/FAIL 모두 expected / actual 출력
 - 문제 목록에서 `새풀이`를 눌러 현재 언어 풀이 파일을 이전 풀이로 보관
 - `풀이기록` 필터에서 이전 풀이를 시간순으로 열거나 삭제
-- 처음 받아온 풀이 원본을 `.programmers-helper/initial-solution.<ext>`로 보관
+- 처음 받아온 풀이 원본을 `.programmers-helper/initial/initial-solution.<ext>`로 보관
 - 현재 풀이 파일 코드를 클립보드에 복사하고 프로그래머스 웹 페이지 열기
 
 ## 지원 언어
 
 `programmersHelper.language` 설정에서 기본 언어를 선택할 수 있습니다.
 
-- C++: `solution.cpp`, `.programmers-helper/initial-solution.cpp`, `clang++` 또는 `g++`
-- Java: `Solution.java`, `.programmers-helper/initial-solution.java`, `javac` / `java`
-- Python: `solution.py`, `.programmers-helper/initial-solution.py`, `python3`
+- C++: `solution.cpp`, `.programmers-helper/initial/initial-solution.cpp`, `clang++` 또는 `g++`
+- Java: `Solution.java`, `.programmers-helper/initial/initial-solution.java`, `javac` / `java`
+- Python: `solution.py`, `.programmers-helper/initial/initial-solution.py`, `python3`
 
 기존 문제를 다른 언어로 열면 해당 언어의 풀이 템플릿이 없을 때만 프로그래머스 페이지를 다시 가져와 언어별 초기 파일을 추가합니다. 문제 설명 `problem.md`는 덮어쓰지 않습니다.
 

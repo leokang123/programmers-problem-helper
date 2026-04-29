@@ -3,7 +3,7 @@ const vscode = require("vscode");
 const {
   DEFAULT_LANGUAGE_ID,
   getInitialSolutionPath,
-  getInitialSolutionRelativePath,
+  getLegacyInitialSolutionPath,
   getLanguage,
   getLanguageIds,
   getSnapshotFileName,
@@ -20,6 +20,14 @@ const {
   matchFirst,
   slugify,
 } = require("./problemParsing");
+const {
+  HELPER_DIR_NAME,
+  INITIAL_DIR_NAME,
+  helperPath,
+  helperRelativePath,
+  solutionsRelativePath,
+  solutionsPath,
+} = require("./helperPaths");
 
 // 저장된 문제 목록을 빠른 인덱스에서 읽고, 필요할 때만 전체 스캔으로 재생성합니다.
 async function loadProblems(programmersDir, options = {}) {
@@ -134,7 +142,7 @@ function shouldUseWorkspaceProgrammersDir(context, workspaceUri) {
 // 문제 폴더의 표시 정보를 읽습니다.
 async function loadProblemInfo(problemDir, languageId = DEFAULT_LANGUAGE_ID) {
   const summary = await loadProblemSummary(problemDir);
-  const metadata = await readJson(vscode.Uri.file(path.join(problemDir, ".programmers-helper", "programmers.json")));
+  const metadata = await readJson(vscode.Uri.file(helperPath(problemDir, "programmers.json")));
   const language = getLanguage(languageId);
   const history = await readSolutionHistory(problemDir);
   const currentLanguageHistory = history.attempts.filter((attempt) => attempt.language === language.id);
@@ -152,7 +160,7 @@ async function loadProblemInfo(problemDir, languageId = DEFAULT_LANGUAGE_ID) {
 // 목록에 필요한 최소 문제 정보를 읽습니다.
 async function loadProblemSummary(problemDir) {
   const folderName = path.basename(problemDir);
-  const helperDir = vscode.Uri.file(path.join(problemDir, ".programmers-helper"));
+  const helperDir = vscode.Uri.file(helperPath(problemDir));
   const metadata = await readJson(vscode.Uri.joinPath(helperDir, "programmers.json"));
   const reviewData = await readJson(vscode.Uri.joinPath(helperDir, "review.json"));
   const history = await readSolutionHistory(problemDir);
@@ -216,7 +224,7 @@ async function readProblemIndex(programmersDir) {
 }
 
 async function writeProblemIndex(programmersDir, problems) {
-  const helperDir = vscode.Uri.joinPath(programmersDir, ".programmers-helper");
+  const helperDir = vscode.Uri.joinPath(programmersDir, HELPER_DIR_NAME);
   await vscode.workspace.fs.createDirectory(helperDir);
   await writeJson(getProblemIndexUri(programmersDir), {
     version: 1,
@@ -225,12 +233,12 @@ async function writeProblemIndex(programmersDir, problems) {
 }
 
 function getProblemIndexUri(programmersDir) {
-  return vscode.Uri.joinPath(programmersDir, ".programmers-helper", "problem-index.json");
+  return vscode.Uri.joinPath(programmersDir, HELPER_DIR_NAME, "problem-index.json");
 }
 
 // 문제의 예제 테스트를 메타데이터나 markdown에서 읽습니다.
 async function loadProblemExamples(problemDir) {
-  const helperDir = vscode.Uri.file(path.join(problemDir, ".programmers-helper"));
+  const helperDir = vscode.Uri.file(helperPath(problemDir));
   const metadataUri = vscode.Uri.joinPath(helperDir, "programmers.json");
   const metadata = await readJson(metadataUri);
   if (Array.isArray(metadata?.examples) && metadata.examples.length > 0) {
@@ -242,8 +250,8 @@ async function loadProblemExamples(problemDir) {
     const examples = extractExamplesFromMarkdown(markdown);
     if (examples.length > 0) {
       await vscode.workspace.fs.createDirectory(helperDir);
-      await writeJson(metadataUri, {
-        ...(metadata && typeof metadata === "object" ? metadata : {}),
+      await writeProgrammersMetadata(metadataUri, {
+        ...normalizeProgrammersMetadata(metadata),
         examples,
       });
     }
@@ -255,7 +263,7 @@ async function loadProblemExamples(problemDir) {
 
 // 커스텀 테스트 저장 파일 URI를 만듭니다.
 function getCustomTestsUri(problemDir) {
-  return vscode.Uri.file(path.join(problemDir, ".programmers-helper", "custom-tests.json"));
+  return vscode.Uri.file(helperPath(problemDir, "custom-tests.json"));
 }
 
 // 저장된 커스텀 테스트를 읽습니다.
@@ -275,7 +283,7 @@ async function loadSavedCustomTests(problemDir) {
 
 // 커스텀 테스트를 정리해 저장합니다.
 async function saveCustomTests(problemDir, tests) {
-  const helperDir = vscode.Uri.file(path.join(problemDir, ".programmers-helper"));
+  const helperDir = vscode.Uri.file(helperPath(problemDir));
   const customTests = Array.isArray(tests)
     ? tests
       .filter((test) => test && (String(test.inputsText || "").trim() || String(test.expectedText || "").trim()))
@@ -314,12 +322,14 @@ async function createProblem(programmersDir, lessonId, languageId = DEFAULT_LANG
   const problemDir = vscode.Uri.joinPath(programmersDir, folderName);
   const mdUri = vscode.Uri.joinPath(problemDir, "problem.md");
   const solutionUri = vscode.Uri.joinPath(problemDir, language.solutionFileName);
-  const helperDir = vscode.Uri.joinPath(problemDir, ".programmers-helper");
+  const helperDir = vscode.Uri.joinPath(problemDir, HELPER_DIR_NAME);
+  const initialDir = vscode.Uri.joinPath(helperDir, INITIAL_DIR_NAME);
   const metadataUri = vscode.Uri.joinPath(helperDir, "programmers.json");
-  const initialSolutionUri = vscode.Uri.joinPath(helperDir, language.initialSolutionFileName);
+  const initialSolutionUri = vscode.Uri.joinPath(initialDir, language.initialSolutionFileName);
 
   await vscode.workspace.fs.createDirectory(problemDir);
   await vscode.workspace.fs.createDirectory(helperDir);
+  await vscode.workspace.fs.createDirectory(initialDir);
 
   const problemMd = buildProblemMarkdown(lessonId, url, page);
   await writeFileIfAbsent(mdUri, problemMd);
@@ -329,21 +339,12 @@ async function createProblem(programmersDir, lessonId, languageId = DEFAULT_LANG
   const metadata = {
     lessonId,
     title,
-    url,
-    initialCode,
-    initialCodePath: getInitialSolutionRelativePath(language.id),
-    language: language.id,
-    solutionFile: language.solutionFileName,
     languages: {
-      [language.id]: {
-        url,
-        solutionFile: language.solutionFileName,
-        initialCodePath: getInitialSolutionRelativePath(language.id),
-      },
+      [language.id]: { url },
     },
     examples: extractExamplesFromMarkdown(problemMd),
   };
-  await vscode.workspace.fs.writeFile(metadataUri, Buffer.from(JSON.stringify(metadata, null, 2) + "\n", "utf8"));
+  await writeProgrammersMetadata(metadataUri, metadata);
 
   return { folderName, problemDir, mdUri, solutionUri, cppUri: language.id === "cpp" ? solutionUri : undefined, language: language.id, examples: metadata.examples };
 }
@@ -382,7 +383,8 @@ async function ensureSolutionForLanguage(problemDir, languageId = DEFAULT_LANGUA
   const language = getLanguage(languageId);
   const solutionUri = vscode.Uri.file(getSolutionPath(problemDir, language.id));
   const initialSolutionUri = vscode.Uri.file(getInitialSolutionPath(problemDir, language.id));
-  const helperDir = vscode.Uri.file(path.join(problemDir, ".programmers-helper"));
+  const helperDir = vscode.Uri.file(helperPath(problemDir));
+  const initialDir = vscode.Uri.joinPath(helperDir, INITIAL_DIR_NAME);
   const metadataUri = vscode.Uri.joinPath(helperDir, "programmers.json");
   const metadata = await readJson(metadataUri);
   const lessonId = String(metadata?.lessonId || parseProblemFolderName(path.basename(problemDir)).lessonId || "");
@@ -391,11 +393,10 @@ async function ensureSolutionForLanguage(problemDir, languageId = DEFAULT_LANGUA
   }
 
   try {
-    await Promise.all([
-      vscode.workspace.fs.stat(solutionUri),
-      vscode.workspace.fs.stat(initialSolutionUri),
-    ]);
-    return { solutionUri, language: language.id };
+    await vscode.workspace.fs.stat(solutionUri);
+    if (await fileExists(initialSolutionUri) || await fileExists(vscode.Uri.file(getLegacyInitialSolutionPath(problemDir, language.id)))) {
+      return { solutionUri, language: language.id };
+    }
   } catch {
     // Missing language files are fetched below.
   }
@@ -406,25 +407,17 @@ async function ensureSolutionForLanguage(problemDir, languageId = DEFAULT_LANGUA
   const initialCode = page.initialCode;
 
   await vscode.workspace.fs.createDirectory(helperDir);
+  await vscode.workspace.fs.createDirectory(initialDir);
   await writeFileIfAbsent(solutionUri, initialCode);
   await writeFileIfAbsent(initialSolutionUri, initialCode);
 
-  const nextMetadata = {
-    ...(metadata && typeof metadata === "object" ? metadata : {}),
-    lessonId,
-    title: metadata?.title || page.title,
-    languages: {
-      ...(metadata?.languages && typeof metadata.languages === "object" ? metadata.languages : {}),
-      [language.id]: {
-        url,
-        solutionFile: language.solutionFileName,
-        initialCodePath: getInitialSolutionRelativePath(language.id),
-      },
-    },
+  const nextMetadata = normalizeProgrammersMetadata(metadata);
+  nextMetadata.lessonId = lessonId;
+  nextMetadata.title = nextMetadata.title || page.title;
+  nextMetadata.languages = {
+    ...nextMetadata.languages,
+    [language.id]: { url },
   };
-  if (!nextMetadata.url) nextMetadata.url = url;
-  if (!nextMetadata.initialCode) nextMetadata.initialCode = initialCode;
-  if (!nextMetadata.initialCodePath) nextMetadata.initialCodePath = getInitialSolutionRelativePath(language.id);
   if (!nextMetadata.examples) {
     try {
       const markdown = await readText(vscode.Uri.file(path.join(problemDir, "problem.md")));
@@ -433,7 +426,7 @@ async function ensureSolutionForLanguage(problemDir, languageId = DEFAULT_LANGUA
       nextMetadata.examples = [];
     }
   }
-  await writeJson(metadataUri, nextMetadata);
+  await writeProgrammersMetadata(metadataUri, nextMetadata);
 
   return { solutionUri, language: language.id };
 }
@@ -443,11 +436,15 @@ function getProgrammersProblemUrl(lessonId, languageId = DEFAULT_LANGUAGE_ID) {
 }
 
 function getProblemUrlFromMetadata(metadata, languageId = DEFAULT_LANGUAGE_ID) {
-  const languageUrl = metadata?.languages?.[getLanguage(languageId).id]?.url;
+  const language = getLanguage(languageId);
+  const languageUrl = metadata?.languages?.[language.id]?.url;
   if (typeof languageUrl === "string" && languageUrl.trim()) {
     return languageUrl;
   }
-  return typeof metadata?.url === "string" ? metadata.url : "";
+  if (typeof metadata?.url === "string" && metadata.url.trim()) {
+    return metadata.url;
+  }
+  return metadata?.lessonId ? getProgrammersProblemUrl(String(metadata.lessonId), language.id) : "";
 }
 
 // 저장할 problem.md를 조립합니다.
@@ -483,7 +480,7 @@ async function findExistingProblem(programmersDir, lessonId) {
     const fallback = parseProblemFolderName(name);
     let matchesLesson = fallback.lessonId === lessonId;
     if (!matchesLesson) {
-      const metadata = await readJson(vscode.Uri.joinPath(problemDir, ".programmers-helper", "programmers.json"));
+      const metadata = await readJson(vscode.Uri.joinPath(problemDir, HELPER_DIR_NAME, "programmers.json"));
       matchesLesson = String(metadata?.lessonId || "") === lessonId;
     }
 
@@ -509,8 +506,8 @@ async function findExistingProblem(programmersDir, lessonId) {
 async function createSolutionAttempt(problemDir, languageId = DEFAULT_LANGUAGE_ID) {
   const language = getLanguage(languageId);
   const solutionUri = vscode.Uri.file(getSolutionPath(problemDir, language.id));
-  const helperDir = vscode.Uri.file(path.join(problemDir, ".programmers-helper"));
-  const solutionsDir = vscode.Uri.joinPath(helperDir, "solutions");
+  const helperDir = vscode.Uri.file(helperPath(problemDir));
+  const solutionsDir = vscode.Uri.file(solutionsPath(problemDir));
   const currentCode = await readText(solutionUri);
   const timestamp = formatTimestamp(new Date());
   const snapshotName = getSnapshotFileName(language.id, timestamp);
@@ -523,7 +520,7 @@ async function createSolutionAttempt(problemDir, languageId = DEFAULT_LANGUAGE_I
   const nextHistory = {
     attempts: [
       {
-        path: path.posix.join(".programmers-helper", "solutions", snapshotName),
+        path: solutionsRelativePath(snapshotName),
         createdAt: new Date().toISOString(),
         label: `풀이 ${history.attempts.length + 1}`,
         language: language.id,
@@ -570,7 +567,12 @@ async function loadInitialSolutionCode(problemDir, languageId = DEFAULT_LANGUAGE
   try {
     return await readText(vscode.Uri.file(getInitialSolutionPath(problemDir, languageId)));
   } catch {
-    const metadata = await readJson(vscode.Uri.file(path.join(problemDir, ".programmers-helper", "programmers.json")));
+    try {
+      return await readText(vscode.Uri.file(getLegacyInitialSolutionPath(problemDir, languageId)));
+    } catch {
+      // Older problem folders kept initial templates at the helper root.
+    }
+    const metadata = await readJson(vscode.Uri.file(helperPath(problemDir, "programmers.json")));
     const language = getLanguage(languageId);
     const languageMetadata = metadata?.languages?.[language.id];
     if (typeof languageMetadata?.initialCode === "string" && languageMetadata.initialCode.trim()) {
@@ -591,7 +593,7 @@ async function getSolutionSnapshotPath(problemDir, snapshotPath) {
 
 // 풀이 기록 하나를 삭제합니다.
 async function deleteSolutionSnapshot(problemDir, snapshotPath) {
-  const helperDir = vscode.Uri.file(path.join(problemDir, ".programmers-helper"));
+  const helperDir = vscode.Uri.file(helperPath(problemDir));
   const historyUri = vscode.Uri.joinPath(helperDir, "solution-history.json");
   const history = await readSolutionHistory(problemDir);
   const target = history.attempts.find((attempt) => attempt.path === snapshotPath);
@@ -625,7 +627,7 @@ async function deleteSolutionSnapshot(problemDir, snapshotPath) {
 
 // 풀이 기록 메타데이터를 읽습니다.
 async function readSolutionHistory(problemDir, languageId) {
-  const history = await readJson(vscode.Uri.file(path.join(problemDir, ".programmers-helper", "solution-history.json")));
+  const history = await readJson(vscode.Uri.file(helperPath(problemDir, "solution-history.json")));
   return {
     attempts: Array.isArray(history?.attempts)
       ? history.attempts
@@ -649,7 +651,7 @@ function resolveSolutionSnapshotPath(problemDir, snapshotPath) {
   }
 
   const normalized = snapshotPath.split(path.win32.sep).join(path.posix.sep);
-  const expectedPrefix = ".programmers-helper/solutions/";
+  const expectedPrefix = `${helperRelativePath("solutions")}/`;
   if (!normalized.startsWith(expectedPrefix)) {
     return undefined;
   }
@@ -660,7 +662,7 @@ function resolveSolutionSnapshotPath(problemDir, snapshotPath) {
     return undefined;
   }
 
-  const root = path.resolve(problemDir, ".programmers-helper", "solutions");
+  const root = path.resolve(solutionsPath(problemDir));
   const target = path.resolve(problemDir, normalized);
   return isPathInside(root, target) ? target : undefined;
 }
@@ -740,6 +742,83 @@ async function writeFileIfAbsent(uri, contents) {
   }
 }
 
+function normalizeProgrammersMetadata(metadata) {
+  const source = metadata && typeof metadata === "object" ? metadata : {};
+  const languages = {};
+  if (source.languages && typeof source.languages === "object") {
+    for (const [languageId, languageMetadata] of Object.entries(source.languages)) {
+      if (!getLanguageIds().includes(languageId) || !languageMetadata || typeof languageMetadata !== "object") {
+        continue;
+      }
+      const url = typeof languageMetadata.url === "string" ? languageMetadata.url.trim() : "";
+      if (url) {
+        languages[languageId] = { url };
+      }
+    }
+  }
+
+  const legacyLanguage = typeof source.language === "string" ? source.language : DEFAULT_LANGUAGE_ID;
+  const legacyUrl = typeof source.url === "string" ? source.url.trim() : "";
+  if (legacyUrl && getLanguageIds().includes(legacyLanguage) && !languages[legacyLanguage]) {
+    languages[legacyLanguage] = { url: legacyUrl };
+  }
+
+  const normalized = {
+    lessonId: String(source.lessonId || ""),
+    title: String(source.title || ""),
+    languages,
+  };
+
+  if (Array.isArray(source.examples)) {
+    normalized.examples = source.examples;
+  }
+
+  return normalized;
+}
+
+async function writeProgrammersMetadata(uri, metadata) {
+  await preserveLegacyInitialCode(uri, metadata);
+  const normalized = normalizeProgrammersMetadata(metadata);
+  await writeJson(uri, normalized);
+}
+
+async function preserveLegacyInitialCode(metadataUri, metadata) {
+  const source = metadata && typeof metadata === "object" ? metadata : {};
+  const problemDir = path.dirname(path.dirname(metadataUri.fsPath));
+  const candidates = [];
+
+  const legacyLanguage = typeof source.language === "string" ? source.language : DEFAULT_LANGUAGE_ID;
+  if (typeof source.initialCode === "string" && source.initialCode.trim() && getLanguageIds().includes(legacyLanguage)) {
+    candidates.push({ languageId: legacyLanguage, initialCode: source.initialCode });
+  }
+
+  if (source.languages && typeof source.languages === "object") {
+    for (const [languageId, languageMetadata] of Object.entries(source.languages)) {
+      if (!getLanguageIds().includes(languageId) || !languageMetadata || typeof languageMetadata !== "object") {
+        continue;
+      }
+      if (typeof languageMetadata.initialCode === "string" && languageMetadata.initialCode.trim()) {
+        candidates.push({ languageId, initialCode: languageMetadata.initialCode });
+      }
+    }
+  }
+
+  for (const candidate of candidates) {
+    const initialUri = vscode.Uri.file(getInitialSolutionPath(problemDir, candidate.languageId));
+    await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(initialUri.fsPath)));
+    await writeFileIfAbsent(initialUri, candidate.initialCode.endsWith("\n") ? candidate.initialCode : `${candidate.initialCode}\n`);
+  }
+}
+
+async function fileExists(uri) {
+  try {
+    await vscode.workspace.fs.stat(uri);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // JSON 파일을 보기 좋게 씁니다.
 async function writeJson(uri, value) {
   await vscode.workspace.fs.writeFile(uri, Buffer.from(JSON.stringify(value, null, 2) + "\n", "utf8"));
@@ -763,7 +842,7 @@ function formatTimestamp(date) {
 }
 
 function isInternalHelperFolder(name) {
-  return name === ".programmers-helper";
+  return name === HELPER_DIR_NAME;
 }
 
 module.exports = {
