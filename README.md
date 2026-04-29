@@ -246,7 +246,7 @@ GitHub Release와 Marketplace 배포는 `v*.*.*` 태그를 push하면 GitHub Act
 
 이 저장소에는 Dev Container 설정이 포함되어 있습니다.
 
-- 컨테이너 안에서는 현재 워크스페이스를 `~/.vscode-server/extensions/local.programmers-problem-helper`로 자동 symlink합니다.
+- 컨테이너 안에서는 현재 워크스페이스를 `~/.vscode-server/extensions/local.programmers-problem-helper`로 자동 symlink하고, VS Code Server 확장 프로필에 개발판을 다시 등록합니다.
 - 개발판은 Dev Container 안에서 확장을 개발하고, Docker 실행 모드에서는 호스트 Docker daemon에 붙는 별도의 sibling 실행 컨테이너가 컴파일 또는 실행을 담당합니다.
 - 개발판 Dev Container에는 `clang`, `lldb`, 기본 JDK(`javac`, `java`), `python3`가 포함되어 있어 `programmersHelper.executionMode`를 `local`로 바꾸면 C++/Java/Python을 컨테이너 내부에서 바로 실행할 수 있습니다.
 - 즉 개발판은 "개발용 Dev Container 1개 + 실행용 컨테이너 1개" 구조이며, 실행용 컨테이너를 Dev Container 내부에 중첩 생성하지 않습니다.

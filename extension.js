@@ -248,6 +248,11 @@ function ensureServices(context) {
 }
 
 function registerExtensionUpdateReloadPrompt(context) {
+  if (context.extensionMode === vscode.ExtensionMode.Development || isLocalDevelopmentInstall(context.extension)) {
+    outputChannel?.appendLine("[Programmers Helper] Update reload notification skipped for local development install");
+    return;
+  }
+
   const runningVersion = getExtensionPackageVersion(context.extension);
   const extensionId = context.extension?.id;
   if (!runningVersion || !extensionId) {
@@ -290,6 +295,15 @@ async function notifyReloadIfInstalledVersionChanged(context, extensionId, runni
 function getExtensionPackageVersion(extension) {
   const version = extension?.packageJSON?.version;
   return typeof version === "string" && version ? version : undefined;
+}
+
+function isLocalDevelopmentInstall(extension) {
+  const extensionPath = extension?.extensionPath;
+  if (typeof extensionPath !== "string" || !extensionPath) {
+    return false;
+  }
+
+  return path.basename(extensionPath) === "local.programmers-problem-helper";
 }
 
 // 확장 종료 시 테스트를 중지하고 Docker 정리는 백그라운드에 맡깁니다.

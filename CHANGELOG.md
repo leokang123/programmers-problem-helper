@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.8
+
+- Re-register the local Dev Container extension symlink in the VS Code Server extension profile so the Programmers sidebar returns after uninstalling the Marketplace build.
+- Clear stale obsolete markers for the extension when recreating the local development symlink.
+- Skip update reload prompts for development and local symlink installs while keeping them enabled for packaged installs.
+- Bump the extension manifest and lockfile to `0.3.8`.
+
 ## 0.3.7
 
 - Floor stored timer elapsed time to whole seconds so pausing does not appear to add an unexpected extra second.

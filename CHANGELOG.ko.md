@@ -1,5 +1,12 @@
 # 변경 이력
 
+## 0.3.8
+
+- Marketplace 배포판을 제거한 뒤에도 Programmers 사이드바가 다시 보이도록 Dev Container의 로컬 확장 symlink를 VS Code Server 확장 프로필에 다시 등록합니다.
+- 로컬 개발 symlink를 재생성할 때 확장의 오래된 obsolete 표시를 함께 정리합니다.
+- 개발 모드와 로컬 symlink 설치에서는 업데이트 재로드 알림을 건너뛰고, 패키징된 설치본에서는 기존 알림을 유지합니다.
+- `package.json`과 `package-lock.json` 버전을 `0.3.8`로 올렸습니다.
+
 ## 0.3.7
 
 - 타이머 저장 시간을 초 단위로 내림해 중지 시 표시 시간이 예상보다 1초 늘어나는 느낌을 줄였습니다.
