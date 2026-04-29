@@ -1,5 +1,13 @@
 # 변경 이력
 
+## 0.3.9
+
+- Dev Container 개발 흐름을 제거하고 로컬 `Run Extension`을 개발 경로로 정리했습니다.
+- 개발용 Extension Host가 현재 workspace를 열도록 해 개발 중 만든 문제 파일이 `Programmers/` 아래에 유지되도록 했습니다.
+- VS Code 공식 extension mode 기준으로 개발판과 패키징 설치본을 구분하도록 정리했습니다.
+- 업데이트 재로드 알림 제외 조건을 VS Code 공식 개발 모드 기준으로 단순화했습니다.
+- `package.json`과 `package-lock.json` 버전을 `0.3.9`로 올렸습니다.
+
 ## 0.3.8
 
 - Marketplace 배포판을 제거한 뒤에도 Programmers 사이드바가 다시 보이도록 Dev Container의 로컬 확장 symlink를 VS Code Server 확장 프로필에 다시 등록합니다.

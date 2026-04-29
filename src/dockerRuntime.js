@@ -7,6 +7,9 @@ const {
   DOCKER_WORKSPACE_ROOT,
   getDockerfilePath,
 } = require("./config");
+const {
+  getDockerRuntimeModeLabel,
+} = require("./environment");
 
 const SIDEBAR_VIEW_ID = "programmersHelper.sidebar";
 
@@ -16,12 +19,12 @@ const runtimeCache = {
 };
 
 // 문제를 열 때 Docker 런타임을 준비하고 상태 메시지를 만듭니다.
-async function prepareDockerRuntimeOnOpen({ vscode, extensionDir, problemDir, execCommand, limitStatusText, postStatus }) {
+async function prepareDockerRuntimeOnOpen({ context, vscode, extensionDir, problemDir, execCommand, limitStatusText, postStatus }) {
   reportRuntimeStatus({ postStatus }, "컴파일 및 테스트용 Docker 컨테이너를 확인하고 있습니다.");
 
   try {
     const runtime = await ensureDockerRuntimeReady({ vscode, extensionDir, problemDir, execCommand, postStatus });
-    const mode = vscode.env.remoteName === "dev-container" ? "개발판: Dev Container + 실행 컨테이너" : "배포판: 로컬 + 실행 컨테이너";
+    const mode = getDockerRuntimeModeLabel(context);
     return { kind: "ready", detail: `${mode}\n${runtime.containerName}` };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -67,10 +70,10 @@ async function ensureDockerRuntimeReady({ vscode, extensionDir, problemDir, exec
 async function ensureDockerRuntimeReadyOnce({ vscode, extensionDir, problemDir, execCommand, statusContext }) {
   const programmersDir = path.dirname(problemDir);
   const containerName = getDockerContainerName(programmersDir);
-  const mountSource = getDockerMountSource(vscode, programmersDir);
-  const problemPath = getDockerProblemPath(programmersDir, problemDir);
 
-  await ensureDockerAvailable({ vscode, execCommand, statusContext });
+  await ensureDockerAvailable({ execCommand, statusContext });
+  const mountSource = getDockerMountSource(programmersDir);
+  const problemPath = getDockerProblemPath(programmersDir, problemDir);
   await ensureDockerImageAvailable({ extensionDir, execCommand, statusContext });
   await ensureDockerContainerRunning({ containerName, mountSource, execCommand, statusContext });
 
@@ -187,7 +190,7 @@ run(["stop", ...names]);
 }
 
 // Docker CLI가 실행 가능한지 확인합니다.
-async function ensureDockerAvailable({ vscode, execCommand, statusContext }) {
+async function ensureDockerAvailable({ execCommand, statusContext }) {
   if (runtimeCache.dockerAvailable) {
     reportRuntimeStatus(statusContext, "Docker 실행 환경은 이미 확인되었습니다.");
     return;
@@ -202,27 +205,17 @@ async function ensureDockerAvailable({ vscode, execCommand, statusContext }) {
     });
   } catch (error) {
     if (error?.code === "ENOENT") {
-      const remoteHint = getRemoteDockerHint(vscode);
-      throw new Error(`Docker를 찾지 못했습니다.\nDocker Desktop 또는 docker 엔진을 설치한 뒤 다시 시도해주세요.${remoteHint ? `\n${remoteHint}` : ""}`);
+      throw new Error("Docker를 찾지 못했습니다.\nDocker Desktop 또는 docker 엔진을 설치한 뒤 다시 시도해주세요.");
     }
     throw error;
   }
 
   if (result.code !== 0) {
     const detail = (result.stderr || result.stdout || "").trim();
-    const remoteHint = getRemoteDockerHint(vscode);
-    throw new Error(`Docker 실행을 확인하지 못했습니다.${detail ? `\n${detail}` : ""}${remoteHint ? `\n${remoteHint}` : ""}`);
+    throw new Error(`Docker 실행을 확인하지 못했습니다.${detail ? `\n${detail}` : ""}`);
   }
 
   runtimeCache.dockerAvailable = true;
-}
-
-// Dev Container 환경에서 필요한 Docker 안내 문구를 만듭니다.
-function getRemoteDockerHint(vscode) {
-  if (vscode.env.remoteName !== "dev-container") {
-    return "";
-  }
-  return "현재 개발판은 Dev Container 안에서 실행되지만, 컴파일 및 실행은 호스트 Docker daemon에 붙는 sibling 실행 컨테이너에서 진행됩니다. Dev Container를 다시 빌드한 뒤 다시 시도해주세요.";
 }
 
 // 런타임 이미지를 확인하고, 없으면 pull을 먼저 시도한 뒤 마지막 fallback으로만 Dockerfile build를 사용합니다.
@@ -283,23 +276,7 @@ function getDockerContainerName(programmersDir) {
 }
 
 // Docker 마운트에 사용할 호스트 경로를 구합니다.
-function getDockerMountSource(vscode, programmersDir) {
-  if (vscode.env.remoteName === "dev-container") {
-    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-    const hostWorkspace = process.env.PROGRAMMERS_HELPER_HOST_WORKSPACE;
-    if (!workspaceFolder?.uri || !hostWorkspace) {
-      throw new Error("Dev Container에서 호스트 워크스페이스 경로를 확인하지 못했습니다.\n`Dev Containers: Rebuild Container`를 실행한 뒤 다시 시도해주세요.");
-    }
-
-    const workspacePath = workspaceFolder.uri.fsPath;
-    const relative = path.relative(workspacePath, programmersDir);
-    if (relative.startsWith("..")) {
-      throw new Error("개발판에서는 문제 폴더가 현재 워크스페이스 아래 `Programmers/`에 있어야 합니다.");
-    }
-
-    return path.join(hostWorkspace, relative);
-  }
-
+function getDockerMountSource(programmersDir) {
   return programmersDir;
 }
 

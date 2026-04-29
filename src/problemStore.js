@@ -28,6 +28,9 @@ const {
   solutionsRelativePath,
   solutionsPath,
 } = require("./helperPaths");
+const {
+  isDevelopmentExtension,
+} = require("./environment");
 
 // 저장된 문제 목록을 빠른 인덱스에서 읽고, 필요할 때만 전체 스캔으로 재생성합니다.
 async function loadProblems(programmersDir, options = {}) {
@@ -104,8 +107,9 @@ async function resolveProgrammersDir(context, workspaceUri, options = {}) {
 // 가능한 Programmers 폴더 후보를 만듭니다.
 function getProgrammersDirCandidates(context, workspaceUri) {
   const candidates = [];
-  if (shouldUseWorkspaceProgrammersDir(context, workspaceUri)) {
-    candidates.push(path.basename(workspaceUri.fsPath) === "Programmers" ? workspaceUri : vscode.Uri.joinPath(workspaceUri, "Programmers"));
+  const developmentRoot = getDevelopmentRootUri(context, workspaceUri);
+  if (developmentRoot) {
+    candidates.push(path.basename(developmentRoot.fsPath) === "Programmers" ? developmentRoot : vscode.Uri.joinPath(developmentRoot, "Programmers"));
   }
   candidates.push(getDefaultProgrammersDir(context, workspaceUri));
 
@@ -122,21 +126,21 @@ function getProgrammersDirCandidates(context, workspaceUri) {
 
 // 기본 Programmers 폴더 위치를 반환합니다.
 function getDefaultProgrammersDir(context, workspaceUri) {
-  if (shouldUseWorkspaceProgrammersDir(context, workspaceUri)) {
-    return path.basename(workspaceUri.fsPath) === "Programmers"
-      ? workspaceUri
-      : vscode.Uri.joinPath(workspaceUri, "Programmers");
+  const developmentRoot = getDevelopmentRootUri(context, workspaceUri);
+  if (developmentRoot) {
+    return path.basename(developmentRoot.fsPath) === "Programmers"
+      ? developmentRoot
+      : vscode.Uri.joinPath(developmentRoot, "Programmers");
   }
   return vscode.Uri.joinPath(context.globalStorageUri, "Programmers");
 }
 
-function shouldUseWorkspaceProgrammersDir(context, workspaceUri) {
-  if (!workspaceUri) {
-    return false;
+function getDevelopmentRootUri(context, workspaceUri) {
+  if (!isDevelopmentExtension(context)) {
+    return undefined;
   }
 
-  return vscode.env.remoteName === "dev-container"
-    || context.extensionMode === vscode.ExtensionMode.Development;
+  return context.extensionUri || workspaceUri;
 }
 
 // 문제 폴더의 표시 정보를 읽습니다.

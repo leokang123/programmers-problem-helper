@@ -107,35 +107,22 @@ code --install-extension <다운로드한-vsix-파일>
 2. `Developer: Reload Window` 실행
 3. 왼쪽 Activity Bar에서 `Programmers` 아이콘 열기
 
-### 방법 3: 저장소를 clone해서 연결
+### 방법 3: 저장소를 clone해서 개발 실행
 
 이 저장소를 clone합니다.
 
 ```sh
 git clone https://github.com/leokang123/programmers-problem-helper.git
+cd programmers-problem-helper
+npm install
 ```
 
-clone한 폴더를 VS Code 로컬 확장 폴더에 연결합니다.
-
-macOS/Linux:
-
-```sh
-mkdir -p ~/.vscode/extensions
-ln -s "$(pwd)/programmers-problem-helper" ~/.vscode/extensions/local.programmers-problem-helper
-```
-
-Windows PowerShell:
-
-```powershell
-New-Item -ItemType Directory -Force "$HOME\.vscode\extensions"
-New-Item -ItemType Junction "$HOME\.vscode\extensions\local.programmers-problem-helper" "$(Get-Location)\programmers-problem-helper"
-```
-
-그 다음 VS Code를 다시 불러옵니다.
+VS Code에서 clone한 폴더를 열고 `Run and Debug`의 `Run Extension`을 실행합니다.
 
 1. VS Code 실행
-2. `Developer: Reload Window` 실행
-3. 왼쪽 Activity Bar에서 `Programmers` 아이콘 열기
+2. 이 저장소 폴더 열기
+3. `Run and Debug`에서 `Run Extension` 실행
+4. 새 `[Extension Development Host]` 창에서 `Programmers` 아이콘 열기
 
 ## 업데이트
 
@@ -242,41 +229,27 @@ npx @vscode/vsce publish
 
 GitHub Release와 Marketplace 배포는 `v*.*.*` 태그를 push하면 GitHub Actions가 `.vsix`를 만들고 Release에 첨부한 뒤 Marketplace에 publish합니다. 자동 Marketplace 배포에는 GitHub repository secret `VSCE_PAT`가 필요합니다.
 
-## Dev Container 개발
+## 개발
 
-이 저장소에는 Dev Container 설정이 포함되어 있습니다.
+기본 개발 방식은 로컬 VS Code의 `Run Extension`입니다.
 
-- 컨테이너 안에서는 현재 워크스페이스를 `~/.vscode-server/extensions/local.programmers-problem-helper`로 자동 symlink하고, VS Code Server 확장 프로필에 개발판을 다시 등록합니다.
-- 개발판은 Dev Container 안에서 확장을 개발하고, Docker 실행 모드에서는 호스트 Docker daemon에 붙는 별도의 sibling 실행 컨테이너가 컴파일 또는 실행을 담당합니다.
-- 개발판 Dev Container에는 `clang`, `lldb`, 기본 JDK(`javac`, `java`), `python3`가 포함되어 있어 `programmersHelper.executionMode`를 `local`로 바꾸면 C++/Java/Python을 컨테이너 내부에서 바로 실행할 수 있습니다.
-- 즉 개발판은 "개발용 Dev Container 1개 + 실행용 컨테이너 1개" 구조이며, 실행용 컨테이너를 Dev Container 내부에 중첩 생성하지 않습니다.
-- 로컬 macOS VS Code에는 배포판 `.vsix` 또는 마켓 설치본을 그대로 사용하면 됩니다.
-- 즉 개발용 확장은 컨테이너 쪽 VS Code Server에서만 보이고, 로컬 배포판과 분리됩니다.
+- `Run Extension`은 현재 workspace를 `--extensionDevelopmentPath`로 로드하므로 별도의 확장 symlink를 만들지 않습니다.
+- 개발용 Extension Host 창에서 만든 문제 폴더는 열린 workspace 아래 `Programmers/`에 저장되며 휘발되지 않습니다.
+- 배포판은 문제 폴더를 확장의 `globalStorage/Programmers`에 저장합니다.
+- Docker 실행 모드에서는 로컬 Docker daemon에 붙는 별도의 실행 컨테이너가 컴파일 또는 실행을 담당합니다.
+- 로컬 실행 모드에서는 macOS에 설치된 `clang++`/`g++`, `javac`/`java`, `python3`를 사용합니다.
 
-사용 순서:
+로컬 개발:
 
 1. VS Code에서 이 저장소를 엽니다.
-2. `Dev Containers: Reopen in Container`를 실행합니다.
-3. Docker 기능이 포함된 설정을 반영하려면 `Dev Containers: Rebuild Container`를 한 번 실행합니다.
-4. 컨테이너가 올라오면 `Developer: Reload Window`를 한 번 실행합니다.
-5. 컨테이너 안에서 확장 코드를 수정하고 테스트합니다.
-6. `Run and Debug`에서 `Run Extension`을 실행하면 개발용 Extension Host 창으로 바로 확인할 수 있습니다.
-
-확인용 명령:
-
-```sh
-ls -l ~/.vscode-server/extensions/local.programmers-problem-helper
-```
-
-주의:
-
-- 개발판은 문제 폴더를 현재 워크스페이스 아래 `Programmers/`에 저장합니다.
-- 배포판은 문제 폴더를 확장의 `globalStorage/Programmers`에 저장합니다.
+2. `npm install`을 실행합니다.
+3. `Run and Debug`에서 `Run Extension`을 실행합니다.
+4. 새 `[Extension Development Host]` 창에서 확장을 테스트합니다.
 
 개발 편의:
 
-- `package.json`에 `extensionKind: ["workspace"]`를 지정해 이 확장이 원격/컨테이너 쪽에서 실행되도록 명시했습니다.
-- `.vscode/launch.json`의 `Run Extension`으로 개발용 확장 창을 바로 띄울 수 있습니다.
+- `package.json`에 `extensionKind: ["workspace"]`를 지정해 workspace extension host에서 실행되도록 명시했습니다.
+- `.vscode/launch.json`의 `Run Extension`은 개발용 Extension Host가 현재 workspace를 열도록 설정되어 있습니다.
 
 ## 참고
 

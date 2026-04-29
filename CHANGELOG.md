@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.9
+
+- Remove the Dev Container development workflow and use local `Run Extension` as the development path.
+- Open the current workspace in the Extension Development Host so development-created problem files persist under `Programmers/`.
+- Detect development versus packaged extension mode from the official VS Code extension mode.
+- Simplify update reload prompt suppression to the official VS Code development mode.
+- Bump the extension manifest and lockfile to `0.3.9`.
+
 ## 0.3.8
 
 - Re-register the local Dev Container extension symlink in the VS Code Server extension profile so the Programmers sidebar returns after uninstalling the Marketplace build.

@@ -843,14 +843,8 @@ python3 .programmers-helper/generated/runners/test_runner.py <testIndex>
 
 ### 마운트
 
-로컬:
-
 - host source: `programmersDir`
 - container target: `/workspace/Programmers`
-
-Dev Container:
-
-- `PROGRAMMERS_HELPER_HOST_WORKSPACE`와 workspace 상대 경로를 이용해 host source를 계산한다.
 
 ### 종료
 
@@ -892,13 +886,14 @@ Dev Container:
 
 준비 실패여도 문제 파일은 열리며, 사이드바 상태에 실패 이유를 표시한다. 테스트 실행 시에도 같은 local 명령어 확인이 다시 수행되어 PATH 변경이나 설치 이후 상태를 반영한다.
 
-## Dev Container flow
+## Development Host flow
 
-- 개발 컨테이너 Dockerfile: `.devcontainer/Dockerfile`
-- 개발 컨테이너에는 확장 개발과 local 실행 검증을 위해 `clang`, `lldb`, `default-jdk-headless`, `python3`를 설치한다.
-- `LANG=C.UTF-8`, `LC_ALL=C.UTF-8`을 설정해 한글 문제 폴더에서 Java local 컴파일이 깨지지 않도록 한다.
-- `programmersHelper.executionMode=local`이면 Dev Container 내부의 `clang++`/`g++`, `javac`/`java` 또는 `python3`로 실행한다.
-- `programmersHelper.executionMode=docker`이면 기존처럼 호스트 Docker daemon에 붙는 sibling 실행 컨테이너를 준비한다.
+- 기본 개발 방식은 로컬 VS Code의 `Run Extension`이다.
+- `.vscode/launch.json`은 `--extensionDevelopmentPath=${workspaceFolder}`와 `${workspaceFolder}`를 함께 넘겨 개발용 Extension Host가 현재 저장소를 workspace로 열도록 한다.
+- 개발 모드에서는 문제 폴더를 현재 workspace 아래 `Programmers/`에 저장한다.
+- 패키징 설치본은 문제 폴더를 `globalStorage/Programmers`에 저장한다.
+- `programmersHelper.executionMode=docker`이면 로컬 Docker daemon에 붙는 실행 컨테이너를 준비한다.
+- `programmersHelper.executionMode=local`이면 로컬 머신의 `clang++`/`g++`, `javac`/`java` 또는 `python3`로 실행한다.
 
 ## 성능 점검 메모
 
@@ -999,7 +994,7 @@ Dev Container:
   - 앱 시작 직후에는 문제 목록 클릭 전까지 `lastProblemDir`이 있어도 Webview 현재 문제로 취급하지 않는다.
 
 - Docker 관련 수정 시:
-  - 로컬과 Dev Container의 mount source 계산을 모두 확인한다.
+  - 로컬 Docker bind mount source가 `programmersDir`로 유지되는지 확인한다.
   - 컨테이너는 문제 폴더를 복사하지 않고 bind mount로 본다.
   - 실행 중지 버튼은 컨테이너 stop이 아니라 현재 `docker exec` child process 종료다.
 

@@ -559,6 +559,7 @@ class ProblemCommands {
     }
 
     return prepareDockerRuntimeOnOpenModule({
+      context: this.context,
       vscode,
       extensionDir: this.extensionDir,
       problemDir,

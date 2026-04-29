@@ -4,6 +4,10 @@ const path = require("path");
 const {
   ProgrammersSidebarProvider,
 } = require("./src/sidebarProvider");
+const {
+  getExtensionRuntimeLabel,
+  isDevelopmentExtension,
+} = require("./src/environment");
 
 let sidebarProvider;
 let problemCommands;
@@ -63,6 +67,9 @@ function replayLatestStatusMessage() {
 function activate(context) {
   outputChannel = vscode.window.createOutputChannel("Programmers Helper");
   diagnosticCollection = vscode.languages.createDiagnosticCollection("programmers-helper");
+  outputChannel.appendLine(`[Programmers Helper] Runtime: ${getExtensionRuntimeLabel(context)}`);
+  outputChannel.appendLine(`[Programmers Helper] Extension path: ${context.extensionUri.fsPath}`);
+  outputChannel.appendLine(`[Programmers Helper] Global storage: ${context.globalStorageUri.fsPath}`);
   lastExecutionMode = getConfiguredExecutionMode();
   registerExtensionUpdateReloadPrompt(context);
   sidebarProvider = new ProgrammersSidebarProvider(context, {
@@ -248,8 +255,8 @@ function ensureServices(context) {
 }
 
 function registerExtensionUpdateReloadPrompt(context) {
-  if (context.extensionMode === vscode.ExtensionMode.Development || isLocalDevelopmentInstall(context.extension)) {
-    outputChannel?.appendLine("[Programmers Helper] Update reload notification skipped for local development install");
+  if (isDevelopmentExtension(context)) {
+    outputChannel?.appendLine("[Programmers Helper] Update reload notification skipped for development mode");
     return;
   }
 
@@ -295,15 +302,6 @@ async function notifyReloadIfInstalledVersionChanged(context, extensionId, runni
 function getExtensionPackageVersion(extension) {
   const version = extension?.packageJSON?.version;
   return typeof version === "string" && version ? version : undefined;
-}
-
-function isLocalDevelopmentInstall(extension) {
-  const extensionPath = extension?.extensionPath;
-  if (typeof extensionPath !== "string" || !extensionPath) {
-    return false;
-  }
-
-  return path.basename(extensionPath) === "local.programmers-problem-helper";
 }
 
 // 확장 종료 시 테스트를 중지하고 Docker 정리는 백그라운드에 맡깁니다.
