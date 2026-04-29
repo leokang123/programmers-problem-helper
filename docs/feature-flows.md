@@ -222,6 +222,7 @@ Programmers/
 - Webview의 1초 interval은 현재 문제 타이머가 실행 중일 때만 생성하고, 중지되면 즉시 해제한다.
 - 타이머 저장은 시작/중지/초기화/목표 변경/문제 전환/확장 종료 같은 이벤트 시점에 수행한다.
 - 실행 중에는 VS Code 종료 시 비동기 저장이 끊기는 상황에 대비해 30초마다 `timer.json`에 정산 checkpoint를 남긴다.
+- 저장되는 `elapsedMs`는 화면 표시와 맞도록 초 단위로 내림한다. 실행 중 checkpoint는 초 미만 나머지를 `startedAt`에 반영해 checkpoint마다 시간이 누락되지 않게 한다.
 - 다음에 문제를 열 때 `isRunning: true`가 남아 있으면 마지막 `updatedAt` 기준으로 멈춘 상태로 복구한다.
 - 현재 열린 문제 하나의 타이머만 매초 계산한다.
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.7
+
+- Floor stored timer elapsed time to whole seconds so pausing does not appear to add an unexpected extra second.
+- Preserve sub-second checkpoint remainder in `startedAt` while the timer is running so long sessions do not lose time.
+- Bump the extension manifest and lockfile to `0.3.7`.
+
 ## 0.3.6
 
 - Show a VS Code reload prompt when auto-update installs a newer extension version, and reload the window when the user confirms.

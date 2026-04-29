@@ -187,10 +187,13 @@ class TimerManager {
     }
 
     const now = Date.now();
+    const nextElapsedMs = timer.elapsedMs + Math.max(0, now - timer.startedAt);
+    const settledElapsedMs = floorToSecondMs(nextElapsedMs);
+    const remainderMs = nextElapsedMs - settledElapsedMs;
     await this.writeTimer(problemDir, {
       ...timer,
-      elapsedMs: timer.elapsedMs + Math.max(0, now - timer.startedAt),
-      startedAt: now,
+      elapsedMs: settledElapsedMs,
+      startedAt: now - remainderMs,
       isRunning: true,
       updatedAt: now,
     });
@@ -222,7 +225,7 @@ class TimerManager {
     const now = Date.now();
     return {
       problemDir,
-      elapsedMs: Math.max(0, Number(timer?.elapsedMs) || 0),
+      elapsedMs: floorToSecondMs(Math.max(0, Number(timer?.elapsedMs) || 0)),
       startedAt: typeof timer?.startedAt === "number" ? timer.startedAt : null,
       isRunning: Boolean(timer?.isRunning && typeof timer?.startedAt === "number"),
       targetMinutes: normalizeTargetMinutes(timer?.targetMinutes),
@@ -243,9 +246,10 @@ class TimerManager {
 
   stopAndSettleTimer(timer, now = Date.now()) {
     const runningDelta = timer.isRunning && timer.startedAt ? Math.max(0, now - timer.startedAt) : 0;
+    const elapsedMs = floorToSecondMs(timer.elapsedMs + runningDelta);
     return {
       ...timer,
-      elapsedMs: timer.elapsedMs + runningDelta,
+      elapsedMs,
       startedAt: null,
       isRunning: false,
       updatedAt: now,
@@ -265,6 +269,10 @@ async function readJson(uri) {
 function normalizeTargetMinutes(value) {
   const numeric = Number(value);
   return TIMER_TARGETS.includes(numeric) ? numeric : DEFAULT_TARGET_MINUTES;
+}
+
+function floorToSecondMs(value) {
+  return Math.floor(Math.max(0, Number(value) || 0) / 1000) * 1000;
 }
 
 module.exports = {
