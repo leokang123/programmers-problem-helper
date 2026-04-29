@@ -130,14 +130,14 @@ Marketplace 설치본은 VS Code가 일반 확장처럼 업데이트합니다.
 
 GitHub Releases에서 설치한 경우 최신 `.vsix`를 다시 내려받아 설치합니다.
 
-clone 연결 방식으로 설치한 경우 최신 코드를 받고 VS Code를 다시 불러오면 됩니다.
+clone한 저장소를 개발판으로 실행하는 경우 최신 코드를 받고 `Run Extension`을 다시 시작하면 됩니다.
 
 ```sh
 cd programmers-problem-helper
 git pull
 ```
 
-그 다음 `Developer: Reload Window`를 실행합니다.
+이미 떠 있는 `[Extension Development Host]` 창이 있다면 닫고 `Run Extension`을 다시 실행합니다.
 
 ## 직접 배포하기
 

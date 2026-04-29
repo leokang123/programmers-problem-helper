@@ -1,10 +1,14 @@
 # Changelog
 
-## 0.3.10
+## 0.4.0
 
+- Remove the Dev Container and symlink-based development workflow in favor of local VS Code `Run Extension`.
+- Store development-created problem folders under the opened workspace `Programmers/`, while packaged installs continue to use extension `globalStorage/Programmers`.
+- Detect development versus packaged extension mode from the official VS Code extension mode.
+- Suppress update reload prompts in development mode while keeping packaged install reload prompts enabled.
 - Retry temporary Programmers page fetch failures for `502`, `503`, `504`, and short-lived network errors before surfacing the failure.
 - Keep permanent HTTP failures such as missing or forbidden pages as immediate errors.
-- Bump the extension manifest and lockfile to `0.3.10`.
+- Bump the extension manifest and lockfile to `0.4.0`.
 
 ## 0.3.9
 
