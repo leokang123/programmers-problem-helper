@@ -160,7 +160,10 @@ class ProblemCommands {
       return;
     }
 
-    await this.openProblemFromDir(safeDir);
+    const settings = getExecutionSettings();
+    await this.openProblemFromDir(safeDir, {
+      deferDockerRuntime: settings.executionMode === "docker",
+    });
   }
 
   // 검증된 문제 폴더를 에디터에 엽니다.
@@ -175,7 +178,13 @@ class ProblemCommands {
     const settings = getExecutionSettings();
     const solution = await ensureSolutionForLanguage(safeDir, settings.language);
     await openProblem(vscode.Uri.file(path.join(safeDir, "problem.md")), solution.solutionUri);
-    const runtimeStatus = await this.prepareDockerRuntimeOnOpen(safeDir);
+    const runtimeStatus = options.deferDockerRuntime && settings.executionMode === "docker"
+      ? {
+          kind: "",
+          title: "Docker 대기 중",
+          detail: "문제를 열거나 테스트를 실행하면 준비합니다.",
+        }
+      : await this.prepareDockerRuntimeOnOpen(safeDir);
     await this.showOpenedProblemState(safeDir, runtimeStatus, { forceRefreshProblems: Boolean(options.forceRefreshProblems) });
     return runtimeStatus;
   }
@@ -434,11 +443,11 @@ class ProblemCommands {
     const problems = await this.updateProblemIndexForDir(problemDir);
     await this.refreshProblemsFromIndex(problems);
     const statusKind = runtimeStatus.kind || "";
-    const statusTitle = statusKind === "ready"
+    const statusTitle = runtimeStatus.title || (statusKind === "ready"
       ? "준비 완료"
       : statusKind === "error"
         ? "준비 실패"
-        : "문제 열림";
+        : "문제 열림");
     this.postMessage?.({
       type: "status",
       kind: statusKind,

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.3
+
+- Keep Docker mode lazy during automatic last-problem restore, showing a waiting status instead of starting the runtime container until the user opens the problem or runs tests.
+- Simplify the custom test panel hint and mention that Docker containers are cleaned up automatically when VS Code exits.
+- Bump the extension manifest and lockfile to `0.4.3`.
+
 ## 0.4.2
 
 - Automatically reopen and prepare the last active problem when the extension is first activated, so the sidebar status reflects the current local or Docker runtime readiness after restarting VS Code.

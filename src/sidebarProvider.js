@@ -296,8 +296,7 @@ function buildSidebarHtml(nonce) {
               <button id="saveCustomTests" class="secondary" disabled>저장됨</button>
             </div>
             <button id="runCustom">커스텀 테스트 실행</button>
-            <div class="hint">Input은 solution 인자 순서대로 쉼표로 구분합니다. 예: 4, 5, 2, 2, [[0,0]]</div>
-            <div class="hint">테스트는 현재 사용자 권한으로 현재 언어 풀이 파일을 컴파일하고 실행합니다.</div>
+            <div class="hint">참고 · Docker 컨테이너는 VS Code 종료 시 자동 정리됩니다.</div>
           </div>
         </div>
       </div>
