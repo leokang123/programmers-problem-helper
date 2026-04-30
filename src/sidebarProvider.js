@@ -154,6 +154,7 @@ function buildSidebarHtml(nonce) {
     .pane.collapsed .pane-body { display: none; }
     .pane-body[hidden] { display: none !important; }
     .pane.collapsed .collapsed-badge { display: inline-block; }
+    #listPane .pane-body { display: flex; flex-direction: column; overflow: hidden; }
     .section-title { margin-bottom: 5px; font-size: 12px; font-weight: 600; color: var(--vscode-foreground); }
     .section { margin-bottom: 8px; }
     .section:last-child { margin-bottom: 0; }
@@ -174,13 +175,13 @@ function buildSidebarHtml(nonce) {
       .timer-display { flex: 1 0 100%; min-width: 0; }
       .timer-controls { flex: 1 1 100%; }
     }
-    .list-actions { display: flex; gap: 8px; align-items: center; margin-bottom: 5px; flex-wrap: wrap; }
+    .list-actions { flex: 0 0 auto; display: flex; gap: 8px; align-items: center; margin-bottom: 5px; flex-wrap: wrap; }
     .filter { display: flex; gap: 6px; align-items: center; margin: 0; font-size: 12px; color: var(--vscode-foreground); }
     .filter input { width: auto; margin: 0; }
     .search { flex: 1 1 100%; min-width: 0; }
     .refresh { width: auto; min-width: 30px; margin: 0 0 0 auto; padding: 3px 7px; }
     button:disabled { opacity: 0.55; cursor: default; }
-    .problem-list { border-top: 1px solid var(--vscode-panel-border); }
+    .problem-list { flex: 1 1 auto; min-height: 0; overflow: auto; border-top: 1px solid var(--vscode-panel-border); }
     .problem-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--vscode-panel-border); cursor: pointer; }
     .problem-row:hover { background: var(--vscode-list-hoverBackground); }
     .problem-row.current { margin: 0 -2px; padding: 7px 2px; border-left: 3px solid var(--vscode-focusBorder); background: var(--vscode-list-activeSelectionBackground); }
@@ -809,6 +810,12 @@ function buildSidebarHtml(nonce) {
       updatePaneSummaries();
     }
 
+    function scrollCurrentProblemIntoView() {
+      const currentRow = problemList.querySelector('.problem-row.current');
+      if (!currentRow) return;
+      currentRow.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+
     function scheduleRenderProblems() {
       if (searchRenderTimer) {
         clearTimeout(searchRenderTimer);
@@ -1066,6 +1073,7 @@ function buildSidebarHtml(nonce) {
     document.querySelectorAll('input[name="problemFilter"]').forEach((filter) => {
       filter.addEventListener('change', () => {
         renderProblems();
+        scrollCurrentProblemIntoView();
         updatePaneSummaries();
         saveSidebarState();
       });
@@ -1114,6 +1122,7 @@ function buildSidebarHtml(nonce) {
         resetTimerNotifications();
         updateCurrentActions();
         renderProblems();
+        scrollCurrentProblemIntoView();
         if (currentProblemDir) {
           vscode.postMessage({ type: 'getTimer', problemDir: currentProblemDir });
         } else {
