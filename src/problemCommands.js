@@ -43,6 +43,9 @@ const {
   helperPath,
 } = require("./helperPaths");
 
+const CREATE_PROBLEM_COOLDOWN_MS = 1000;
+const MAX_LESSON_ID_LENGTH = 10;
+
 // 문제 관련 VS Code 액션들을 묶어 관리합니다.
 class ProblemCommands {
   // 외부 의존성과 콜백을 주입합니다.
@@ -53,6 +56,8 @@ class ProblemCommands {
     this.postMessage = postMessage;
     this.refreshProblems = refreshProblems;
     this.runTests = runTests;
+    this.createProblemInFlight = false;
+    this.createProblemCooldownUntil = 0;
   }
 
   // 입력창에서 문제 번호를 받아 생성합니다.
@@ -62,7 +67,7 @@ class ProblemCommands {
       prompt: "프로그래머스 문제 번호를 입력하세요.",
       placeHolder: "예: 468379",
       validateInput(value) {
-        return /^\d+$/.test(value.trim()) ? undefined : "숫자만 입력해주세요.";
+        return /^\d{1,10}$/.test(value.trim()) ? undefined : "문제 번호는 1~10자리 숫자로 입력해주세요.";
       },
     });
 
@@ -74,15 +79,31 @@ class ProblemCommands {
   // 문제 번호로 문제 파일을 만들고 엽니다.
   async createProblemFromId(rawLessonId) {
     const lessonId = rawLessonId.trim();
-    if (!/^\d+$/.test(lessonId)) {
-      vscode.window.showErrorMessage("문제 번호는 숫자만 입력해주세요.");
+    if (!/^\d{1,10}$/.test(lessonId)) {
+      vscode.window.showErrorMessage("문제 번호는 1~10자리 숫자로 입력해주세요.");
+      this.postMessage?.({ type: "createBusy", busy: false });
       return;
     }
 
-    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-    const programmersDir = await resolveProgrammersDir(this.context, workspaceFolder?.uri, { create: true });
+    if (this.createProblemInFlight) {
+      vscode.window.showInformationMessage("이미 문제를 생성하고 있습니다. 잠시만 기다려주세요.");
+      this.postMessage?.({ type: "createBusy", busy: true });
+      return;
+    }
 
+    const cooldownMs = this.createProblemCooldownUntil - Date.now();
+    if (cooldownMs > 0) {
+      vscode.window.showInformationMessage("잠시 후 다시 시도해주세요.");
+      this.postMessage?.({ type: "createBusy", busy: true });
+      setTimeout(() => this.postMessage?.({ type: "createBusy", busy: false }), cooldownMs);
+      return;
+    }
+
+    this.createProblemInFlight = true;
+    this.postMessage?.({ type: "createBusy", busy: true });
     try {
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      const programmersDir = await resolveProgrammersDir(this.context, workspaceFolder?.uri, { create: true });
       this.postMessage?.({ type: "status", kind: "running", text: `생성 중\n\n기존 문제를 확인하고 있습니다...` });
       const result = await vscode.window.withProgress(
         {
@@ -109,6 +130,10 @@ class ProblemCommands {
       const message = error instanceof Error ? error.message : String(error);
       this.postMessage?.({ type: "status", kind: "error", text: `오류\n\n${message}` });
       vscode.window.showErrorMessage(message);
+    } finally {
+      this.createProblemInFlight = false;
+      this.createProblemCooldownUntil = Date.now() + CREATE_PROBLEM_COOLDOWN_MS;
+      setTimeout(() => this.postMessage?.({ type: "createBusy", busy: false }), CREATE_PROBLEM_COOLDOWN_MS);
     }
   }
 

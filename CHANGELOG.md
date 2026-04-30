@@ -8,6 +8,8 @@
 - Suppress update reload prompts in development mode while keeping packaged install reload prompts enabled.
 - Retry temporary Programmers page fetch failures for `502`, `503`, `504`, and short-lived network errors before surfacing the failure.
 - Keep permanent HTTP failures such as missing or forbidden pages as immediate errors.
+- Disable the problem number input and create button while creation is running, and guard against concurrent or rapid repeated create requests in the extension host.
+- Highlight the currently opened problem in the problem list with an active row style and a `Current` badge.
 - Bump the extension manifest and lockfile to `0.4.0`.
 
 ## 0.3.9

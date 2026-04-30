@@ -183,6 +183,10 @@ function buildSidebarHtml(nonce) {
     .problem-list { border-top: 1px solid var(--vscode-panel-border); }
     .problem-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--vscode-panel-border); cursor: pointer; }
     .problem-row:hover { background: var(--vscode-list-hoverBackground); }
+    .problem-row.current { margin: 0 -2px; padding: 7px 2px; border-left: 3px solid var(--vscode-focusBorder); background: var(--vscode-list-activeSelectionBackground); }
+    .problem-row.current .problem-title { color: var(--vscode-list-activeSelectionForeground); font-weight: 600; }
+    .current-badge { display: none; margin-left: 5px; padding: 1px 4px; border: 1px solid currentColor; border-radius: 2px; font-size: 10px; font-weight: 400; color: var(--vscode-list-activeSelectionForeground); vertical-align: 1px; }
+    .problem-row.current .current-badge { display: inline-block; }
     .problem-title { font-size: 12px; line-height: 1.35; color: var(--vscode-foreground); word-break: break-word; }
     .problem-id { margin-top: 2px; font-size: 11px; color: var(--vscode-descriptionForeground); }
     .problem-actions { display: flex; gap: 6px; align-items: center; }
@@ -317,6 +321,7 @@ function buildSidebarHtml(nonce) {
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     const input = document.getElementById('lessonId');
+    const createButton = document.getElementById('create');
     const customTests = document.getElementById('customTests');
     const problemList = document.getElementById('problemList');
     const status = document.getElementById('status');
@@ -354,6 +359,7 @@ function buildSidebarHtml(nonce) {
     let sidebarStateReady = false;
     let renderedProblems = [];
     let renderedSnapshots = [];
+    let createBusy = false;
     const problemRowCache = new Map();
     const snapshotRowCache = new Map();
     const otherSnapshotRowCache = new Map();
@@ -663,12 +669,12 @@ function buildSidebarHtml(nonce) {
       const row = document.createElement('div');
       row.className = 'problem-row';
       row.innerHTML =
-        '<div><div class="problem-title"></div><div class="problem-id"></div></div>' +
+        '<div><div class="problem-title"><span class="problem-title-text"></span><span class="current-badge">현재</span></div><div class="problem-id"></div></div>' +
         '<div class="problem-actions">' +
           '<label class="review-toggle"><input class="review-check" type="checkbox" /> 다시풀</label>' +
           '<button class="delete-problem" type="button" title="문제 삭제">삭제</button>' +
         '</div>';
-      row._title = row.querySelector('.problem-title');
+      row._title = row.querySelector('.problem-title-text');
       row._id = row.querySelector('.problem-id');
       row._review = row.querySelector('.review-check');
       return row;
@@ -678,6 +684,7 @@ function buildSidebarHtml(nonce) {
     // 클릭 핸들러는 event delegation을 쓰므로 여기서는 data-index와 표시 상태만 맞춘다.
     function updateProblemRow(row, problem, index) {
       row.dataset.index = String(index);
+      row.classList.toggle('current', Boolean(currentProblemDir && problem.problemDir === currentProblemDir));
       row._title.textContent = problem.title || '';
       row._id.textContent =
         '#' + (problem.lessonId || '-') +
@@ -881,6 +888,13 @@ function buildSidebarHtml(nonce) {
       saveCustomTestsButton.textContent = dirty ? '저장' : '저장됨';
     }
 
+    function setCreateBusy(busy) {
+      createBusy = busy;
+      input.disabled = busy;
+      createButton.disabled = busy;
+      createButton.textContent = busy ? '생성 중' : '생성 및 열기';
+    }
+
     function openSnapshot(row) {
       vscode.postMessage({
         type: 'openSolutionSnapshot',
@@ -890,7 +904,18 @@ function buildSidebarHtml(nonce) {
     }
 
     function submitCreateProblem() {
-      vscode.postMessage({ type: 'create', lessonId: input.value.trim() });
+      if (createBusy) return;
+
+      const lessonId = input.value.trim();
+      if (!/^\\d{1,10}$/.test(lessonId)) {
+        status.textContent = '오류\\n\\n문제 번호는 1~10자리 숫자로 입력해주세요.';
+        status.className = 'status error';
+        updatePaneSummaries();
+        return;
+      }
+
+      setCreateBusy(true);
+      vscode.postMessage({ type: 'create', lessonId });
     }
 
     function submitCustomTests() {
@@ -949,7 +974,7 @@ function buildSidebarHtml(nonce) {
     addTest();
     restoreSidebarState();
     sidebarStateReady = true;
-    document.getElementById('create').addEventListener('click', submitCreateProblem);
+    createButton.addEventListener('click', submitCreateProblem);
     input.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         event.preventDefault();
@@ -1057,6 +1082,9 @@ function buildSidebarHtml(nonce) {
         status.textContent = event.data.text;
         status.className = 'status ' + (event.data.kind || '');
         updatePaneSummaries();
+      }
+      if (event.data.type === 'createBusy') {
+        setCreateBusy(Boolean(event.data.busy));
       }
       if (event.data.type === 'testRunning') {
         document.getElementById('stopRun').disabled = !event.data.running;
