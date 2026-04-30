@@ -181,10 +181,10 @@ function buildSidebarHtml(nonce) {
     .search { flex: 1 1 100%; min-width: 0; }
     .refresh { width: auto; min-width: 30px; margin: 0 0 0 auto; padding: 3px 7px; }
     button:disabled { opacity: 0.55; cursor: default; }
-    .problem-list { flex: 1 1 auto; min-height: 0; overflow: auto; border-top: 1px solid var(--vscode-panel-border); }
-    .problem-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--vscode-panel-border); cursor: pointer; }
+    .problem-list { flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; border-top: 1px solid var(--vscode-panel-border); }
+    .problem-row { box-sizing: border-box; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; width: 100%; padding: 7px 0; border-bottom: 1px solid var(--vscode-panel-border); cursor: pointer; }
     .problem-row:hover { background: var(--vscode-list-hoverBackground); }
-    .problem-row.current { margin: 0 -2px; padding: 7px 2px; border-left: 3px solid var(--vscode-focusBorder); background: var(--vscode-list-activeSelectionBackground); }
+    .problem-row.current { padding: 7px 2px; border-left: 3px solid var(--vscode-focusBorder); background: var(--vscode-list-activeSelectionBackground); }
     .problem-row.current .problem-title { color: var(--vscode-list-activeSelectionForeground); font-weight: 600; }
     .current-badge { display: none; margin-left: 5px; padding: 1px 4px; border: 1px solid currentColor; border-radius: 2px; font-size: 10px; font-weight: 400; color: var(--vscode-list-activeSelectionForeground); vertical-align: 1px; }
     .problem-row.current .current-badge { display: inline-block; }
@@ -195,8 +195,11 @@ function buildSidebarHtml(nonce) {
     .review-toggle input { width: auto; margin: 0; }
     .solution-action { width: auto; margin: 0; padding: 2px 6px; background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); font-size: 11px; }
     .solution-action:hover { background: var(--vscode-button-hoverBackground); color: var(--vscode-button-foreground); }
-    .snapshot-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--vscode-panel-border); cursor: pointer; }
+    .snapshot-row { box-sizing: border-box; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; width: 100%; padding: 7px 0; border-bottom: 1px solid var(--vscode-panel-border); cursor: pointer; }
     .snapshot-row:hover { background: var(--vscode-list-hoverBackground); }
+    .snapshot-row.current { padding: 7px 2px; border-left: 3px solid var(--vscode-focusBorder); background: var(--vscode-list-activeSelectionBackground); }
+    .snapshot-row.current .snapshot-title { color: var(--vscode-list-activeSelectionForeground); font-weight: 600; }
+    .snapshot-row.current .current-badge { display: inline-block; }
     .snapshot-title { font-size: 12px; line-height: 1.35; color: var(--vscode-foreground); word-break: break-word; }
     .snapshot-meta { margin-top: 2px; font-size: 11px; color: var(--vscode-descriptionForeground); }
     .snapshot-other { border-bottom: 1px solid var(--vscode-panel-border); }
@@ -357,10 +360,13 @@ function buildSidebarHtml(nonce) {
     let savedCustomTests = [];
     let savedCustomTestsSignature = '';
     let searchRenderTimer = undefined;
+    let scrollSaveTimer = undefined;
+    let pendingProblemListScrollTop = undefined;
     let sidebarStateReady = false;
     let renderedProblems = [];
     let renderedSnapshots = [];
     let createBusy = false;
+    let selectedSnapshotKey = '';
     const problemRowCache = new Map();
     const snapshotRowCache = new Map();
     const otherSnapshotRowCache = new Map();
@@ -374,6 +380,8 @@ function buildSidebarHtml(nonce) {
         timerNotificationKey,
         notifiedTimerMarks: Array.from(notifiedTimerMarks),
         customTests: savedCustomTests,
+        selectedSnapshotKey,
+        problemListScrollTop: problemList.scrollTop,
         problemFilter: document.querySelector('input[name="problemFilter"]:checked')?.value || 'all',
         collapsed: {
           top: topPane.classList.contains('collapsed'),
@@ -392,6 +400,8 @@ function buildSidebarHtml(nonce) {
       activeTimer = saved.activeTimer ? normalizeTimer(saved.activeTimer) : undefined;
       timerNotificationKey = typeof saved.timerNotificationKey === 'string' ? saved.timerNotificationKey : '';
       notifiedTimerMarks = new Set(Array.isArray(saved.notifiedTimerMarks) ? saved.notifiedTimerMarks : []);
+      selectedSnapshotKey = typeof saved.selectedSnapshotKey === 'string' ? saved.selectedSnapshotKey : '';
+      pendingProblemListScrollTop = typeof saved.problemListScrollTop === 'number' ? saved.problemListScrollTop : undefined;
       if (Array.isArray(saved.customTests)) {
         setCustomTests(saved.customTests);
       }
@@ -664,6 +674,10 @@ function buildSidebarHtml(nonce) {
       return (row.problem.problemDir || '') + '::' + (row.snapshot.path || index);
     }
 
+    function getSnapshotSelectionKey(problemDir, snapshotPath) {
+      return String(problemDir || '') + '::' + String(snapshotPath || '');
+    }
+
     // 문제 row의 DOM 구조는 최초 생성 때만 만든다.
     // 이후 렌더에서는 updateProblemRow가 텍스트와 checkbox 상태만 바꾼다.
     function createProblemRow() {
@@ -699,12 +713,12 @@ function buildSidebarHtml(nonce) {
       const row = document.createElement('div');
       row.className = 'snapshot-row';
       row.innerHTML =
-        '<div><div class="snapshot-title"></div><div class="snapshot-meta"></div></div>' +
+        '<div><div class="snapshot-title"><span class="snapshot-title-text"></span><span class="current-badge">현재</span></div><div class="snapshot-meta"></div></div>' +
         '<div class="problem-actions">' +
           '<button class="solution-action open-snapshot" type="button">열기</button>' +
           '<button class="delete-problem delete-snapshot" type="button">삭제</button>' +
         '</div>';
-      row._title = row.querySelector('.snapshot-title');
+      row._title = row.querySelector('.snapshot-title-text');
       row._meta = row.querySelector('.snapshot-meta');
       return row;
     }
@@ -713,6 +727,7 @@ function buildSidebarHtml(nonce) {
     function updateSnapshotRow(row, item, index) {
       const { problem, snapshot } = item;
       row.dataset.index = String(index);
+      row.classList.toggle('current', selectedSnapshotKey === getSnapshotSelectionKey(problem.problemDir, snapshot.path));
       row._title.textContent = problem.title || '';
       row._meta.textContent =
         '#' + (problem.lessonId || '-') +
@@ -761,6 +776,7 @@ function buildSidebarHtml(nonce) {
       if (otherRows.length > 0) {
         const details = document.createElement('details');
         details.className = 'snapshot-other';
+        details.open = otherRows.some((row) => selectedSnapshotKey === getSnapshotSelectionKey(row.problem.problemDir, row.snapshot.path));
         const summary = document.createElement('summary');
         summary.textContent = '다른 언어 풀이 ' + otherRows.length + '개';
         const otherList = document.createElement('div');
@@ -814,6 +830,33 @@ function buildSidebarHtml(nonce) {
       const currentRow = problemList.querySelector('.problem-row.current');
       if (!currentRow) return;
       currentRow.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+
+    function scrollSelectedSnapshotIntoView() {
+      const currentRow = problemList.querySelector('.snapshot-row.current');
+      if (!currentRow) return;
+      const details = currentRow.closest('details');
+      if (details) {
+        details.open = true;
+      }
+      currentRow.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+
+    function restoreProblemListScrollTop() {
+      if (pendingProblemListScrollTop === undefined) return;
+      problemList.scrollTop = pendingProblemListScrollTop;
+      pendingProblemListScrollTop = undefined;
+    }
+
+    function scheduleProblemListScrollSave() {
+      if (!sidebarStateReady) return;
+      if (scrollSaveTimer) {
+        clearTimeout(scrollSaveTimer);
+      }
+      scrollSaveTimer = setTimeout(() => {
+        scrollSaveTimer = undefined;
+        saveSidebarState();
+      }, 500);
     }
 
     function scheduleRenderProblems() {
@@ -903,6 +946,9 @@ function buildSidebarHtml(nonce) {
     }
 
     function openSnapshot(row) {
+      selectedSnapshotKey = getSnapshotSelectionKey(row.problem.problemDir, row.snapshot.path);
+      renderProblems();
+      saveSidebarState();
       vscode.postMessage({
         type: 'openSolutionSnapshot',
         problemDir: row.problem.problemDir,
@@ -959,6 +1005,9 @@ function buildSidebarHtml(nonce) {
           });
           return;
         }
+        selectedSnapshotKey = '';
+        renderProblems();
+        saveSidebarState();
         vscode.postMessage({ type: 'openProblem', problemDir: problem.problemDir });
         return;
       }
@@ -967,6 +1016,11 @@ function buildSidebarHtml(nonce) {
         const row = renderedSnapshots[Number(snapshotRow.dataset.index)];
         if (!row) return;
         if (event.target.closest('.delete-snapshot')) {
+          if (selectedSnapshotKey === getSnapshotSelectionKey(row.problem.problemDir, row.snapshot.path)) {
+            selectedSnapshotKey = '';
+            renderProblems();
+            saveSidebarState();
+          }
           vscode.postMessage({
             type: 'deleteSolutionSnapshot',
             problemDir: row.problem.problemDir,
@@ -1073,7 +1127,11 @@ function buildSidebarHtml(nonce) {
     document.querySelectorAll('input[name="problemFilter"]').forEach((filter) => {
       filter.addEventListener('change', () => {
         renderProblems();
-        scrollCurrentProblemIntoView();
+        if (filter.value === 'solutions') {
+          scrollSelectedSnapshotIntoView();
+        } else {
+          scrollCurrentProblemIntoView();
+        }
         updatePaneSummaries();
         saveSidebarState();
       });
@@ -1084,6 +1142,7 @@ function buildSidebarHtml(nonce) {
     document.getElementById('refreshProblems').addEventListener('click', () => {
       vscode.postMessage({ type: 'refreshProblems', force: true });
     });
+    problemList.addEventListener('scroll', scheduleProblemListScrollSave, { passive: true });
     problemList.addEventListener('click', handleProblemListClick);
     window.addEventListener('message', (event) => {
       if (event.data.type === 'status') {
@@ -1111,11 +1170,16 @@ function buildSidebarHtml(nonce) {
       if (event.data.type === 'problems') {
         problems = event.data.problems || [];
         renderProblems();
+        restoreProblemListScrollTop();
         saveSidebarState();
       }
       if (event.data.type === 'currentProblem') {
+        const previousProblemDir = currentProblemDir;
         currentProblem = event.data.problem;
         currentProblemDir = currentProblem?.problemDir || '';
+        if (currentProblemDir !== previousProblemDir) {
+          selectedSnapshotKey = '';
+        }
         savedCustomTests = [];
         savedCustomTestsSignature = '';
         activeTimer = undefined;
@@ -1123,6 +1187,7 @@ function buildSidebarHtml(nonce) {
         updateCurrentActions();
         renderProblems();
         scrollCurrentProblemIntoView();
+        saveSidebarState();
         if (currentProblemDir) {
           vscode.postMessage({ type: 'getTimer', problemDir: currentProblemDir });
         } else {

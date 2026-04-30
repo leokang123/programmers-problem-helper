@@ -385,6 +385,14 @@ Programmers/
 현재 열린 문제의 상세 정보가 필요할 때만 `loadProblemInfo()`가 같은 summary에 현재 언어 `solutionHistory`와 다른 언어 `otherSolutionHistory`를 추가한다.
 `problem-index.json`의 `review`와 `solutionHistoryCount`는 목록 렌더링을 위한 캐시다. 원본 상태는 각각 문제 폴더의 `review.json`과 `solution-history.json`이고, 인덱스가 없거나 범위를 벗어나면 전체 스캔으로 다시 만든다.
 
+### 사이드바 목록 UI 상태
+
+- 문제 목록의 필터, 새로고침, 검색 영역은 고정하고 `problemList` row 영역만 스크롤한다.
+- 현재 열린 문제 row와 풀이기록에서 선택한 snapshot row는 `현재` 배지와 왼쪽 표시선으로 구분한다.
+- 필터 변경 시 `전체`/`다시풀`은 현재 문제 row로, `풀이기록`은 선택된 snapshot row로 스크롤한다. 해당 항목이 없으면 스크롤하지 않는다.
+- 다시풀 토글, 삭제, 목록 refresh처럼 사용자가 목록 위치를 유지하길 기대하는 갱신에서는 자동 포커스를 수행하지 않는다.
+- 사이드바 Webview state에는 선택된 snapshot key, 선택한 필터, 문제 목록 `scrollTop`을 저장한다. 스크롤 위치는 마지막 scroll 이벤트 이후 500ms 동안 멈추면 저장하고, 사이드바를 다시 열어 목록 렌더가 끝난 뒤 한 번 복원한다.
+
 ### 성능 주의점
 
 - 문제 목록 새로고침은 문제 수만큼 metadata 파일을 여러 개 읽는다.

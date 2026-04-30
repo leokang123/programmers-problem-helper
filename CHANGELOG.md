@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.1
+
+- Disable the problem number input and create button while creation is running, and guard against concurrent or rapid repeated create requests in the extension host.
+- Highlight the currently opened problem in the problem list with an active row style and a `Current` badge.
+- Keep problem filters, refresh, and search fixed while only the problem rows scroll.
+- Focus the current problem or selected solution snapshot when switching list filters, without stealing scroll after review toggles or deletes.
+- Mark the selected solution snapshot in the solution history list and preserve that selection across sidebar refreshes.
+- Restore the sidebar problem-list scroll position after reopening the sidebar, saving it after scrolling settles.
+- Prevent horizontal scrolling in problem and solution-history rows.
+- Bump the extension manifest and lockfile to `0.4.1`.
+
 ## 0.4.0
 
 - Remove the Dev Container and symlink-based development workflow in favor of local VS Code `Run Extension`.
@@ -8,8 +19,6 @@
 - Suppress update reload prompts in development mode while keeping packaged install reload prompts enabled.
 - Retry temporary Programmers page fetch failures for `502`, `503`, `504`, and short-lived network errors before surfacing the failure.
 - Keep permanent HTTP failures such as missing or forbidden pages as immediate errors.
-- Disable the problem number input and create button while creation is running, and guard against concurrent or rapid repeated create requests in the extension host.
-- Highlight the currently opened problem in the problem list with an active row style and a `Current` badge.
 - Bump the extension manifest and lockfile to `0.4.0`.
 
 ## 0.3.9
