@@ -63,6 +63,16 @@ function replayLatestStatusMessage() {
   }
 }
 
+async function autoPrepareLastProblem(context) {
+  try {
+    const { problemCommands } = ensureServices(context);
+    await problemCommands.openLastProblemFromState();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    outputChannel?.appendLine(`[Programmers Helper] Auto prepare last problem failed: ${message}`);
+  }
+}
+
 // 확장 진입점을 초기화하고 명령을 등록합니다.
 function activate(context) {
   outputChannel = vscode.window.createOutputChannel("Programmers Helper");
@@ -214,6 +224,8 @@ function activate(context) {
       }
     }),
   );
+
+  void autoPrepareLastProblem(context);
 }
 
 // Webview 표시 전 activation 경로를 가볍게 유지하기 위해 명령 구현은 실제 사용 시점에 로드합니다.

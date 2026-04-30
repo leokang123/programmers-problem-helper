@@ -146,6 +146,23 @@ class ProblemCommands {
     await this.openProblemFromDir(target.problemDir);
   }
 
+  // 저장된 마지막 문제만 조용히 복원합니다.
+  async openLastProblemFromState() {
+    const last = this.context.workspaceState.get("lastProblemDir");
+    if (typeof last !== "string") {
+      return;
+    }
+
+    const safeDir = await this.validateProblemDir(last);
+    if (!safeDir) {
+      await this.context.workspaceState.update("lastProblemDir", undefined);
+      this.postMessage?.({ type: "currentProblem", problem: undefined });
+      return;
+    }
+
+    await this.openProblemFromDir(safeDir);
+  }
+
   // 검증된 문제 폴더를 에디터에 엽니다.
   async openProblemFromDir(problemDir, options = {}) {
     const safeDir = await this.validateProblemDir(problemDir);

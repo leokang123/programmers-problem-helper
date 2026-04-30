@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.2
+
+- Automatically reopen and prepare the last active problem when the extension is first activated, so the sidebar status reflects the current local or Docker runtime readiness after restarting VS Code.
+- Bump the extension manifest and lockfile to `0.4.2`.
+
 ## 0.4.1
 
 - Disable the problem number input and create button while creation is running, and guard against concurrent or rapid repeated create requests in the extension host.
