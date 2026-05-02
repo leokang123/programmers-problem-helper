@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Split Marketplace publishing from the tag-push release workflow into a manual GitHub Actions workflow.
+- Publish Marketplace builds from the VSIX already attached to a selected GitHub Release, defaulting to the latest release when no tag is provided.
+
 ## 0.5.0
 
 - Add optional Git-based synchronization for the Programmers storage folder, including Setup Sync, Sync Now, storage-folder opening, and stored GitHub token clearing commands.

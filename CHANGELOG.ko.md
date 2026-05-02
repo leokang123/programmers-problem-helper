@@ -1,5 +1,10 @@
 # 변경 이력
 
+## 미배포
+
+- Marketplace 배포를 태그 push release workflow에서 분리해 수동 실행 GitHub Actions workflow로 옮겼습니다.
+- tag 입력이 없으면 최신 GitHub Release, 입력이 있으면 해당 Release에 첨부된 VSIX를 받아 Marketplace에 배포하도록 했습니다.
+
 ## 0.5.0
 
 - Programmers 저장소 폴더를 Git으로 동기화하는 선택 기능을 추가했습니다. Setup Sync, Sync Now, 저장소 폴더 열기, 저장된 GitHub token 삭제 명령을 포함합니다.

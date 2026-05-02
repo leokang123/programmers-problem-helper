@@ -186,7 +186,7 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-태그가 올라가면 GitHub Actions가 `.vsix` 파일을 만들고 Release에 첨부합니다.
+태그가 올라가면 GitHub Actions가 `.vsix` 파일을 만들고 Release에 첨부합니다. Marketplace 배포는 별도의 `Publish Marketplace` workflow를 수동 실행해 GitHub Release에 첨부된 VSIX를 publish합니다.
 
 ## 사용 방법
 
@@ -246,14 +246,11 @@ VSIX 패키징 확인:
 npm run package
 ```
 
-Marketplace 배포는 publisher 계정이 준비된 뒤 실행합니다.
+Marketplace 배포는 GitHub Actions의 `Publish Marketplace` workflow를 수동 실행합니다. `tag` 입력을 비워두면 최신 GitHub Release의 VSIX를 배포하고, `v0.5.0`처럼 값을 넣으면 해당 Release의 VSIX를 배포합니다.
 
-```sh
-npx @vscode/vsce login leokang123
-npx @vscode/vsce publish
-```
+Repository secrets에는 `VSCE_PAT`가 필요합니다.
 
-GitHub Release와 Marketplace 배포는 `v*.*.*` 태그를 push하면 GitHub Actions가 `.vsix`를 만들고 Release에 첨부한 뒤 Marketplace에 publish합니다. 자동 Marketplace 배포에는 GitHub repository secret `VSCE_PAT`가 필요합니다.
+`v*.*.*` 태그 push는 GitHub Release와 VSIX 첨부까지만 자동으로 처리합니다. Marketplace 배포는 Release asset을 직접 사이트에 업로드하지 않고, 수동 workflow가 같은 VSIX를 내려받아 `vsce publish --packagePath`로 배포합니다.
 
 ## 개발
 
