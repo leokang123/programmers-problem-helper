@@ -4,6 +4,7 @@
 
 - Marketplace 배포를 태그 push release workflow에서 분리해 수동 실행 GitHub Actions workflow로 옮겼습니다.
 - tag 입력이 없으면 최신 GitHub Release, 입력이 있으면 해당 Release에 첨부된 VSIX를 받아 Marketplace에 배포하도록 했습니다.
+- 개발 모드에서 `Programmers` 저장소 폴더를 고를 때 extension source 폴더보다 열린 workspace를 우선하도록 수정했습니다.
 
 ## 0.5.0
 

@@ -153,7 +153,7 @@ function getDevelopmentRootUri(context, workspaceUri) {
     return undefined;
   }
 
-  return context.extensionUri || workspaceUri;
+  return workspaceUri || context.extensionUri;
 }
 
 // 현재 문제 화면에 필요한 metadata, 예제, 풀이 기록, 커스텀 테스트를 묶어 읽습니다.

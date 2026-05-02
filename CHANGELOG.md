@@ -4,6 +4,7 @@
 
 - Split Marketplace publishing from the tag-push release workflow into a manual GitHub Actions workflow.
 - Publish Marketplace builds from the VSIX already attached to a selected GitHub Release, defaulting to the latest release when no tag is provided.
+- Prefer the opened workspace over the extension source folder when choosing the development-mode `Programmers` storage folder.
 
 ## 0.5.0
 
