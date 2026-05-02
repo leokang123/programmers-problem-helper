@@ -1,10 +1,12 @@
 # 변경 이력
 
-## 미배포
+## 0.5.1
 
 - Marketplace 배포를 태그 push release workflow에서 분리해 수동 실행 GitHub Actions workflow로 옮겼습니다.
 - tag 입력이 없으면 최신 GitHub Release, 입력이 있으면 해당 Release에 첨부된 VSIX를 받아 Marketplace에 배포하도록 했습니다.
 - 개발 모드에서 `Programmers` 저장소 폴더를 고를 때 extension source 폴더보다 열린 workspace를 우선하도록 수정했습니다.
+- Sync Now의 원격 통합 방식을 rebase에서 merge로 바꿔, 로컬 커밋마다 같은 충돌을 반복 해결할 가능성을 줄였습니다.
+- `package.json`과 `package-lock.json` 버전을 `0.5.1`로 올렸습니다.
 
 ## 0.5.0
 

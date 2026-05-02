@@ -1,10 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.5.1
 
 - Split Marketplace publishing from the tag-push release workflow into a manual GitHub Actions workflow.
 - Publish Marketplace builds from the VSIX already attached to a selected GitHub Release, defaulting to the latest release when no tag is provided.
 - Prefer the opened workspace over the extension source folder when choosing the development-mode `Programmers` storage folder.
+- Switch Sync Now's remote integration from rebase to merge so conflicts are resolved in one merge session instead of potentially repeating per local commit.
+- Bump the extension manifest and lockfile to `0.5.1`.
 
 ## 0.5.0
 

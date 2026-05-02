@@ -117,7 +117,7 @@ class SyncManager {
       {
         label: "Manual setup",
         description: "Open the folder and do everything yourself",
-        detail: "Opens the Programmers storage folder. After you configure Git manually, run Programmers: Sync Now to commit, pull, and push.",
+        detail: "Opens the Programmers storage folder. After you configure Git manually, run Programmers: Sync Now to commit, merge, and push.",
         kind: "manual",
       },
     ], {
@@ -316,7 +316,7 @@ class SyncManager {
     }
   }
 
-  // push 없이 fetch/rebase만 수행해 remote 상태를 local에 반영합니다.
+  // push 없이 fast-forward pull만 수행해 remote 상태를 local에 반영합니다.
   async pullOnly({ silent = false } = {}) {
     if (this.syncInFlight) {
       return;
@@ -362,7 +362,7 @@ class SyncManager {
     }
   }
 
-  // 수동 Sync Now에서 저장, commit, fetch/rebase, push, 목록 refresh를 순서대로 수행합니다.
+  // 수동 Sync Now에서 저장, commit, fetch/merge, push, 목록 refresh를 순서대로 수행합니다.
   async syncNow() {
     if (this.syncInFlight) {
       vscode.window.showInformationMessage("이미 Programmers sync를 실행 중입니다.");
@@ -451,7 +451,7 @@ class SyncManager {
     }
   }
 
-  // Git 상태를 조회해 commit/pull/push가 필요한지 계산합니다.
+  // Git 상태를 조회해 commit/merge/push가 필요한지 계산합니다.
   async needsSync(context) {
     if (await this.hasChanges(context)) {
       return true;
@@ -705,7 +705,7 @@ class SyncManager {
     return result.code === 0;
   }
 
-  // remote branch가 있으면 rebase로 remote 변경을 local sync commit 위에 통합합니다.
+  // remote branch가 있으면 merge로 remote 변경을 local sync commit과 통합합니다.
   async integrateRemote(context) {
     if (!(await this.hasLocalHead(context))) {
       await this.git(context, ["pull", "origin", context.branch]);
@@ -715,12 +715,12 @@ class SyncManager {
     const mergeBase = await this.git(context, ["merge-base", "HEAD", `origin/${context.branch}`], {
       allowNonZeroExit: true,
     });
-    if (mergeBase.code === 0) {
-      await this.git(context, ["pull", "--rebase", "origin", context.branch]);
-      return;
+    const args = ["merge", "--no-edit"];
+    if (mergeBase.code !== 0) {
+      args.push("--allow-unrelated-histories");
     }
-
-    await this.git(context, ["merge", `origin/${context.branch}`, "--allow-unrelated-histories", "--no-edit"]);
+    args.push(`origin/${context.branch}`);
+    await this.git(context, args);
   }
 
   // 저장소에 아직 첫 commit이 있는지 확인합니다.

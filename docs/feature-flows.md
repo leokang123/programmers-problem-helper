@@ -80,9 +80,9 @@
 - `src/runners/dockerRuntime.js`
   - Docker CLI 확인, runtime image 확인/빌드, runtime container 생성/시작/정리를 담당한다.
 - `src/sync/syncManager.js`
-  - Git 저장소 설정, pull/rebase/push 흐름, status bar 상태를 조율한다.
+  - Git 저장소 설정, fetch/merge/push 흐름, status bar 상태를 조율한다.
 - `src/sync/syncConflictActions.js`
-  - `SyncConflictController`로 Git 충돌 상태 수집, conflict resolver Webview 메시지 처리, rebase/merge continue를 담당한다.
+  - `SyncConflictController`로 Git 충돌 상태 수집, conflict resolver Webview 메시지 처리, merge finish와 이전 rebase 상태 continue를 담당한다.
 - `src/sync/conflictResolverView.js`
   - Git 충돌 해결 Webview HTML과 충돌 항목 표시 helper를 담당한다.
 - `src/sync/syncUtils.js`
@@ -185,7 +185,7 @@ Git 동기화는 기본값이 꺼져 있고, 설정이 켜진 뒤 `Programmers: 
 2. merge/rebase/cherry-pick 진행 중인지 확인한다.
 3. local 변경사항을 `git add -A`와 sync commit으로 묶는다.
 4. `git fetch origin <branch>`를 실행한다.
-5. remote branch가 있으면 `pull --rebase` 또는 unrelated history merge로 통합한다.
+5. remote branch가 있으면 `merge origin/<branch> --no-edit`로 통합한다. 공통 조상이 없으면 `--allow-unrelated-histories`를 붙인다.
 6. conflict marker가 남아 있는지 repository 전체를 다시 검사한다.
 7. `git push -u origin <branch>`를 실행한다.
 8. 문제 목록 cache를 강제 갱신한다.
@@ -195,8 +195,8 @@ Git 동기화는 기본값이 꺼져 있고, 설정이 켜진 뒤 `Programmers: 
 - `SyncConflictController`는 `SyncManager`가 만든 controller이며, Git 충돌 상태 수집과 conflict resolver Webview를 담당한다.
 - 일반 수정 충돌은 충돌 파일을 오른쪽 editor에 열고, 사용자가 VS Code 충돌 UI로 직접 해결한다.
 - 삭제/수정 충돌은 문제 폴더 단위로 묶어 보여주고, Webview에서 문제 유지 또는 삭제 유지를 선택한다.
-- 모든 충돌 항목이 사라지면 사용자가 Continue Rebase 또는 Finish Merge를 누른다.
-- controller는 `SyncManager.stageResolvedFilesAndGetUnmerged()` wrapper를 통해 해결된 파일을 stage하고, `rebase --continue` 또는 `commit --no-edit` 후 다시 `syncNow()`로 이어간다.
+- 모든 충돌 항목이 사라지면 사용자가 Finish Merge를 누른다. 이전 버전에서 rebase 진행 중 상태가 남아 있을 때만 Continue Rebase fallback을 쓴다.
+- controller는 `SyncManager.stageResolvedFilesAndGetUnmerged()` wrapper를 통해 해결된 파일을 stage하고, merge는 `commit --no-edit`, rebase fallback은 `rebase --continue` 후 다시 `syncNow()`로 이어간다.
 
 ### Git hook과 제외 파일
 

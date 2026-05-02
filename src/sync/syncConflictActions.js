@@ -502,6 +502,7 @@ class SyncConflictController {
   async finishMergeAndSync() {
     try {
       const context = await this.getGitContext({ requireConfigured: true });
+      await vscode.workspace.saveAll(false);
       const unmerged = await this.stageResolvedFilesAndGetUnmerged(context, { operation: "merge" });
       if (unmerged.length > 0) {
         await this.openConflictResolver("merge");
@@ -520,6 +521,7 @@ class SyncConflictController {
   async continueRebaseAndSync() {
     try {
       const context = await this.getGitContext({ requireConfigured: true });
+      await vscode.workspace.saveAll(false);
       const unmerged = await this.stageResolvedFilesAndGetUnmerged(context, { operation: "rebase" });
       if (unmerged.length > 0) {
         await this.openConflictResolver("rebase");

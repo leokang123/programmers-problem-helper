@@ -83,12 +83,12 @@ Setup Sync에서는 원격 저장소 URL과 브랜치를 입력합니다. HTTPS 
 `Programmers: Sync Now`는 현재 열려 있는 파일을 저장한 뒤 Git 저장소에서 다음 순서로 동작합니다.
 
 ```text
-save all -> git add/commit -> fetch -> rebase 또는 merge -> conflict marker 검사 -> push
+save all -> git add/commit -> fetch -> merge -> conflict marker 검사 -> push
 ```
 
-충돌이 나면 conflict resolver Webview가 열립니다. 일반 수정 충돌은 파일을 열어 VS Code의 충돌 선택 UI로 해결하고, 삭제/수정 충돌은 문제 폴더를 유지할지 삭제를 유지할지 선택합니다. 모든 항목을 해결한 뒤 Webview에서 Continue Rebase 또는 Finish Merge를 누르면 남은 Git 작업을 이어가고 다시 push합니다.
+충돌이 나면 conflict resolver Webview가 열립니다. 일반 수정 충돌은 파일을 열어 VS Code의 충돌 선택 UI로 해결하고, 삭제/수정 충돌은 문제 폴더를 유지할지 삭제를 유지할지 선택합니다. 모든 항목을 해결한 뒤 Webview에서 Finish Merge를 누르면 남은 Git 작업을 이어가고 다시 push합니다. 이전 버전에서 rebase 진행 중 상태가 남아 있는 경우에만 Continue Rebase fallback을 보여줄 수 있습니다.
 
-확장이 종료될 때 자동 push는 하지 않습니다. 대신 설정에 따라 활성화 시 원격 변경사항을 pull-only 방식으로 가져오고, 상태 확인 interval은 동기화가 필요한지만 표시합니다. 실제 commit/pull/push는 `Sync Now`가 담당합니다.
+확장이 종료될 때 자동 push는 하지 않습니다. 대신 설정에 따라 활성화 시 원격 변경사항을 pull-only 방식으로 가져오고, 상태 확인 interval은 동기화가 필요한지만 표시합니다. 실제 commit/fetch/merge/push는 `Sync Now`가 담당합니다.
 
 동기화 저장소에는 풀이 파일, 문제 설명, 메모, 타이머, 커스텀 테스트, 풀이 기록 같은 사용자 상태가 들어갑니다. 테스트 실행 중 생성되는 파일은 `.gitignore` 대상입니다.
 

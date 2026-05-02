@@ -2,7 +2,7 @@
   "name": "programmers-problem-helper",
   "displayName": "Programmers Problem Helper",
   "description": "Solve Programmers coding-test problems in VS Code with language templates, split previews, and local sample test runs.",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "publisher": "leokang123",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -99,7 +99,7 @@
         "programmersHelper.sync.enabled": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Enable Git-based synchronization for the Programmers storage folder. This is off by default. After turning it on, run `Programmers: Setup Sync` to choose a remote repository, branch, and token/SSH authentication. Sync uses Git commands against the storage folder: pull on activate, and commit/pull/push when you run `Programmers: Sync Now`."
+          "markdownDescription": "Enable Git-based synchronization for the Programmers storage folder. This is off by default. After turning it on, run `Programmers: Setup Sync` to choose a remote repository, branch, and token/SSH authentication. Sync uses Git commands against the storage folder: pull on activate, and commit/fetch/merge/push when you run `Programmers: Sync Now`."
         },
         "programmersHelper.sync.branch": {
           "type": "string",
