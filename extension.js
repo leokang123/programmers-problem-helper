@@ -13,6 +13,7 @@ let sidebarProvider;
 let problemCommands;
 let testRunner;
 let timerManager;
+let syncManager;
 let outputChannel;
 let diagnosticCollection;
 let lastExecutionMode;
@@ -82,6 +83,7 @@ function activate(context) {
   outputChannel.appendLine(`[Programmers Helper] Global storage: ${context.globalStorageUri.fsPath}`);
   lastExecutionMode = getConfiguredExecutionMode();
   registerExtensionUpdateReloadPrompt(context);
+  syncManager = createSyncManager(context);
   sidebarProvider = new ProgrammersSidebarProvider(context, {
     create: async (message) => {
       const { problemCommands, timerManager } = ensureServices(context);
@@ -218,14 +220,49 @@ function activate(context) {
         await problemCommands.openNotes(target.problemDir);
       }
     }),
+    vscode.commands.registerCommand("programmersHelper.setupSync", async () => {
+      await syncManager?.setupSync();
+    }),
+    vscode.commands.registerCommand("programmersHelper.syncNow", async () => {
+      await syncManager?.syncNow();
+    }),
+    vscode.commands.registerCommand("programmersHelper.openStorageFolder", async () => {
+      await syncManager?.openStorageFolder();
+    }),
+    vscode.commands.registerCommand("programmersHelper.clearGitHubToken", async () => {
+      await syncManager?.clearGitHubToken();
+    }),
     vscode.workspace.onDidChangeConfiguration(async (event) => {
       if (event.affectsConfiguration("programmersHelper.executionMode")) {
         await handleExecutionModeChange();
+      }
+      if (event.affectsConfiguration("programmersHelper.sync")) {
+        syncManager?.updateStatusBar();
+        syncManager?.configureStatusCheck();
+        if (vscode.workspace.getConfiguration("programmersHelper").get("sync.enabled")) {
+          void syncManager?.explainSetupAfterEnabled();
+          void syncManager?.autoPullOnActivate();
+        }
       }
     }),
   );
 
   void autoPrepareLastProblem(context);
+  void syncManager.autoPullOnActivate();
+}
+
+function createSyncManager(context) {
+  const {
+    SyncManager,
+  } = require("./src/syncManager");
+  const manager = new SyncManager({
+    context,
+    execCommand,
+    outputChannel,
+    refreshProblems: async (options) => sidebarProvider?.refreshProblems(options),
+  });
+  context.subscriptions.push(manager);
+  return manager;
 }
 
 // Webview 표시 전 activation 경로를 가볍게 유지하기 위해 명령 구현은 실제 사용 시점에 로드합니다.
@@ -318,19 +355,37 @@ function getExtensionPackageVersion(extension) {
 
 // 확장 종료 시 테스트를 중지하고 Docker 정리는 백그라운드에 맡깁니다.
 async function deactivate() {
+  const syncScheduled = await syncManager?.syncInBackgroundOnDeactivate();
+  if (syncScheduled) {
+    safeAppendOutputLine("[Programmers Helper] Git sync scheduled in background");
+  }
   await timerManager?.pauseAllRunning();
   testRunner?.stop();
+  try {
+    await vscode.workspace.saveAll(false);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    safeAppendOutputLine(`[Programmers Helper] Save before deactivate sync skipped: ${message}`);
+  }
   try {
     const {
       stopDockerRuntimeContainersInBackground,
     } = require("./src/dockerRuntime");
     const scheduled = stopDockerRuntimeContainersInBackground();
     if (!scheduled) {
-      outputChannel?.appendLine("[Programmers Helper] Docker runtime cleanup schedule skipped");
+      safeAppendOutputLine("[Programmers Helper] Docker runtime cleanup schedule skipped");
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    outputChannel?.appendLine(`[Programmers Helper] Docker runtime cleanup skipped: ${message}`);
+    safeAppendOutputLine(`[Programmers Helper] Docker runtime cleanup skipped: ${message}`);
+  }
+}
+
+function safeAppendOutputLine(message) {
+  try {
+    outputChannel?.appendLine(message);
+  } catch {
+    // Deactivation can close VS Code output channels before cleanup finishes.
   }
 }
 
@@ -441,7 +496,7 @@ function settleExecCommand({ command, args, options, code, signal, stdout, stder
 // 외부 명령을 실행하고 stdout/stderr를 모읍니다.
 function execCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
-    const child = cp.spawn(command, args, { cwd: options.cwd });
+    const child = cp.spawn(command, args, { cwd: options.cwd, env: options.env });
     let stdout = "";
     let stderr = "";
     const timeoutState = startKillTimer(child, options.timeoutMs);

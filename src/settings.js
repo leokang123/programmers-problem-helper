@@ -14,6 +14,7 @@ const EXECUTION_MODES = new Set(["docker", "local"]);
 const LANGUAGES = new Set(getLanguageIds());
 const COMPILER_COMMANDS = new Set(["clang++", "g++"]);
 const CPP_STANDARDS = new Set(["c++17", "c++20"]);
+const DEFAULT_SYNC_BRANCH = "main";
 
 // VS Code 설정을 읽고 실행 코드가 기대하는 안정적인 값으로 정규화합니다.
 function getExecutionSettings() {
@@ -24,6 +25,17 @@ function getExecutionSettings() {
     compilerCommand: normalizeEnum(config.get("compilerCommand"), COMPILER_COMMANDS, DEFAULT_COMPILER_COMMAND),
     cppStandard: normalizeEnum(config.get("cppStandard"), CPP_STANDARDS, DEFAULT_CPP_STANDARD),
     testTimeoutMs: normalizeTimeoutMs(config.get("testTimeoutMs"), DEFAULT_TEST_TIMEOUT_MS),
+  };
+}
+
+function getSyncSettings() {
+  const config = vscode.workspace.getConfiguration("programmersHelper");
+  return {
+    enabled: Boolean(config.get("sync.enabled")),
+    branch: normalizeBranch(config.get("sync.branch"), DEFAULT_SYNC_BRANCH),
+    autoPullOnActivate: config.get("sync.autoPullOnActivate") !== false,
+    autoSyncOnDeactivate: Boolean(config.get("sync.autoSyncOnDeactivate")),
+    statusCheckIntervalMinutes: normalizeNonNegativeInteger(config.get("sync.statusCheckIntervalMinutes"), 0),
   };
 }
 
@@ -41,6 +53,20 @@ function normalizeTimeoutMs(value, fallback) {
   return Math.max(100, Math.floor(numeric));
 }
 
+function normalizeBranch(value, fallback) {
+  const branch = typeof value === "string" ? value.trim() : "";
+  return branch && !/[\s~^:?*[\\]/.test(branch) ? branch : fallback;
+}
+
+function normalizeNonNegativeInteger(value, fallback) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+  return Math.max(0, Math.floor(numeric));
+}
+
 module.exports = {
   getExecutionSettings,
+  getSyncSettings,
 };

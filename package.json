@@ -95,6 +95,32 @@
           "default": 3000,
           "minimum": 100,
           "markdownDescription": "Set the timeout in milliseconds for each sample or custom test case."
+        },
+        "programmersHelper.sync.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Enable Git-based synchronization for the Programmers storage folder. This is off by default. After turning it on, run `Programmers: Setup Sync` to choose a remote repository, branch, and token/SSH authentication. Sync uses Git commands against the storage folder: pull on activate, and commit/pull/push when you run `Programmers: Sync Now`."
+        },
+        "programmersHelper.sync.branch": {
+          "type": "string",
+          "default": "main",
+          "markdownDescription": "Git branch used for Programmers storage synchronization. `Programmers: Setup Sync` will initialize or rename the local branch to this value."
+        },
+        "programmersHelper.sync.autoPullOnActivate": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "When sync is enabled and configured, pull remote changes in the background when the extension activates. If local unsynced changes exist, auto pull is skipped and the status bar shows unsynced."
+        },
+        "programmersHelper.sync.autoSyncOnDeactivate": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "When sync is enabled, try to finish a background sync when VS Code deactivates the extension. This is best-effort only; `Programmers: Sync Now` remains the reliable way to push changes to the remote repository."
+        },
+        "programmersHelper.sync.statusCheckIntervalMinutes": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "markdownDescription": "Periodically check whether the Programmers storage Git repository needs synchronization without committing, pulling, or pushing. Set to `30` to check every 30 minutes. `0` disables periodic status checks."
         }
       }
     },
@@ -137,6 +163,22 @@
       {
         "command": "programmersHelper.openNotes",
         "title": "Programmers: Open Notes"
+      },
+      {
+        "command": "programmersHelper.setupSync",
+        "title": "Programmers: Setup Sync"
+      },
+      {
+        "command": "programmersHelper.syncNow",
+        "title": "Programmers: Sync Now"
+      },
+      {
+        "command": "programmersHelper.openStorageFolder",
+        "title": "Programmers: Open Storage Folder"
+      },
+      {
+        "command": "programmersHelper.clearGitHubToken",
+        "title": "Programmers: Clear Stored GitHub Token"
       }
     ],
     "keybindings": [
