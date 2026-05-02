@@ -1,5 +1,18 @@
 # 변경 이력
 
+## 0.5.0
+
+- Programmers 저장소 폴더를 Git으로 동기화하는 선택 기능을 추가했습니다. Setup Sync, Sync Now, 저장소 폴더 열기, 저장된 GitHub token 삭제 명령을 포함합니다.
+- HTTPS GitHub token은 VS Code SecretStorage에 저장하고, Git 명령 인자에 직접 넣지 않고 askpass 스크립트를 통해 전달합니다.
+- 활성화 시 pull-only 자동 반영과 commit/pull/push 없이 동기화 필요 여부만 확인하는 주기적 상태 확인 설정을 추가했습니다.
+- Git merge/rebase 충돌을 처리하는 conflict resolver Webview를 추가하고, 삭제/수정 충돌은 문제 폴더 단위로 유지 또는 삭제를 선택할 수 있게 했습니다.
+- pre-commit, pre-push conflict marker guard hook을 설치하고, 생성 runner artifact와 생성된 problem index는 Git에서 제외하도록 정리했습니다.
+- `src` 코드를 `core`, `problems`, `runners`, `sync`, `timers`, `ui` 폴더로 재구성했습니다.
+- 문제 명령을 CRUD, 풀이, 테스트 action controller로 나누고, 테스트 러너를 runtime, compiler, executor controller로 분리했습니다.
+- `npm run check`가 중첩 JavaScript 파일까지 검사하고 최근 sync controller 회귀 유형을 더 빨리 잡도록 보강했습니다.
+- Git sync 설정, Sync Now 동작, 충돌 처리, 동기화 대상 파일 정책을 README와 작업자 문서에 반영했습니다.
+- `package.json`과 `package-lock.json` 버전을 `0.5.0`으로 올렸습니다.
+
 ## 0.4.3
 
 - Docker 모드에서 마지막 문제를 자동 복원할 때 런타임 컨테이너를 바로 시작하지 않고, 사용자가 문제를 열거나 테스트를 실행할 때 준비한다는 대기 상태를 표시합니다.

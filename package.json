@@ -2,7 +2,7 @@
   "name": "programmers-problem-helper",
   "displayName": "Programmers Problem Helper",
   "description": "Solve Programmers coding-test problems in VS Code with language templates, split previews, and local sample test runs.",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "publisher": "leokang123",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -40,7 +40,7 @@
   },
   "homepage": "https://github.com/leokang123/programmers-problem-helper#readme",
   "scripts": {
-    "check": "node --check extension.js && node --check src/*.js",
+    "check": "node scripts/check.js",
     "package": "npx @vscode/vsce package"
   },
   "main": "./extension.js",
@@ -110,11 +110,6 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "When sync is enabled and configured, pull remote changes in the background when the extension activates. If local unsynced changes exist, auto pull is skipped and the status bar shows unsynced."
-        },
-        "programmersHelper.sync.autoSyncOnDeactivate": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "When sync is enabled, try to finish a background sync when VS Code deactivates the extension. This is best-effort only; `Programmers: Sync Now` remains the reliable way to push changes to the remote repository."
         },
         "programmersHelper.sync.statusCheckIntervalMinutes": {
           "type": "number",

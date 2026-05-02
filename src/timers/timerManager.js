@@ -2,20 +2,23 @@ const path = require("path");
 const vscode = require("vscode");
 const {
   helperPath,
-} = require("./helperPaths");
+} = require("../problems/helperPaths");
 
 const LEGACY_TIMER_STATE_KEY = "problemTimers";
 const TIMER_TARGETS = [20, 30, 60, 90, 120];
 const DEFAULT_TARGET_MINUTES = 60;
 const TIMER_CHECKPOINT_INTERVAL_MS = 30000;
 
+// 문제별 풀이 타이머의 파일 저장, legacy migration, checkpoint를 관리합니다.
 class TimerManager {
+  // VS Code workspaceState와 timer checkpoint 상태를 초기화합니다.
   constructor(context) {
     this.context = context;
     this.runningProblemDir = undefined;
     this.checkpointInterval = undefined;
   }
 
+  // 현재 문제의 타이머를 읽고 legacy 저장소 값이 있으면 파일 저장소로 옮깁니다.
   async getTimer(problemDir) {
     if (!problemDir) {
       return undefined;
@@ -39,6 +42,7 @@ class TimerManager {
     return normalized;
   }
 
+  // 문제별 타이머를 running 상태로 전환하고 checkpoint를 시작합니다.
   async start(problemDir) {
     if (!problemDir) {
       return undefined;
@@ -62,6 +66,7 @@ class TimerManager {
     return next;
   }
 
+  // 실행 중인 문제 타이머를 멈추고 누적 시간을 저장합니다.
   async pause(problemDir) {
     if (!problemDir) {
       return undefined;
@@ -77,12 +82,14 @@ class TimerManager {
     return next;
   }
 
+  // 문제 전환 시 이전 문제의 실행 중 타이머를 자동 정산합니다.
   async pauseRunningForProblemSwitch(nextProblemDir) {
     if (this.runningProblemDir && this.runningProblemDir !== nextProblemDir) {
       await this.pause(this.runningProblemDir);
     }
   }
 
+  // extension 종료/정리 시 현재 실행 중인 모든 타이머를 멈춥니다.
   async pauseAllRunning() {
     if (this.runningProblemDir) {
       await this.pause(this.runningProblemDir);
@@ -105,6 +112,7 @@ class TimerManager {
     }
   }
 
+  // 문제별 타이머를 0초, 정지 상태로 초기화합니다.
   async reset(problemDir) {
     if (!problemDir) {
       return undefined;
@@ -126,6 +134,7 @@ class TimerManager {
     return next;
   }
 
+  // 목표 풀이 시간을 분 단위로 저장하고 현재 타이머 상태에 반영합니다.
   async setTarget(problemDir, targetMinutes) {
     if (!problemDir) {
       return undefined;
@@ -141,11 +150,13 @@ class TimerManager {
     return next;
   }
 
+  // 문제 helper 영역의 timer.json을 읽습니다.
   async readTimer(problemDir) {
     const timer = await readJson(this.getTimerUri(problemDir));
     return timer && typeof timer === "object" && !Array.isArray(timer) ? timer : undefined;
   }
 
+  // 문제 helper 영역에 timer.json을 저장합니다.
   async writeTimer(problemDir, timer) {
     const uri = this.getTimerUri(problemDir);
     await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(uri.fsPath)));
@@ -155,6 +166,7 @@ class TimerManager {
     );
   }
 
+  // 실행 중 타이머를 주기적으로 파일에 반영하는 interval을 시작합니다.
   startCheckpointInterval() {
     this.stopCheckpointInterval();
     this.checkpointInterval = setInterval(() => {
@@ -165,6 +177,7 @@ class TimerManager {
     }
   }
 
+  // 실행 중 타이머가 없을 때 checkpoint interval을 정리합니다.
   stopCheckpointInterval() {
     if (this.checkpointInterval) {
       clearInterval(this.checkpointInterval);
@@ -172,6 +185,7 @@ class TimerManager {
     }
   }
 
+  // 현재 실행 중인 타이머의 누적 시간을 초 단위로 파일에 반영합니다.
   async checkpointRunningTimer() {
     const problemDir = this.runningProblemDir;
     if (!problemDir) {
@@ -199,19 +213,23 @@ class TimerManager {
     });
   }
 
+  // 문제별 timer.json 파일 URI를 계산합니다.
   getTimerUri(problemDir) {
     return vscode.Uri.file(helperPath(problemDir, "timer.json"));
   }
 
+  // 이전 버전 workspaceState에 저장된 전체 timer map을 읽습니다.
   getLegacyTimers() {
     const saved = this.context.workspaceState.get(LEGACY_TIMER_STATE_KEY);
     return saved && typeof saved === "object" && !Array.isArray(saved) ? { ...saved } : {};
   }
 
+  // 특정 문제에 대한 legacy timer 값을 읽습니다.
   getLegacyTimer(problemDir) {
     return this.getLegacyTimers()[problemDir];
   }
 
+  // 파일 저장소로 옮긴 legacy timer 값을 workspaceState에서 제거합니다.
   async deleteLegacyTimer(problemDir) {
     const timers = this.getLegacyTimers();
     if (!Object.prototype.hasOwnProperty.call(timers, problemDir)) {
@@ -221,6 +239,7 @@ class TimerManager {
     await this.context.workspaceState.update(LEGACY_TIMER_STATE_KEY, timers);
   }
 
+  // 저장된 timer payload를 현재 UI/계산이 기대하는 형태로 정규화합니다.
   normalizeTimer(timer, problemDir) {
     const now = Date.now();
     return {
@@ -233,6 +252,7 @@ class TimerManager {
     };
   }
 
+  // 메모리의 timer 상태를 파일에 저장할 최소 payload로 변환합니다.
   toStoredTimer(timer) {
     const normalized = this.normalizeTimer(timer, timer.problemDir);
     return {
@@ -244,6 +264,7 @@ class TimerManager {
     };
   }
 
+  // running timer를 현재 시각 기준으로 정산하고 stopped 상태로 만듭니다.
   stopAndSettleTimer(timer, now = Date.now()) {
     const runningDelta = timer.isRunning && timer.startedAt ? Math.max(0, now - timer.startedAt) : 0;
     const elapsedMs = floorToSecondMs(timer.elapsedMs + runningDelta);
@@ -257,6 +278,7 @@ class TimerManager {
   }
 }
 
+// timer.json을 읽고 없거나 깨져 있으면 undefined로 처리합니다.
 async function readJson(uri) {
   try {
     const bytes = await vscode.workspace.fs.readFile(uri);
@@ -266,11 +288,13 @@ async function readJson(uri) {
   }
 }
 
+// 목표 시간 입력을 0 이상의 분 단위 숫자로 정리합니다.
 function normalizeTargetMinutes(value) {
   const numeric = Number(value);
   return TIMER_TARGETS.includes(numeric) ? numeric : DEFAULT_TARGET_MINUTES;
 }
 
+// UI 흔들림을 줄이기 위해 밀리초 값을 초 단위로 내립니다.
 function floorToSecondMs(value) {
   return Math.floor(Math.max(0, Number(value) || 0) / 1000) * 1000;
 }

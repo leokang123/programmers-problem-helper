@@ -1,4 +1,4 @@
-// solution 함수의 반환 타입과 인자 목록을 읽습니다.
+// C++ solution 함수 선언에서 반환 타입과 인자 목록을 추출합니다.
 function parseSolutionSignature(cpp) {
   const match = cpp.match(/([A-Za-z_][\w:<>,\s&*]*?)\s+solution\s*\(([\s\S]*?)\)\s*\{/);
   if (!match) {
@@ -20,7 +20,7 @@ function parseSolutionSignature(cpp) {
   return { returnType, params };
 }
 
-// 예제들을 실행하는 C++ 테스트 러너 코드를 만듭니다.
+// 샘플/커스텀 테스트를 실행할 C++ test_runner.cpp 코드를 생성합니다.
 function buildRunner(signature, examples, solutionIncludePath = "../solution.cpp", options = {}) {
   const includePath = JSON.stringify(solutionIncludePath);
   const shouldMeasureMemory = shouldMeasureJudgeMemory(options);
@@ -89,18 +89,19 @@ ${testBlocks.join("\n")}
 `;
 }
 
-// judge 모드일 때만 플랫폼별 메모리 측정 코드를 생성합니다.
+// judge-like 메모리 모드에서만 runner가 메모리 사용량을 측정하도록 판정합니다.
 function shouldMeasureJudgeMemory(options) {
   return (options.memoryMode || "judge") === "judge";
 }
 
+// C++ runner의 메모리 측정에 필요한 header include 코드를 만듭니다.
 function buildMemoryHeaderCode(shouldMeasureMemory) {
   return shouldMeasureMemory
     ? "#if !defined(_WIN32)\n#include <sys/resource.h>\n#endif"
     : "";
 }
 
-// POSIX 전용 헤더가 Windows 로컬 컴파일을 막지 않도록 필요한 경우에만 포함합니다.
+// C++ runner가 peak RSS를 읽어 출력할 helper 코드를 만듭니다.
 function buildMemorySupportCode(shouldMeasureMemory) {
   if (!shouldMeasureMemory) {
     return "";
@@ -150,15 +151,14 @@ double currentJudgeMemoryMb() {
 `;
 }
 
-// 실행 환경별 메모리 표시식을 C++ 코드 문자열로 선택합니다.
+// 테스트 결과 출력에 넣을 메모리 값 표현식을 결정합니다.
 function getMemoryValueExpression(options) {
   return (options.memoryMode || "judge") === "judge"
     ? 'toFixedMemory(currentJudgeMemoryMb()) + "MB"'
     : '"N/A(local)"';
 }
 
-// 한 개 예제를 실행하는 C++ if 블록을 만듭니다.
-// buildRunner는 전체 파일 조립만, 이 함수는 테스트 케이스별 선언/호출/비교만 담당한다.
+// 예제 하나를 solution 호출 코드와 PASS/FAIL 출력 코드로 변환합니다.
 function buildTestBlock(signature, example, index, memoryValueExpression) {
   if (example.inputs.length !== signature.params.length) {
     throw new Error(`입출력 예 #${index + 1}의 인자 수가 solution 시그니처와 다릅니다.`);
@@ -186,7 +186,7 @@ ${expected}
   }`;
 }
 
-// 입력 값을 C++ 리터럴 형태로 바꿉니다.
+// Programmers 예제 텍스트를 C++ 타입에 맞는 literal로 변환합니다.
 function toCppLiteral(type, rawValue) {
   const value = rawValue.trim().replace(/^`|`$/g, "");
   if (/^vector\s*</.test(type)) {
@@ -201,7 +201,7 @@ function toCppLiteral(type, rawValue) {
   return value;
 }
 
-// 커스텀 테스트 JSON을 내부 테스트 형식으로 바꿉니다.
+// JSON 커스텀 테스트 입력을 runner builder가 쓰는 예제 배열로 변환합니다.
 function parseCustomTests(customTestsText) {
   let parsed;
   try {
@@ -234,7 +234,7 @@ function parseCustomTests(customTestsText) {
   });
 }
 
-// JS 값을 원본 C++ 리터럴 문자열로 바꿉니다.
+// 커스텀 테스트 JSON 값을 C++ literal 변환 전의 원시 문자열로 바꿉니다.
 function valueToRawLiteral(value) {
   if (typeof value === "string") {
     return JSON.stringify(value);
@@ -242,7 +242,7 @@ function valueToRawLiteral(value) {
   return JSON.stringify(value);
 }
 
-// 타입 문자열의 공백과 꺾쇠 표기를 정리합니다.
+// C++ 타입 문자열의 공백을 정리해 비교/분기하기 쉽게 만듭니다.
 function normalizeType(type) {
   return type
     .replace(/\bconst\b/g, "")
@@ -254,7 +254,7 @@ function normalizeType(type) {
     .trim();
 }
 
-// 중첩 구조를 고려해 최상위 구분자로만 나눕니다.
+// 중첩 괄호 안 delimiter를 무시하고 최상위 항목만 나눕니다.
 function splitTopLevel(value, delimiter) {
   const parts = [];
   let current = "";

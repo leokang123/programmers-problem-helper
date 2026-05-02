@@ -2,6 +2,7 @@ const {
   parseCustomTests,
 } = require("./cppRunnerBuilder");
 
+// Java Solution 클래스의 solution 메서드 시그니처를 추출합니다.
 function parseSolutionSignature(javaSource) {
   const match = javaSource.match(/(?:public\s+)?([A-Za-z_][\w<>\[\]\s,?]*?)\s+solution\s*\(([\s\S]*?)\)\s*(?:throws\s+[^{]+)?\{/);
   if (!match) {
@@ -23,6 +24,7 @@ function parseSolutionSignature(javaSource) {
   return { returnType, params };
 }
 
+// 샘플/커스텀 테스트를 실행할 Java TestRunner 코드를 생성합니다.
 function buildRunner(signature, examples, _solutionIncludePath, options = {}) {
   const memorySupportCode = buildMemorySupportCode(options);
   const memoryValueExpression = getMemoryValueExpression(options);
@@ -60,6 +62,7 @@ ${testBlocks.join("\n")}
 `;
 }
 
+// Java runner가 메모리 사용량을 출력할 helper 코드를 만듭니다.
 function buildMemorySupportCode(options) {
   if ((options.memoryMode || "judge") !== "judge") {
     return "";
@@ -74,12 +77,14 @@ function buildMemorySupportCode(options) {
 `;
 }
 
+// Java 테스트 결과 출력에 넣을 메모리 값 표현식을 결정합니다.
 function getMemoryValueExpression(options) {
   return (options.memoryMode || "judge") === "judge"
     ? "currentMemoryLabel()"
     : "\"N/A(local)\"";
 }
 
+// 예제 하나를 Java solution 호출과 PASS/FAIL 출력 코드로 변환합니다.
 function buildTestBlock(signature, example, index, memoryValueExpression) {
   if (example.inputs.length !== signature.params.length) {
     throw new Error(`입출력 예 #${index + 1}의 인자 수가 solution 시그니처와 다릅니다.`);
@@ -107,6 +112,7 @@ ${expected}
     }`;
 }
 
+// Programmers 예제 텍스트를 Java 타입에 맞는 literal로 변환합니다.
 function toJavaLiteral(type, rawValue) {
   const value = rawValue.trim().replace(/^`|`$/g, "");
   if (type.endsWith("[]")) {
@@ -125,12 +131,14 @@ function toJavaLiteral(type, rawValue) {
   return value;
 }
 
+// 중괄호/대괄호 혼용 예제 값을 Java 배열 initializer로 정리합니다.
 function toJavaArrayInitializer(rawValue) {
   return rawValue
     .replace(/\[/g, "{")
     .replace(/\]/g, "}");
 }
 
+// Java 타입 문자열의 공백을 정리해 비교/분기하기 쉽게 만듭니다.
 function normalizeType(type) {
   return type
     .replace(/\bfinal\b/g, "")
@@ -142,6 +150,7 @@ function normalizeType(type) {
     .trim();
 }
 
+// 중첩 배열 안 delimiter를 무시하고 최상위 항목만 나눕니다.
 function splitTopLevel(value, delimiter) {
   const parts = [];
   let current = "";

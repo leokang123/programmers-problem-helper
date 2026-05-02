@@ -19,42 +19,88 @@
 
 ### 주요 모듈
 
-- `src/sidebarProvider.js`
-  - 사이드바 Webview HTML, 버튼 이벤트, 문제 목록 렌더링, 현재 문제 UI 상태를 담당한다.
+`src/`는 역할별 폴더로 나뉜다.
+
+- `src/core/`: 확장 전역 설정, 실행 환경 구분, 기본값
+- `src/problems/`: 문제 생성/열기/저장소/언어 메타데이터/Programmers 페이지 파싱
+- `src/runners/`: 테스트 실행, Docker/local runtime, 언어별 runner builder, 오류 포맷팅
+- `src/ui/`: 사이드바 Webview
+- `src/sync/`: Git 기반 Programmers 저장소 동기화와 충돌 해결 Webview
+- `src/timers/`: 문제별 풀이 타이머
+
+- `src/ui/sidebarProvider.js`
+  - 사이드바 Webview lifecycle, 메시지 핸들링, 문제 목록 로딩/캐시를 담당한다.
   - Webview에서 확장으로 메시지를 보낼 때 `type`으로 명령을 구분한다.
-- `src/problemCommands.js`
-  - 문제 생성, 열기, 메모, 새풀이, 초기화, 삭제 같은 VS Code 동작을 조율한다.
+- `src/ui/sidebarHtml.js`
+  - 사이드바 Webview HTML, 스타일, 클라이언트 스크립트를 만든다.
+- `src/ui/sidebarStyles.js`
+  - 사이드바 Webview CSS를 담당한다.
+- `src/ui/sidebarClientScript.js`, `src/ui/sidebarClient*Script.js`
+  - Webview 내부 상태, 문제 목록 렌더링, 커스텀 테스트/이벤트 처리를 담당한다.
+- `src/problems/problemCommands.js`
+  - VS Code 명령에서 호출하는 public facade다.
+  - 문제 CRUD, 풀이 action, 테스트 action은 아래 목적별 action 객체로 위임한다.
   - 현재 문제를 열면 `showOpenedProblemState()`로 사이드바 상태를 갱신한다.
-- `src/problemStore.js`
+- `src/problems/problemCrudActions.js`
+  - 문제 생성, 마지막 문제 열기, 문제 폴더 열기, 문제 삭제를 담당한다.
+- `src/problems/problemSolutionActions.js`
+  - 새풀이, 메모, 웹 열기, 초기화, 풀이 기록 열기/삭제, 다시풀 상태를 담당한다.
+- `src/problems/problemTestActions.js`
+  - 커스텀 테스트 저장/실행 요청과 현재 테스트 대상 탐색을 담당한다.
+- `src/problems/problemEditor.js`
+  - 문제 설명/풀이 파일 열기, 탭 정리, 현재 실행 대상 추정을 담당한다.
+- `src/problems/problemStore.js`
   - 파일 시스템 저장소 접근을 담당한다.
   - 문제 목록, 메타데이터, 예제, 커스텀 테스트, 풀이 기록, 초기 코드 파일을 읽고 쓴다.
-- `src/environment.js`
+- `src/problems/solutionHistoryStore.js`
+  - 풀이 snapshot 생성/삭제/조회와 초기 코드 reset을 담당한다.
+- `src/problems/problemStoreUtils.js`
+  - problem store 계층의 JSON/text 파일 읽기와 경로 검증 helper를 담당한다.
+- `src/core/environment.js`
   - VS Code `context.extensionMode`로 개발판과 패키징 설치본을 구분한다.
   - Docker 실행 상태 메시지의 런타임 라벨을 만든다.
-- `src/testRunner.js`
-  - 샘플/커스텀 테스트 러너 생성, 언어별 컴파일/실행, 오류 진단을 담당한다.
-- `src/languages.js`
+- `src/runners/testRunner.js`
+  - 샘플/커스텀 테스트 실행 순서를 조율하는 orchestrator다.
+- `src/runners/testRunnerRuntime.js`
+  - Docker/local runtime 준비와 child process 실행을 담당한다.
+- `src/runners/testRunnerCompiler.js`
+  - 언어별 runner 컴파일과 compiler diagnostic 반영을 담당한다.
+- `src/runners/testRunnerExecutor.js`
+  - 컴파일된 artifact 또는 script runner를 테스트 케이스 단위로 실행한다.
+- `src/runners/testRunnerArtifacts.js`
+  - 생성 runner 파일, fingerprint, 컴파일 artifact cache를 담당한다.
+- `src/runners/testRunnerOutput.js`
+  - 테스트 출력 축약, PASS/FAIL 집계, sanitizer 재시도 판단을 담당한다.
+- `src/runners/testRunTarget.js`
+  - 명령/사이드바에서 넘어온 실행 대상을 problemDir/solutionPath/language로 정규화한다.
+- `src/problems/languages.js`
   - 지원 언어의 Programmers 파라미터, 풀이 파일명, 초기 템플릿 파일명, runner 파일명, snapshot 확장자를 정의한다.
-- `src/languageRunnerRegistry.js`
+- `src/runners/languageRunnerRegistry.js`
   - 현재 언어에 맞는 runner builder를 선택한다.
-- `src/dockerRuntime.js`
+- `src/runners/dockerRuntime.js`
   - Docker CLI 확인, runtime image 확인/빌드, runtime container 생성/시작/정리를 담당한다.
-- `src/problemCommands.js`
-  - 문제를 열 때 실행 모드에 따라 Docker runtime 또는 local 언어 명령어 준비 상태를 확인한다.
-- `src/timerManager.js`
+- `src/sync/syncManager.js`
+  - Git 저장소 설정, pull/rebase/push 흐름, status bar 상태를 조율한다.
+- `src/sync/syncConflictActions.js`
+  - `SyncConflictController`로 Git 충돌 상태 수집, conflict resolver Webview 메시지 처리, rebase/merge continue를 담당한다.
+- `src/sync/conflictResolverView.js`
+  - Git 충돌 해결 Webview HTML과 충돌 항목 표시 helper를 담당한다.
+- `src/sync/syncUtils.js`
+  - Git 오류 생성, token masking, conflict marker hook, gitignore 보조 함수를 담는다.
+- `src/timers/timerManager.js`
   - 문제별 풀이 타이머 상태를 `.programmers-helper/timer.json`에 저장한다.
   - 시작/중지/초기화/목표 시간 변경을 처리하고, 문제 전환이나 확장 종료 시 실행 중인 타이머를 정산 후 중지한다.
   - 기존 `context.workspaceState.problemTimers` 데이터는 해당 문제를 다시 열 때 `timer.json`으로 옮기고 legacy 값을 제거한다.
-- `src/cppRunnerBuilder.js`
+- `src/runners/cppRunnerBuilder.js`
   - `solution.cpp`의 `solution(...)` 시그니처를 파싱하고 C++ `test_runner.cpp` 코드를 만든다.
-- `src/javaRunnerBuilder.js`
+- `src/runners/javaRunnerBuilder.js`
   - `Solution.java`의 `solution(...)` 시그니처를 파싱하고 Java `TestRunner.java` 코드를 만든다.
-- `src/pythonRunnerBuilder.js`
+- `src/runners/pythonRunnerBuilder.js`
   - `solution.py`의 `def solution(...)` 시그니처를 파싱하고 Python `test_runner.py` 코드를 만든다.
-- `src/problemParsing.js`
+- `src/problems/problemParsing.js`
   - Programmers HTML fetch, HTML to Markdown 변환, `problem.md` 입출력 예 fallback 파싱을 담당한다.
   - `502`, `503`, `504`와 일시적인 네트워크 오류는 짧게 재시도하고, `403`, `404` 같은 확정 실패는 즉시 오류로 올린다.
-- `src/errorFormatting.js`
+- `src/runners/errorFormatting.js`
   - 컴파일/런타임 오류를 사용자에게 보일 메시지와 VS Code diagnostic으로 바꾼다.
 
 ### 저장 파일
@@ -113,11 +159,55 @@ Programmers/
 
 - 개발판, 즉 `context.extensionMode === vscode.ExtensionMode.Development`: 열린 workspace 아래 `Programmers/`
 - 패키징 설치본: `context.globalStorageUri/Programmers`
-- 이 분기는 `src/problemStore.js`의 `getDevelopmentRootUri()`, `getPackagedRootUri()`, `getProgrammersDirCandidates()`가 담당한다.
+- 이 분기는 `src/problems/problemStore.js`의 `getDevelopmentRootUri()`, `getDefaultProgrammersDir()`, `getProgrammersDirCandidates()`가 담당한다.
+
+## Git 동기화 flow
+
+Git 동기화는 기본값이 꺼져 있고, 설정이 켜진 뒤 `Programmers: Setup Sync` 또는 사용자가 직접 구성한 Git 저장소를 통해 동작한다.
+
+### 설정 흐름
+
+1. `extension.js`
+   - activation 시 `SyncManager`를 생성하고 status bar, 설정 변경 listener, sync 명령을 등록한다.
+   - `programmersHelper.sync.enabled`가 켜져 있으면 setup 상태를 확인하고 `autoPullOnActivate()`를 시도한다.
+2. `SyncManager.setupSync()`
+   - 기존 GitHub repo URL을 입력하거나, 이미 설정된 로컬 Git repo를 사용하거나, storage folder를 열어 수동 설정하도록 분기한다.
+   - HTTPS GitHub remote면 필요할 때 token을 입력받아 VS Code SecretStorage에 저장한다.
+   - `initializeRepository()`가 `git init`, branch 설정, origin 설정, `.gitignore`, conflict marker hook을 준비한다.
+3. 초기 sync
+   - setup 중 sync 설정을 켠 뒤 `syncNow()`를 호출한다.
+
+### Sync Now 흐름
+
+`SyncManager.syncNow()`는 아래 순서로 동작한다.
+
+1. 열려 있는 파일을 `saveAll(false)`로 저장한다.
+2. merge/rebase/cherry-pick 진행 중인지 확인한다.
+3. local 변경사항을 `git add -A`와 sync commit으로 묶는다.
+4. `git fetch origin <branch>`를 실행한다.
+5. remote branch가 있으면 `pull --rebase` 또는 unrelated history merge로 통합한다.
+6. conflict marker가 남아 있는지 repository 전체를 다시 검사한다.
+7. `git push -u origin <branch>`를 실행한다.
+8. 문제 목록 cache를 강제 갱신한다.
+
+### 충돌 해결 흐름
+
+- `SyncConflictController`는 `SyncManager`가 만든 controller이며, Git 충돌 상태 수집과 conflict resolver Webview를 담당한다.
+- 일반 수정 충돌은 충돌 파일을 오른쪽 editor에 열고, 사용자가 VS Code 충돌 UI로 직접 해결한다.
+- 삭제/수정 충돌은 문제 폴더 단위로 묶어 보여주고, Webview에서 문제 유지 또는 삭제 유지를 선택한다.
+- 모든 충돌 항목이 사라지면 사용자가 Continue Rebase 또는 Finish Merge를 누른다.
+- controller는 `SyncManager.stageResolvedFilesAndGetUnmerged()` wrapper를 통해 해결된 파일을 stage하고, `rebase --continue` 또는 `commit --no-edit` 후 다시 `syncNow()`로 이어간다.
+
+### Git hook과 제외 파일
+
+- `initializeRepository()`와 `getGitContext()`는 `.git/hooks/pre-commit`, `.git/hooks/pre-push`에 conflict marker guard를 보장한다.
+- hook은 tracked 파일과 `.gitignore`에 걸리지 않은 untracked 파일에서 `<<<<<<<`, `=======`, `>>>>>>>` marker 조합을 찾으면 commit/push를 중단한다.
+- 기존 hook이 있으면 `<hook>.programmers-helper-disabled`로 백업하고 helper hook으로 교체한다. 기존 hook과 자동 chaining하지는 않는다.
+- `.programmers-helper/problem-index.json`과 `**/.programmers-helper/generated/`는 `.gitignore`에 들어간다.
 
 ## 다중 언어 flow
 
-지원 언어는 `src/languages.js`가 source of truth다. 새 언어를 추가할 때는 최소한 아래 값을 정의한다.
+지원 언어는 `src/problems/languages.js`가 source of truth다. 새 언어를 추가할 때는 최소한 아래 값을 정의한다.
 
 - `programmersParam`: Programmers URL의 `?language=` 값
 - `solutionFileName`: 문제 폴더의 현재 풀이 파일명
@@ -138,7 +228,7 @@ Programmers/
 1. 현재 언어의 풀이 파일과 초기 템플릿 파일이 있는지 확인한다.
 2. 둘 중 하나가 없으면 `?language=<current>` URL로 Programmers 페이지를 다시 가져온다.
 3. 문제 설명은 덮어쓰지 않고 현재 언어의 풀이 파일과 초기 템플릿만 없을 때 생성한다.
-4. `programmers.json.languages[language]`에 언어별 `url`을 기록한다. 풀이 파일명과 초기 템플릿 경로는 `src/languages.js`에서 계산한다.
+4. `programmers.json.languages[language]`에 언어별 `url`을 기록한다. 풀이 파일명과 초기 템플릿 경로는 `src/problems/languages.js`에서 계산한다.
 
 기존 C++ 문제는 `programmers.json.languages`가 없어도 계속 동작한다. Java로 전환 후 문제를 열면 Java 템플릿이 추가된다.
 
@@ -249,7 +339,7 @@ Programmers/
 
 ### 코드 흐름
 
-1. `sidebarProvider.js`
+1. `sidebarHtml.js`
    - `create` 버튼 클릭이나 문제 번호 입력창 `Enter`가 `{ type: "create", lessonId }` 메시지를 보낸다.
 2. `extension.js`
    - `create` 핸들러가 `problemCommands.createProblemFromId(...)`를 호출한다.
@@ -264,7 +354,7 @@ Programmers/
    - 제목, 본문, 난이도, 분류, 현재 언어 기본 템플릿을 추출한다.
    - `htmlToMarkdown(markdownHtml)`로 `problem.md` 본문을 만든다.
    - `extractExamplesFromMarkdown(problemMd)` 결과를 `programmers.json.examples`에 저장한다.
-5. `problemCommands.js`
+5. `problemCommands.js` / `problemEditor.js`
    - 생성 결과를 `openProblemFromDir(result.problemDir.fsPath)`로 연다.
 
 ### 생성되는 메타데이터
@@ -417,7 +507,7 @@ Programmers/
 
 ### Webview에서 TestRunner까지
 
-1. `sidebarProvider.js`
+1. `sidebarHtml.js`
    - `runSamples` 버튼 클릭
    - `currentProblemDir`이 없으면 return
    - `{ type: "runSamples", problemDir: currentProblemDir }`
@@ -432,6 +522,9 @@ Programmers/
    - `runFromCommand(...)`
    - `normalizeRunTarget(providedProblemDir)`
    - `runSamples(target.problemDir, "", target.solutionPath, target.language)`
+   - `TestRunnerRuntime`으로 실행 환경을 준비한다.
+   - `TestRunnerCompiler`로 runner를 컴파일하거나 cache를 재사용한다.
+   - `TestRunnerExecutor`로 각 테스트 케이스를 실행한다.
 
 ### 실행 대상 풀이 파일 결정
 
@@ -648,14 +741,13 @@ python3 .programmers-helper/generated/runners/test_runner.py <testIndex>
    - VS Code 명령 경로는 Webview에 `{ type: "runCustomRequest" }`를 보내 현재 입력된 테스트를 실행하게 한다.
    - Webview가 없으면 사이드바에서 실행하라는 안내를 표시한다.
 5. `problemCommands.js`
-   - `validateProblemDir(problemDir)`
-   - `saveCustomTests(problemDir, tests)`
-   - `runTests(JSON.stringify(tests || []), target)`
+   - `ProblemTestActions.runCustomTestsFromMessage(...)`로 위임한다.
+   - action 안에서 `validateProblemDir(problemDir)`, `saveCustomTests(problemDir, tests)`, `runTests(JSON.stringify(tests || []), target)`를 수행한다.
 6. `extension.js`에서 주입한 `runTests`
    - `testRunner.runFromCommand(context, customTestsText, providedProblemDir, ...)`
 7. `testRunner.js`
    - `parseCustomTests(customTestsText)`로 내부 examples 형태로 변환
-   - 이후 샘플 테스트와 동일하게 runner 생성, 컴파일, 실행
+   - 이후 샘플 테스트와 동일하게 runtime 준비, runner 생성, 컴파일, 실행
 
 ### 저장 흐름
 
@@ -983,19 +1075,19 @@ python3 .programmers-helper/generated/runners/test_runner.py <testIndex>
 ### 다음 최적화 후보
 
 1. Timer checkpoint read 생략
-   - 위치: `src/timerManager.js`
+   - 위치: `src/timers/timerManager.js`
    - 현재: 30초마다 `timer.json`을 읽고 정산 후 다시 쓴다.
    - 방향: 실행 중 타이머 상태를 메모리에 유지해 checkpoint에서 read를 생략할 수 있다. 다만 현재 비용은 작다.
 2. Webview 가상 스크롤
-   - 위치: `src/sidebarProvider.js`의 inline script
+   - 위치: `src/ui/sidebarClientListScript.js`
    - 현재: row DOM은 재사용하지만 보이는 목록 전체를 순회하고 배치한다.
    - 방향: 문제 수가 수천 개 이상으로 커져 검색/스크롤 끊김이 확인되면 화면 근처 row만 렌더링한다.
 3. 문제 인덱스 rebuild 병렬 제한
-   - 위치: `src/problemStore.js`
+   - 위치: `src/problems/problemStore.js`
    - 현재: 전체 스캔 시 여러 문제 metadata를 병렬로 읽는다.
    - 방향: 문제 수가 매우 많아져 순간 I/O가 부담되면 concurrency limit을 둔다.
 4. OutputChannel 로그 관리
-   - 위치: `src/testRunner.js`
+   - 위치: `src/runners/testRunner.js`
    - 현재: 테스트 실행 로그를 OutputChannel에 누적한다.
    - 방향: 장시간 사용에서 로그량이 문제가 되면 요약 중심 출력이나 clear 정책을 검토한다.
 

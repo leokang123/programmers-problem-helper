@@ -24,6 +24,7 @@
 - 처음 받아온 풀이 원본을 `.programmers-helper/initial/initial-solution.<ext>`로 보관
 - 현재 풀이 파일 코드를 클립보드에 복사하고 프로그래머스 웹 페이지 열기
 - 문제별 풀이 타이머와 20/30/60/90/120분 목표 시간 표시
+- GitHub 또는 직접 설정한 Git 원격 저장소로 문제 목록과 풀이 상태 동기화
 
 ## 지원 언어
 
@@ -72,6 +73,31 @@ Windows에서는 Docker 실행 모드를 권장합니다. Docker 모드는 확�
 이 확장은 사용자의 풀이 코드, 테스트 입력, 문제 기록을 별도 서버로 전송하지 않습니다. 문제 생성과 언어별 템플릿 갱신을 위해 사용자의 환경에서 프로그래머스 문제 페이지를 가져오며, 테스트 실행은 로컬 환경 또는 로컬 Docker 컨테이너에서 수행됩니다.
 
 `웹` 버튼은 현재 풀이 파일 코드를 로컬 클립보드에 복사한 뒤 프로그래머스 문제 페이지를 엽니다. 사이트에 코드를 자동 제출하거나 입력하지 않습니다.
+
+## Git 동기화
+
+Git 동기화는 기본값이 꺼져 있습니다. Windows와 macOS처럼 여러 환경에서 같은 문제 폴더와 풀이 상태를 쓰고 싶을 때 설정에서 `programmersHelper.sync.enabled`를 켠 뒤 `Programmers: Setup Sync`를 실행합니다.
+
+Setup Sync에서는 원격 저장소 URL과 브랜치를 입력합니다. HTTPS GitHub remote를 쓰는 경우 토큰을 입력할 수 있고, 입력한 토큰은 VS Code SecretStorage에 저장됩니다. SSH remote나 시스템 Git credential을 쓰는 경우 토큰을 비워둘 수 있습니다. 저장된 토큰은 `Programmers: Clear Stored GitHub Token` 명령으로 삭제할 수 있습니다.
+
+`Programmers: Sync Now`는 현재 열려 있는 파일을 저장한 뒤 Git 저장소에서 다음 순서로 동작합니다.
+
+```text
+save all -> git add/commit -> fetch -> rebase 또는 merge -> conflict marker 검사 -> push
+```
+
+충돌이 나면 conflict resolver Webview가 열립니다. 일반 수정 충돌은 파일을 열어 VS Code의 충돌 선택 UI로 해결하고, 삭제/수정 충돌은 문제 폴더를 유지할지 삭제를 유지할지 선택합니다. 모든 항목을 해결한 뒤 Webview에서 Continue Rebase 또는 Finish Merge를 누르면 남은 Git 작업을 이어가고 다시 push합니다.
+
+확장이 종료될 때 자동 push는 하지 않습니다. 대신 설정에 따라 활성화 시 원격 변경사항을 pull-only 방식으로 가져오고, 상태 확인 interval은 동기화가 필요한지만 표시합니다. 실제 commit/pull/push는 `Sync Now`가 담당합니다.
+
+동기화 저장소에는 풀이 파일, 문제 설명, 메모, 타이머, 커스텀 테스트, 풀이 기록 같은 사용자 상태가 들어갑니다. 테스트 실행 중 생성되는 파일은 `.gitignore` 대상입니다.
+
+```gitignore
+.programmers-helper/problem-index.json
+**/.programmers-helper/generated/
+```
+
+이미 Git에 tracked 된 generated 파일은 `.gitignore`만 추가해도 자동으로 빠지지 않습니다. 그런 경우 storage folder에서 한 번만 index에서 제거해야 합니다.
 
 ## 면책 안내
 

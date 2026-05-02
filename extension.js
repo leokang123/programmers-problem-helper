@@ -3,11 +3,11 @@ const cp = require("child_process");
 const path = require("path");
 const {
   ProgrammersSidebarProvider,
-} = require("./src/sidebarProvider");
+} = require("./src/ui/sidebarProvider");
 const {
   getExtensionRuntimeLabel,
   isDevelopmentExtension,
-} = require("./src/environment");
+} = require("./src/core/environment");
 
 let sidebarProvider;
 let problemCommands;
@@ -254,7 +254,7 @@ function activate(context) {
 function createSyncManager(context) {
   const {
     SyncManager,
-  } = require("./src/syncManager");
+  } = require("./src/sync/syncManager");
   const manager = new SyncManager({
     context,
     execCommand,
@@ -273,13 +273,13 @@ function ensureServices(context) {
 
   const {
     ProblemCommands,
-  } = require("./src/problemCommands");
+  } = require("./src/problems/problemCommands");
   const {
     TestRunner,
-  } = require("./src/testRunner");
+  } = require("./src/runners/testRunner");
   const {
     TimerManager,
-  } = require("./src/timerManager");
+  } = require("./src/timers/timerManager");
 
   timerManager = timerManager || new TimerManager(context);
   testRunner = new TestRunner({
@@ -355,10 +355,6 @@ function getExtensionPackageVersion(extension) {
 
 // 확장 종료 시 테스트를 중지하고 Docker 정리는 백그라운드에 맡깁니다.
 async function deactivate() {
-  const syncScheduled = await syncManager?.syncInBackgroundOnDeactivate();
-  if (syncScheduled) {
-    safeAppendOutputLine("[Programmers Helper] Git sync scheduled in background");
-  }
   await timerManager?.pauseAllRunning();
   testRunner?.stop();
   try {
@@ -370,7 +366,7 @@ async function deactivate() {
   try {
     const {
       stopDockerRuntimeContainersInBackground,
-    } = require("./src/dockerRuntime");
+    } = require("./src/runners/dockerRuntime");
     const scheduled = stopDockerRuntimeContainersInBackground();
     if (!scheduled) {
       safeAppendOutputLine("[Programmers Helper] Docker runtime cleanup schedule skipped");
@@ -421,7 +417,7 @@ async function handleExecutionModeChange() {
     testRunner?.stop();
     const {
       stopDockerRuntimeContainers,
-    } = require("./src/dockerRuntime");
+    } = require("./src/runners/dockerRuntime");
     const stopped = await stopDockerRuntimeContainers({ execCommand });
     const detail = stopped.length > 0
       ? `${stopped.length}개 컨테이너 중지\n${stopped.join("\n")}`

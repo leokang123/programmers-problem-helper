@@ -1,6 +1,6 @@
 const path = require("path");
 
-// 상태 영역에 보여줄 테스트 오류 문구를 만듭니다.
+// TestRunner 오류를 사이드바 status에 들어갈 짧은 사용자 메시지로 바꿉니다.
 function formatTestErrorForStatus(error) {
   const message = error instanceof Error ? error.message : String(error);
   if (!message.trim()) {
@@ -18,7 +18,7 @@ function formatTestErrorForStatus(error) {
   return limitStatusText(message);
 }
 
-// 출력 패널에 보여줄 테스트 오류 문구를 만듭니다.
+// TestRunner 오류를 OutputChannel에 남길 상세 메시지로 바꿉니다.
 function formatTestErrorForPanel(error) {
   const message = error instanceof Error ? error.message : String(error);
   if (!message.trim()) {
@@ -36,7 +36,7 @@ function formatTestErrorForPanel(error) {
   return message.trim();
 }
 
-// 컴파일러 오류를 VS Code 진단 목록으로 바꿉니다.
+// 컴파일 오류 텍스트를 VS Code diagnostic 목록으로 변환합니다.
 function parseCompilerDiagnostics(vscode, message, solutionUri, languageId = "cpp") {
   if (languageId === "java") {
     return parseJavaCompilerDiagnostics(vscode, message, solutionUri);
@@ -73,6 +73,7 @@ function parseCompilerDiagnostics(vscode, message, solutionUri, languageId = "cp
   return diagnostics;
 }
 
+// javac 오류 형식을 Java 풀이 파일 기준 diagnostic으로 변환합니다.
 function parseJavaCompilerDiagnostics(vscode, message, solutionUri) {
   const diagnostics = [];
   const targetName = path.basename(solutionUri.fsPath);
@@ -105,7 +106,7 @@ function parseJavaCompilerDiagnostics(vscode, message, solutionUri) {
   return diagnostics;
 }
 
-// 컴파일 오류를 짧게 요약합니다.
+// 긴 컴파일 로그에서 사용자가 바로 볼 핵심 오류 줄만 요약합니다.
 function summarizeCompilerError(message) {
   const lines = message.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const errorLine = lines.find((line) => /\b(fatal )?error:/.test(line));
@@ -116,7 +117,7 @@ function summarizeCompilerError(message) {
   return limitStatusText(`컴파일 실패\n${shortenCompilerPaths(errorLine)}`);
 }
 
-// 런타임 오류를 상태 영역용으로 요약합니다.
+// 런타임 오류 로그를 status bar에 보여줄 짧은 요약으로 줄입니다.
 function summarizeRuntimeError(message) {
   const lines = message.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const header = lines[0] || "런타임 에러";
@@ -140,7 +141,7 @@ function summarizeRuntimeError(message) {
   return limitStatusText(`${header}\n${translateRuntimeDiagnosticLine(shortenRuntimeDiagnosticLine(detail))}`);
 }
 
-// 런타임 오류를 패널용으로 정리합니다.
+// 런타임 오류 로그를 OutputChannel용 상세 요약으로 정리합니다.
 function summarizeRuntimeErrorForPanel(message) {
   const lines = message.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const header = lines[0] || "런타임 에러";
@@ -152,7 +153,7 @@ function summarizeRuntimeErrorForPanel(message) {
   return uniqueLines([header, reason, ...detailLines].filter(Boolean)).join("\n");
 }
 
-// 컴파일 오류의 긴 경로를 짧게 줄입니다.
+// compiler 로그에 포함된 긴 경로를 사용자가 읽기 쉬운 파일명 중심으로 줄입니다.
 function shortenCompilerPaths(line) {
   const javaMatch = line.match(/([^/\\:\s]+\.java:\d+:\s+(?:error|warning):\s+.*)$/);
   if (javaMatch) {
@@ -172,7 +173,7 @@ function shortenCompilerPaths(line) {
   return line.replace(/.*[\/\\]([^\/\\:]+:\d+:\d+:)/, "$1");
 }
 
-// 상태 메시지 길이를 제한합니다.
+// status bar와 sidebar에 들어갈 텍스트가 너무 길지 않도록 제한합니다.
 function limitStatusText(text, maxLength = 180) {
   const trimmed = text.trim();
   if (trimmed.length <= maxLength) {
@@ -181,7 +182,7 @@ function limitStatusText(text, maxLength = 180) {
   return `${trimmed.slice(0, maxLength - 1)}...`;
 }
 
-// 프로세스 실패를 사용자 친화적 Error로 만듭니다.
+// child process 실패 결과를 TestRunner가 처리할 수 있는 Error 객체로 감쌉니다.
 function buildProcessFailureError(command, options, code, signal, stderr, stdout, elapsedMs = 0) {
   const output = (stderr || stdout || "").trim();
   const label = options.label || path.basename(command);
@@ -205,16 +206,17 @@ function buildProcessFailureError(command, options, code, signal, stderr, stdout
   return error;
 }
 
+// 실패한 명령이 컴파일 단계인지 판단합니다.
 function isCompilerCommand(commandName) {
   return commandName === "clang++" || commandName === "g++" || commandName === "javac";
 }
 
-// Error message prefix만 보고 컴파일 실패인지 빠르게 판정합니다.
+// 오류 메시지가 컴파일 실패 계열인지 판단합니다.
 function isCompilerFailureMessage(message) {
   return String(message || "").startsWith("컴파일 실패");
 }
 
-// 긴 런타임 출력을 핵심 줄 위주로 줄입니다.
+// 런타임 stdout/stderr에서 빈 줄과 중복을 줄여 핵심 로그만 남깁니다.
 function condenseRuntimeOutput(text) {
   const lines = String(text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   if (lines.length === 0) {
@@ -242,7 +244,7 @@ function condenseRuntimeOutput(text) {
   return buildRuntimeSummary(userFrame, compact);
 }
 
-// user frame과 후보 진단 줄을 상태/패널 공용 요약 형식으로 압축합니다.
+// 사용자 코드 위치와 오류 줄을 조합해 런타임 오류 요약을 만듭니다.
 function buildRuntimeSummary(userFrame, lines) {
   if (lines.length === 0) {
     return "";
@@ -254,7 +256,7 @@ function buildRuntimeSummary(userFrame, lines) {
   ]).slice(0, 2).join("\n");
 }
 
-// 런타임 출력에서 사용자 코드 위치를 찾습니다.
+// stack trace에서 solution 파일을 가리키는 사용자 코드 프레임을 찾습니다.
 function extractUserRuntimeFrame(lines) {
   const frame = lines.find((line) => /solution\.cpp:\d+:\d+/.test(line) || /Solution\.java:\d+/.test(line) || /solution\.py", line \d+/.test(line));
   if (!frame) {
@@ -274,6 +276,7 @@ function extractUserRuntimeFrame(lines) {
   return `사용자 코드 위치(user code): ${match[0]}`;
 }
 
+// Python traceback에서 예외 타입/메시지 줄을 추출합니다.
 function extractPythonExceptionLines(lines) {
   if (!lines.some((line) => line === "Traceback (most recent call last):")) {
     return [];
@@ -283,7 +286,7 @@ function extractPythonExceptionLines(lines) {
   return exceptionLine ? [exceptionLine] : [];
 }
 
-// 런타임 진단 한 줄을 짧게 줄입니다.
+// 런타임 diagnostic 줄의 긴 경로와 runner 내부 정보를 줄입니다.
 function shortenRuntimeDiagnosticLine(line) {
   let next = String(line || "").trim();
   next = next.replace(/\s*\(BuildId: [^)]+\)/g, "");
@@ -293,7 +296,7 @@ function shortenRuntimeDiagnosticLine(line) {
   return next;
 }
 
-// 런타임 진단 문구를 일부 한국어로 바꿉니다.
+// sanitizer/runtime diagnostic의 일부 표현을 한국어 안내로 보강합니다.
 function translateRuntimeDiagnosticLine(line) {
   let next = String(line || "").trim();
   if (!next) {
@@ -323,7 +326,7 @@ function translateRuntimeDiagnosticLine(line) {
   return next;
 }
 
-// 중복 줄을 제거합니다.
+// 요약 메시지에서 같은 줄이 반복되지 않도록 중복을 제거합니다.
 function uniqueLines(lines) {
   const seen = new Set();
   return lines.filter((line) => {

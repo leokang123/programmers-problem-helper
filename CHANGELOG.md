@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.0
+
+- Add optional Git-based synchronization for the Programmers storage folder, including Setup Sync, Sync Now, storage-folder opening, and stored GitHub token clearing commands.
+- Store HTTPS GitHub tokens in VS Code SecretStorage and pass them to Git through an askpass script instead of embedding them in command arguments.
+- Add sync status settings for activation-time pull-only updates and periodic status checks that do not commit, pull, or push.
+- Add a conflict resolver Webview for Git merge/rebase conflicts, including delete/modify choices at the problem-folder level.
+- Install conflict marker guard hooks for pre-commit and pre-push, and ignore generated runner artifacts plus the generated problem index.
+- Reorganize source files into `core`, `problems`, `runners`, `sync`, `timers`, and `ui` folders.
+- Split problem commands into CRUD, solution, and test action controllers, and split the test runner into runtime, compiler, and executor controllers.
+- Expand `npm run check` so nested JavaScript files are checked and recent sync-controller regression patterns are caught earlier.
+- Document the Git sync setup, Sync Now behavior, conflict handling, and synchronized file policy.
+- Bump the extension manifest and lockfile to `0.5.0`.
+
 ## 0.4.3
 
 - Keep Docker mode lazy during automatic last-problem restore, showing a waiting status instead of starting the runtime container until the user opens the problem or runs tests.

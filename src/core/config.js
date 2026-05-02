@@ -17,7 +17,7 @@ const JAVA_COMMAND = "java";
 const JAVAC_COMMAND = "javac";
 const PYTHON_COMMAND = "python3";
 
-// 평소 실행용 컴파일 플래그입니다. 빠른 반복 실행을 우선합니다.
+// 샘플 테스트를 빠르게 돌릴 때 쓰는 C++ 기본 컴파일 옵션을 만듭니다.
 function getFastCompileFlags(cppStandard = DEFAULT_CPP_STANDARD) {
   return [
     `-std=${cppStandard}`,
@@ -26,12 +26,12 @@ function getFastCompileFlags(cppStandard = DEFAULT_CPP_STANDARD) {
   ];
 }
 
-// Docker 기준 debug 플래그를 유지하는 호환 wrapper입니다.
+// 런타임 오류 재현 시 sanitizer를 켜는 C++ 디버그 컴파일 옵션을 만듭니다.
 function getDebugCompileFlags(cppStandard = DEFAULT_CPP_STANDARD) {
   return getDebugCompileFlagsForMode("docker", cppStandard);
 }
 
-// sanitizer fallback용 플래그입니다. 로컬은 sanitizer runtime 부재가 잦아 기본 debug 플래그만 씁니다.
+// 실행 모드에 맞춰 sanitizer 지원 여부가 다른 디버그 컴파일 옵션을 고릅니다.
 function getDebugCompileFlagsForMode(executionMode = DEFAULT_EXECUTION_MODE, cppStandard = DEFAULT_CPP_STANDARD) {
   const common = [
     `-std=${cppStandard}`,
@@ -52,7 +52,7 @@ function getDebugCompileFlagsForMode(executionMode = DEFAULT_EXECUTION_MODE, cpp
   ];
 }
 
-// 확장 폴더 기준 Dockerfile 경로를 만듭니다.
+// extension 설치 위치에서 Docker runtime image를 빌드할 Dockerfile 경로를 찾습니다.
 function getDockerfilePath(extensionDir) {
   return path.join(extensionDir, "docker", "cpp-runtime.Dockerfile");
 }

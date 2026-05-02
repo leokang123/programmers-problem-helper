@@ -8,7 +8,7 @@ const {
 } = require("./config");
 const {
   getLanguageIds,
-} = require("./languages");
+} = require("../problems/languages");
 
 const EXECUTION_MODES = new Set(["docker", "local"]);
 const LANGUAGES = new Set(getLanguageIds());
@@ -16,7 +16,7 @@ const COMPILER_COMMANDS = new Set(["clang++", "g++"]);
 const CPP_STANDARDS = new Set(["c++17", "c++20"]);
 const DEFAULT_SYNC_BRANCH = "main";
 
-// VS Code 설정을 읽고 실행 코드가 기대하는 안정적인 값으로 정규화합니다.
+// 테스트 실행과 문제 생성에 필요한 사용자 설정을 VS Code 설정에서 읽습니다.
 function getExecutionSettings() {
   const config = vscode.workspace.getConfiguration("programmersHelper");
   return {
@@ -28,13 +28,13 @@ function getExecutionSettings() {
   };
 }
 
+// Git 동기화 흐름에서 사용할 설정값을 VS Code 설정에서 읽습니다.
 function getSyncSettings() {
   const config = vscode.workspace.getConfiguration("programmersHelper");
   return {
     enabled: Boolean(config.get("sync.enabled")),
     branch: normalizeBranch(config.get("sync.branch"), DEFAULT_SYNC_BRANCH),
     autoPullOnActivate: config.get("sync.autoPullOnActivate") !== false,
-    autoSyncOnDeactivate: Boolean(config.get("sync.autoSyncOnDeactivate")),
     statusCheckIntervalMinutes: normalizeNonNegativeInteger(config.get("sync.statusCheckIntervalMinutes"), 0),
   };
 }
@@ -53,11 +53,13 @@ function normalizeTimeoutMs(value, fallback) {
   return Math.max(100, Math.floor(numeric));
 }
 
+// Git 브랜치 설정을 공백 없는 안전한 문자열로 정리합니다.
 function normalizeBranch(value, fallback) {
   const branch = typeof value === "string" ? value.trim() : "";
   return branch && !/[\s~^:?*[\\]/.test(branch) ? branch : fallback;
 }
 
+// 주기 설정처럼 음수가 의미 없는 숫자 설정을 0 이상의 정수로 정규화합니다.
 function normalizeNonNegativeInteger(value, fallback) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) {

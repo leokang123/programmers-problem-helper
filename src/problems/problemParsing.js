@@ -3,7 +3,7 @@ const {
   MAX_FETCH_BYTES,
   MAX_REDIRECTS,
   PROGRAMMERS_HOST,
-} = require("./config");
+} = require("../core/config");
 
 const FETCH_RETRY_DELAYS_MS = [300, 800];
 const RETRYABLE_HTTP_STATUS_CODES = new Set([502, 503, 504]);
@@ -16,7 +16,7 @@ const RETRYABLE_NETWORK_ERROR_CODES = new Set([
   "EHOSTUNREACH",
 ]);
 
-// problem.md에서 입출력 예 테이블을 추출합니다.
+// problem.md 본문에서 입출력 예 표를 찾아 테스트 예제로 변환합니다.
 function extractExamplesFromMarkdown(markdown) {
   const lines = markdown.split(/\r?\n/);
   const tableStart = lines.findIndex((line, index) => {
@@ -47,7 +47,7 @@ function extractExamplesFromMarkdown(markdown) {
   });
 }
 
-// Markdown 테이블 한 줄을 셀 배열로 나눕니다.
+// Markdown 표 한 줄을 셀 단위로 나눕니다.
 function parseMarkdownRow(line) {
   const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
   const cells = [];
@@ -70,12 +70,12 @@ function parseMarkdownRow(line) {
   return cells;
 }
 
-// Markdown 셀 값을 실행 가능한 텍스트로 정리합니다.
+// 표 셀 안의 코드 마크업과 HTML entity를 테스트 입력값 형태로 정리합니다.
 function cleanCell(value) {
   return decodeHtml(value).replace(/^`|`$/g, "").replace(/\\\|/g, "|").trim();
 }
 
-// URL의 텍스트 응답을 가져옵니다.
+// Programmers 문제 페이지를 가져오고 일시적 실패는 짧게 재시도합니다.
 async function fetchText(targetUrl, redirects = 0) {
   let lastError;
 
@@ -96,6 +96,7 @@ async function fetchText(targetUrl, redirects = 0) {
   throw lastError;
 }
 
+// HTTP/HTTPS 요청을 한 번 수행하고 redirect와 오류 상태를 처리합니다.
 function fetchTextOnce(targetUrl, redirects = 0) {
   return new Promise((resolve, reject) => {
     if (!isAllowedProgrammersUrl(targetUrl)) {
@@ -162,6 +163,7 @@ function fetchTextOnce(targetUrl, redirects = 0) {
   });
 }
 
+// 네트워크/서버 일시 오류인지 판단해 문제 생성 재시도 여부를 결정합니다.
 function shouldRetryFetchError(error) {
   return (
     RETRYABLE_HTTP_STATUS_CODES.has(error?.statusCode) ||
@@ -169,17 +171,17 @@ function shouldRetryFetchError(error) {
   );
 }
 
+// fetch 재시도 사이에 짧은 대기 시간을 둡니다.
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// 네트워크 fetch는 프로그래머스 호스트만 허용한다.
-// redirect 검증에서도 같은 함수를 사용해 외부 URL로 빠지는 것을 막는다.
+// 문제 생성 fetch가 Programmers 도메인을 벗어나지 않도록 제한합니다.
 function isAllowedProgrammersUrl(targetUrl) {
   return new URL(targetUrl).hostname === PROGRAMMERS_HOST;
 }
 
-// 여러 정규식 중 처음 매칭된 값을 반환합니다.
+// 여러 정규식 중 처음 매칭되는 캡처 값을 반환합니다.
 function matchFirst(source, ...patterns) {
   for (const pattern of patterns) {
     const match = source.match(pattern);
@@ -190,7 +192,7 @@ function matchFirst(source, ...patterns) {
   return "";
 }
 
-// 제목을 폴더명에 안전한 slug로 바꿉니다.
+// 문제 제목을 폴더명에 넣을 수 있는 안전한 문자열로 바꿉니다.
 function slugify(text) {
   return text
     .normalize("NFC")
@@ -200,7 +202,7 @@ function slugify(text) {
     .replace(/^_+|_+$/g, "");
 }
 
-// Programmers HTML 본문을 Markdown으로 바꿉니다.
+// Programmers HTML 설명 영역을 problem.md에 저장할 Markdown으로 변환합니다.
 function htmlToMarkdown(htmlText) {
   let text = htmlText.replace(/\u001d/g, "");
 
@@ -227,7 +229,7 @@ function htmlToMarkdown(htmlText) {
     .trim();
 }
 
-// HTML 테이블을 Markdown 테이블로 바꿉니다.
+// HTML table을 Markdown table로 변환해 문제 설명과 예제를 보존합니다.
 function tableToMarkdown(table) {
   const rows = [...table.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)].map((row) => {
     return [...row[1].matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/gi)].map((cell) => inline(cell[1]).replace(/\|/g, "\\|"));
@@ -247,7 +249,7 @@ function tableToMarkdown(table) {
   ].join("\n");
 }
 
-// HTML 리스트를 Markdown 리스트로 바꿉니다.
+// HTML 목록을 Markdown 목록으로 변환합니다.
 function listToMarkdown(list) {
   const items = [...list.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)].map((item) => {
     const nested = item[1].match(/<ul>\s*([\s\S]*?)\s*<\/ul>/i)?.[1];
@@ -266,7 +268,7 @@ function listToMarkdown(list) {
   return `\n${items.join("\n")}\n`;
 }
 
-// HTML 인라인 태그와 엔티티를 정리합니다.
+// HTML inline 태그를 Markdown 안에서 읽기 좋은 텍스트로 정리합니다.
 function inline(value) {
   return decodeHtml(
     value
@@ -279,7 +281,7 @@ function inline(value) {
   ).trim();
 }
 
-// 자주 쓰는 HTML 엔티티를 디코딩합니다.
+// HTML entity와 숫자 entity를 실제 문자로 디코딩합니다.
 function decodeHtml(value) {
   return value
     .replace(/&quot;/g, '"')

@@ -6,10 +6,7 @@ const {
   getLegacyInitialSolutionPath,
   getLanguage,
   getLanguageIds,
-  getSnapshotFileName,
   getSolutionPath,
-  inferLanguageFromRunnablePath,
-  isSupportedSourceExtension,
   getSolutionFileName,
 } = require("./languages");
 const {
@@ -25,12 +22,26 @@ const {
   INITIAL_DIR_NAME,
   helperPath,
   helperRelativePath,
-  solutionsRelativePath,
-  solutionsPath,
 } = require("./helperPaths");
 const {
   isDevelopmentExtension,
-} = require("./environment");
+} = require("../core/environment");
+const {
+  createSolutionAttempt,
+  deleteSolutionSnapshot,
+  getSolutionSnapshotPath,
+  readSolutionHistory,
+  resetSolutionToInitial,
+} = require("./solutionHistoryStore");
+const {
+  fileExists,
+  isPathInside,
+  parseProblemFolderName,
+  readJson,
+  readText,
+  writeFileIfAbsent,
+  writeJson,
+} = require("./problemStoreUtils");
 
 // 저장된 문제 목록을 빠른 인덱스에서 읽고, 필요할 때만 전체 스캔으로 재생성합니다.
 async function loadProblems(programmersDir, options = {}) {
@@ -70,6 +81,7 @@ async function rebuildProblemIndex(programmersDir) {
   return sorted;
 }
 
+// 사이드바 목록이 항상 같은 순서로 보이도록 lessonId와 폴더명 기준으로 정렬합니다.
 function sortProblemSummaries(problems) {
   return problems.sort((a, b) => {
     const left = /^\d+$/.test(a.lessonId) ? Number(a.lessonId) : undefined;
@@ -104,7 +116,7 @@ async function resolveProgrammersDir(context, workspaceUri, options = {}) {
   return undefined;
 }
 
-// 가능한 Programmers 폴더 후보를 만듭니다.
+// 개발/패키징 환경에 따라 사용할 수 있는 Programmers 저장소 후보를 나열합니다.
 function getProgrammersDirCandidates(context, workspaceUri) {
   const candidates = [];
   const developmentRoot = getDevelopmentRootUri(context, workspaceUri);
@@ -124,7 +136,7 @@ function getProgrammersDirCandidates(context, workspaceUri) {
   });
 }
 
-// 기본 Programmers 폴더 위치를 반환합니다.
+// 후보가 없을 때 생성할 기본 Programmers 저장소 위치를 계산합니다.
 function getDefaultProgrammersDir(context, workspaceUri) {
   const developmentRoot = getDevelopmentRootUri(context, workspaceUri);
   if (developmentRoot) {
@@ -135,6 +147,7 @@ function getDefaultProgrammersDir(context, workspaceUri) {
   return vscode.Uri.joinPath(context.globalStorageUri, "Programmers");
 }
 
+// 개발 실행 중에는 열린 workspace를 저장소 루트로 삼을 수 있는지 판단합니다.
 function getDevelopmentRootUri(context, workspaceUri) {
   if (!isDevelopmentExtension(context)) {
     return undefined;
@@ -143,7 +156,7 @@ function getDevelopmentRootUri(context, workspaceUri) {
   return context.extensionUri || workspaceUri;
 }
 
-// 문제 폴더의 표시 정보를 읽습니다.
+// 현재 문제 화면에 필요한 metadata, 예제, 풀이 기록, 커스텀 테스트를 묶어 읽습니다.
 async function loadProblemInfo(problemDir, languageId = DEFAULT_LANGUAGE_ID) {
   const summary = await loadProblemSummary(problemDir);
   const metadata = await readJson(vscode.Uri.file(helperPath(problemDir, "programmers.json")));
@@ -161,7 +174,7 @@ async function loadProblemInfo(problemDir, languageId = DEFAULT_LANGUAGE_ID) {
   };
 }
 
-// 목록에 필요한 최소 문제 정보를 읽습니다.
+// 사이드바 목록에 필요한 가벼운 문제 요약 정보를 읽습니다.
 async function loadProblemSummary(problemDir) {
   const folderName = path.basename(problemDir);
   const helperDir = vscode.Uri.file(helperPath(problemDir));
@@ -179,7 +192,7 @@ async function loadProblemSummary(problemDir) {
   };
 }
 
-// 단일 문제의 최신 상태를 인덱스에 반영합니다.
+// 문제 하나가 바뀌었을 때 전체 scan 없이 problem-index 항목만 갱신합니다.
 async function updateProblemIndexEntry(programmersDir, problemDir) {
   const existing = await readProblemIndex(programmersDir) || await rebuildProblemIndex(programmersDir);
   const summary = await loadProblemSummary(problemDir);
@@ -191,7 +204,7 @@ async function updateProblemIndexEntry(programmersDir, problemDir) {
   return sorted;
 }
 
-// 삭제된 문제를 인덱스에서 제거합니다.
+// 문제 삭제 후 problem-index에서 해당 폴더 항목을 제거합니다.
 async function removeProblemIndexEntry(programmersDir, problemDir) {
   const existing = await readProblemIndex(programmersDir) || await rebuildProblemIndex(programmersDir);
   const target = path.resolve(problemDir);
@@ -200,6 +213,7 @@ async function removeProblemIndexEntry(programmersDir, problemDir) {
   return sorted;
 }
 
+// 빠른 사이드바 로딩을 위해 저장된 problem-index를 읽습니다.
 async function readProblemIndex(programmersDir) {
   const index = await readJson(getProblemIndexUri(programmersDir));
   if (!Array.isArray(index?.problems)) {
@@ -227,6 +241,7 @@ async function readProblemIndex(programmersDir) {
     })));
 }
 
+// 전체 scan 또는 부분 갱신 결과를 problem-index 파일에 저장합니다.
 async function writeProblemIndex(programmersDir, problems) {
   const helperDir = vscode.Uri.joinPath(programmersDir, HELPER_DIR_NAME);
   await vscode.workspace.fs.createDirectory(helperDir);
@@ -236,11 +251,12 @@ async function writeProblemIndex(programmersDir, problems) {
   });
 }
 
+// problem-index JSON 파일의 URI를 계산합니다.
 function getProblemIndexUri(programmersDir) {
   return vscode.Uri.joinPath(programmersDir, HELPER_DIR_NAME, "problem-index.json");
 }
 
-// 문제의 예제 테스트를 메타데이터나 markdown에서 읽습니다.
+// 테스트 실행에 사용할 예제를 metadata 우선, problem.md fallback 순서로 읽습니다.
 async function loadProblemExamples(problemDir) {
   const helperDir = vscode.Uri.file(helperPath(problemDir));
   const metadataUri = vscode.Uri.joinPath(helperDir, "programmers.json");
@@ -265,12 +281,12 @@ async function loadProblemExamples(problemDir) {
   }
 }
 
-// 커스텀 테스트 저장 파일 URI를 만듭니다.
+// 사용자가 사이드바에 저장한 커스텀 테스트 파일의 URI를 계산합니다.
 function getCustomTestsUri(problemDir) {
   return vscode.Uri.file(helperPath(problemDir, "custom-tests.json"));
 }
 
-// 저장된 커스텀 테스트를 읽습니다.
+// 문제별로 저장된 커스텀 테스트 목록을 읽습니다.
 async function loadSavedCustomTests(problemDir) {
   const saved = await readJson(getCustomTestsUri(problemDir));
   if (!Array.isArray(saved)) {
@@ -285,7 +301,7 @@ async function loadSavedCustomTests(problemDir) {
     }));
 }
 
-// 커스텀 테스트를 정리해 저장합니다.
+// Webview에서 넘어온 커스텀 테스트를 문제 helper 영역에 저장합니다.
 async function saveCustomTests(problemDir, tests) {
   const helperDir = vscode.Uri.file(helperPath(problemDir));
   const customTests = Array.isArray(tests)
@@ -304,7 +320,7 @@ async function saveCustomTests(problemDir, tests) {
   );
 }
 
-// Programmers 페이지에서 문제 파일을 생성합니다.
+// 문제 번호로 Programmers 페이지를 가져와 폴더, metadata, 풀이 파일을 생성합니다.
 async function createProblem(programmersDir, lessonId, languageId = DEFAULT_LANGUAGE_ID) {
   const language = getLanguage(languageId);
   const existing = await findExistingProblem(programmersDir, lessonId);
@@ -353,7 +369,7 @@ async function createProblem(programmersDir, lessonId, languageId = DEFAULT_LANG
   return { folderName, problemDir, mdUri, solutionUri, cppUri: language.id === "cpp" ? solutionUri : undefined, language: language.id, examples: metadata.examples };
 }
 
-// HTML에서 문제 생성에 필요한 원천 데이터를 추출하고 필수 항목을 검증합니다.
+// Programmers HTML에서 제목, 본문, 초기 코드, 예제 정보를 추출합니다.
 function parseProgrammersProblemPage(html, url, language = getLanguage(DEFAULT_LANGUAGE_ID)) {
   const title = decodeHtml(
     matchFirst(html, /data-lesson-title="([^"]+)"/, /<span class="challenge-title">([\s\S]*?)<\/span>/, /<title>코딩테스트 연습 - ([^|]+?)\s*\|/)
@@ -383,6 +399,7 @@ function parseProgrammersProblemPage(html, url, language = getLanguage(DEFAULT_L
   };
 }
 
+// 이미 만든 문제에 현재 언어의 풀이 파일과 초기 템플릿이 있는지 보장합니다.
 async function ensureSolutionForLanguage(problemDir, languageId = DEFAULT_LANGUAGE_ID) {
   const language = getLanguage(languageId);
   const solutionUri = vscode.Uri.file(getSolutionPath(problemDir, language.id));
@@ -435,10 +452,12 @@ async function ensureSolutionForLanguage(problemDir, languageId = DEFAULT_LANGUA
   return { solutionUri, language: language.id };
 }
 
+// lessonId와 언어 설정으로 Programmers 문제 URL을 만듭니다.
 function getProgrammersProblemUrl(lessonId, languageId = DEFAULT_LANGUAGE_ID) {
   return `https://school.programmers.co.kr/learn/courses/30/lessons/${lessonId}?language=${getLanguage(languageId).programmersParam}`;
 }
 
+// metadata에 저장된 언어별 원본 문제 URL을 찾아 반환합니다.
 function getProblemUrlFromMetadata(metadata, languageId = DEFAULT_LANGUAGE_ID) {
   const language = getLanguage(languageId);
   const languageUrl = metadata?.languages?.[language.id]?.url;
@@ -451,8 +470,7 @@ function getProblemUrlFromMetadata(metadata, languageId = DEFAULT_LANGUAGE_ID) {
   return metadata?.lessonId ? getProgrammersProblemUrl(String(metadata.lessonId), language.id) : "";
 }
 
-// 저장할 problem.md를 조립합니다.
-// page 파싱과 파일 쓰기 사이에 문서 포맷 책임을 분리해 둔다.
+// 추출한 문제 정보를 사람이 읽을 problem.md 본문으로 조립합니다.
 function buildProblemMarkdown(lessonId, url, page) {
   return [
     `# [Programmers ${lessonId}] ${page.title}`,
@@ -466,7 +484,7 @@ function buildProblemMarkdown(lessonId, url, page) {
   ].filter((line, index, arr) => line !== "" || arr[index - 1] !== "").join("\n");
 }
 
-// 같은 lessonId로 이미 만든 문제를 찾습니다.
+// 같은 lessonId 문제 폴더가 이미 있는지 찾아 중복 생성을 막습니다.
 async function findExistingProblem(programmersDir, lessonId) {
   let entries = [];
   try {
@@ -506,180 +524,7 @@ async function findExistingProblem(programmersDir, lessonId) {
   return undefined;
 }
 
-// 현재 언어 풀이 파일을 풀이 기록으로 저장하고 새 풀이 상태를 준비합니다.
-async function createSolutionAttempt(problemDir, languageId = DEFAULT_LANGUAGE_ID) {
-  const language = getLanguage(languageId);
-  const solutionUri = vscode.Uri.file(getSolutionPath(problemDir, language.id));
-  const helperDir = vscode.Uri.file(helperPath(problemDir));
-  const solutionsDir = vscode.Uri.file(solutionsPath(problemDir));
-  const currentCode = await readText(solutionUri);
-  const timestamp = formatTimestamp(new Date());
-  const snapshotName = getSnapshotFileName(language.id, timestamp);
-  const snapshotUri = vscode.Uri.joinPath(solutionsDir, snapshotName);
-
-  await vscode.workspace.fs.createDirectory(solutionsDir);
-  await vscode.workspace.fs.writeFile(snapshotUri, Buffer.from(currentCode, "utf8"));
-
-  const history = await readSolutionHistory(problemDir);
-  const nextHistory = {
-    attempts: [
-      {
-        path: solutionsRelativePath(snapshotName),
-        createdAt: new Date().toISOString(),
-        label: `풀이 ${history.attempts.length + 1}`,
-        language: language.id,
-      },
-      ...history.attempts,
-    ],
-  };
-  await writeJson(vscode.Uri.joinPath(helperDir, "solution-history.json"), nextHistory);
-
-  const initialCode = await loadInitialSolutionCode(problemDir, language.id);
-  const resetToInitialCode = Boolean(initialCode);
-  if (resetToInitialCode) {
-    await vscode.workspace.fs.writeFile(solutionUri, Buffer.from(initialCode, "utf8"));
-  }
-
-  return {
-    snapshotPath: snapshotUri.fsPath,
-    resetToInitialCode,
-  };
-}
-
-// 지정한 풀이 파일을 처음 받아온 원본 코드로 되돌립니다.
-async function resetSolutionToInitial(problemDir, solutionPath = getSolutionPath(problemDir, DEFAULT_LANGUAGE_ID), languageId = inferLanguageFromPath(solutionPath) || DEFAULT_LANGUAGE_ID) {
-  const initialCode = await loadInitialSolutionCode(problemDir, languageId);
-  if (!initialCode) {
-    return false;
-  }
-
-  const root = path.resolve(problemDir);
-  const target = path.resolve(solutionPath);
-  if (!isSameOrInsidePath(root, target) || !isSupportedSourceExtension(path.extname(target))) {
-    return false;
-  }
-
-  await vscode.workspace.fs.writeFile(
-    vscode.Uri.file(target),
-    Buffer.from(initialCode, "utf8")
-  );
-  return true;
-}
-
-// 처음 받아온 현재 언어 풀이 원본 코드를 읽습니다.
-async function loadInitialSolutionCode(problemDir, languageId = DEFAULT_LANGUAGE_ID) {
-  try {
-    return await readText(vscode.Uri.file(getInitialSolutionPath(problemDir, languageId)));
-  } catch {
-    try {
-      return await readText(vscode.Uri.file(getLegacyInitialSolutionPath(problemDir, languageId)));
-    } catch {
-      // Older problem folders kept initial templates at the helper root.
-    }
-    const metadata = await readJson(vscode.Uri.file(helperPath(problemDir, "programmers.json")));
-    const language = getLanguage(languageId);
-    const languageMetadata = metadata?.languages?.[language.id];
-    if (typeof languageMetadata?.initialCode === "string" && languageMetadata.initialCode.trim()) {
-      return languageMetadata.initialCode;
-    }
-    return typeof metadata?.initialCode === "string" && metadata.initialCode.trim()
-      ? metadata.initialCode
-      : "";
-  }
-}
-
-// 특정 풀이 기록 파일 경로를 찾습니다.
-async function getSolutionSnapshotPath(problemDir, snapshotPath) {
-  const history = await readSolutionHistory(problemDir);
-  const found = history.attempts.find((attempt) => attempt.path === snapshotPath);
-  return found ? resolveSolutionSnapshotPath(problemDir, found.path) : undefined;
-}
-
-// 풀이 기록 하나를 삭제합니다.
-async function deleteSolutionSnapshot(problemDir, snapshotPath) {
-  const helperDir = vscode.Uri.file(helperPath(problemDir));
-  const historyUri = vscode.Uri.joinPath(helperDir, "solution-history.json");
-  const history = await readSolutionHistory(problemDir);
-  const target = history.attempts.find((attempt) => attempt.path === snapshotPath);
-  if (!target) {
-    return false;
-  }
-
-  const snapshotFilePath = resolveSolutionSnapshotPath(problemDir, target.path);
-  if (!snapshotFilePath) {
-    await writeJson(historyUri, {
-      attempts: history.attempts.filter((attempt) => attempt.path !== snapshotPath),
-    });
-    return true;
-  }
-
-  try {
-    await vscode.workspace.fs.delete(vscode.Uri.file(snapshotFilePath), { useTrash: true });
-  } catch {
-    try {
-      await vscode.workspace.fs.delete(vscode.Uri.file(snapshotFilePath), { useTrash: false });
-    } catch {
-      // Metadata still gets cleaned up if the file is already gone.
-    }
-  }
-
-  await writeJson(historyUri, {
-    attempts: history.attempts.filter((attempt) => attempt.path !== snapshotPath),
-  });
-  return true;
-}
-
-// 풀이 기록 메타데이터를 읽습니다.
-async function readSolutionHistory(problemDir, languageId) {
-  const history = await readJson(vscode.Uri.file(helperPath(problemDir, "solution-history.json")));
-  return {
-    attempts: Array.isArray(history?.attempts)
-      ? history.attempts
-        .filter((attempt) => attempt && typeof attempt.path === "string")
-        .filter((attempt) => Boolean(resolveSolutionSnapshotPath(problemDir, attempt.path)))
-        .filter((attempt) => !languageId || (attempt.language || inferLanguageFromSnapshotPath(attempt.path)) === getLanguage(languageId).id)
-        .map((attempt) => ({
-          path: attempt.path,
-          createdAt: typeof attempt.createdAt === "string" ? attempt.createdAt : "",
-          label: typeof attempt.label === "string" ? attempt.label : path.basename(attempt.path),
-          language: attempt.language || inferLanguageFromSnapshotPath(attempt.path) || DEFAULT_LANGUAGE_ID,
-        }))
-        .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
-      : [],
-  };
-}
-
-function resolveSolutionSnapshotPath(problemDir, snapshotPath) {
-  if (typeof snapshotPath !== "string" || path.isAbsolute(snapshotPath)) {
-    return undefined;
-  }
-
-  const normalized = snapshotPath.split(path.win32.sep).join(path.posix.sep);
-  const expectedPrefix = `${helperRelativePath("solutions")}/`;
-  if (!normalized.startsWith(expectedPrefix)) {
-    return undefined;
-  }
-
-  const relativeParts = normalized.split("/");
-  const languageId = inferLanguageFromRunnablePath(relativeParts);
-  if (!languageId) {
-    return undefined;
-  }
-
-  const root = path.resolve(solutionsPath(problemDir));
-  const target = path.resolve(problemDir, normalized);
-  return isPathInside(root, target) ? target : undefined;
-}
-
-function isSameOrInsidePath(root, target) {
-  return target === root || isPathInside(root, target);
-}
-
-function isPathInside(root, target) {
-  return target.startsWith(root + path.sep);
-}
-
-// 문제 폴더에 필수 파일이 있는지 확인합니다.
+// 폴더가 실제 문제 폴더인지 problem.md 또는 metadata 존재 여부로 판단합니다.
 async function hasProblemFiles(problemDir) {
   try {
     await vscode.workspace.fs.stat(vscode.Uri.joinPath(problemDir, "problem.md"));
@@ -695,57 +540,7 @@ async function hasProblemFiles(problemDir) {
   }
 }
 
-function inferLanguageFromPath(filePath) {
-  const extension = path.extname(filePath);
-  const languageByExtension = getLanguageIds().filter((languageId) => getLanguage(languageId).sourceExtensions.includes(extension));
-  if (languageByExtension.length === 1) {
-    return languageByExtension[0];
-  }
-  return undefined;
-}
-
-function inferLanguageFromSnapshotPath(snapshotPath) {
-  const normalized = String(snapshotPath || "").split(path.win32.sep).join(path.posix.sep);
-  return inferLanguageFromRunnablePath(normalized.split("/"));
-}
-
-// UTF-8 텍스트 파일을 읽습니다.
-async function readText(uri) {
-  const bytes = await vscode.workspace.fs.readFile(uri);
-  return Buffer.from(bytes).toString("utf8");
-}
-
-// JSON 파일을 읽고 실패하면 undefined를 반환합니다.
-async function readJson(uri) {
-  try {
-    return JSON.parse(await readText(uri));
-  } catch {
-    return undefined;
-  }
-}
-
-// 폴더명에서 문제 번호와 제목을 추정합니다.
-function parseProblemFolderName(folderName) {
-  const match = folderName.match(/^(\d+)_?(.*)$/);
-  if (!match) {
-    return { lessonId: "", title: folderName.replace(/_/g, " ") };
-  }
-  return {
-    lessonId: match[1],
-    title: (match[2] || folderName).replace(/_/g, " "),
-  };
-}
-
-// 파일이 없을 때만 새로 씁니다.
-async function writeFileIfAbsent(uri, contents) {
-  try {
-    await vscode.workspace.fs.stat(uri);
-    return;
-  } catch {
-    await vscode.workspace.fs.writeFile(uri, Buffer.from(contents, "utf8"));
-  }
-}
-
+// 예전 metadata와 현재 metadata를 현재 저장 형식으로 정규화합니다.
 function normalizeProgrammersMetadata(metadata) {
   const source = metadata && typeof metadata === "object" ? metadata : {};
   const languages = {};
@@ -780,12 +575,14 @@ function normalizeProgrammersMetadata(metadata) {
   return normalized;
 }
 
+// metadata 저장 전에 legacy initialCode를 파일로 보존하고 정규화된 JSON을 씁니다.
 async function writeProgrammersMetadata(uri, metadata) {
   await preserveLegacyInitialCode(uri, metadata);
   const normalized = normalizeProgrammersMetadata(metadata);
   await writeJson(uri, normalized);
 }
 
+// 예전 metadata 안에 직접 저장되던 initialCode를 언어별 초기 템플릿 파일로 옮깁니다.
 async function preserveLegacyInitialCode(metadataUri, metadata) {
   const source = metadata && typeof metadata === "object" ? metadata : {};
   const problemDir = path.dirname(path.dirname(metadataUri.fsPath));
@@ -814,37 +611,7 @@ async function preserveLegacyInitialCode(metadataUri, metadata) {
   }
 }
 
-async function fileExists(uri) {
-  try {
-    await vscode.workspace.fs.stat(uri);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-// JSON 파일을 보기 좋게 씁니다.
-async function writeJson(uri, value) {
-  await vscode.workspace.fs.writeFile(uri, Buffer.from(JSON.stringify(value, null, 2) + "\n", "utf8"));
-}
-
-// 파일명에 사용할 timestamp를 만듭니다.
-function formatTimestamp(date) {
-  const pad = (value) => String(value).padStart(2, "0");
-  const padMs = (value) => String(value).padStart(3, "0");
-  return [
-    date.getFullYear(),
-    pad(date.getMonth() + 1),
-    pad(date.getDate()),
-    "-",
-    pad(date.getHours()),
-    pad(date.getMinutes()),
-    pad(date.getSeconds()),
-    "-",
-    padMs(date.getMilliseconds()),
-  ].join("");
-}
-
+// 문제 목록 scan에서 제외할 extension 내부 helper 폴더인지 판단합니다.
 function isInternalHelperFolder(name) {
   return name === HELPER_DIR_NAME;
 }

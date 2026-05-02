@@ -3,8 +3,9 @@ const javaRunnerBuilder = require("./javaRunnerBuilder");
 const pythonRunnerBuilder = require("./pythonRunnerBuilder");
 const {
   getLanguage,
-} = require("./languages");
+} = require("../problems/languages");
 
+// 현재 실행 언어에 맞는 runner builder 구현을 반환합니다.
 function getRunnerBuilder(languageId) {
   const language = getLanguage(languageId);
   if (language.id === "java") {

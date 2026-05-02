@@ -1,22 +1,37 @@
-const cp = require("child_process");
 const fs = require("fs/promises");
 const os = require("os");
 const path = require("path");
 const vscode = require("vscode");
 const {
   getSyncSettings,
-} = require("./settings");
+} = require("../core/settings");
 const {
   getDefaultProgrammersDir,
   resolveProgrammersDir,
-} = require("./problemStore");
+} = require("../problems/problemStore");
+const {
+  formatDeleteModifyMessage,
+} = require("./conflictResolverView");
+const {
+  appendGitignorePatterns,
+  buildConflictMarkerHookScript,
+  createGitOperationError,
+  exists,
+  isHttpsGitHubRemote,
+  limitMessage,
+  maskToken,
+} = require("./syncUtils");
+const {
+  SyncConflictController,
+} = require("./syncConflictActions");
 
 const TOKEN_KEY = "programmersHelper.github.token";
 const REMOTE_URL_STATE_KEY = "programmersHelper.sync.remoteUrl";
-const BACKGROUND_SYNC_STATUS_FILE = "programmers-sync-status.json";
 const SIDEBAR_VIEW_ID = "programmersHelper.sidebar";
 
+// Programmers 저장소의 Git 설정, 동기화, 충돌 해결 UI를 총괄합니다.
 class SyncManager {
+  // Git sync 명령, 상태바, conflict resolver Webview 생명주기를 초기화합니다.
   constructor({ context, execCommand, outputChannel, refreshProblems }) {
     this.context = context;
     this.execCommand = execCommand;
@@ -27,19 +42,21 @@ class SyncManager {
     this.statusBar.tooltip = "Programmers Git sync";
     this.syncInFlight = false;
     this.suppressAutoPull = false;
-    this.cachedToken = "";
     this.statusCheckTimer = undefined;
-    this.conflictCursor = 0;
+    this.conflicts = new SyncConflictController(this);
     this.updateStatusBar();
     this.configureStatusCheck();
-    void this.prepareBackgroundSyncCredentials();
+    void this.conflicts.cleanupConflictPreviewFiles();
   }
 
+  // extension dispose 시 timer, Webview, status bar를 정리합니다.
   dispose() {
     this.clearStatusCheckTimer();
+    void this.conflicts.dispose();
     this.statusBar.dispose();
   }
 
+  // 설정된 주기에 따라 remote/local 변경 필요 여부만 확인하는 interval을 설정합니다.
   configureStatusCheck() {
     this.clearStatusCheckTimer();
     const settings = getSyncSettings();
@@ -53,6 +70,7 @@ class SyncManager {
     }, intervalMs);
   }
 
+  // 주기적 sync 상태 확인 interval을 해제합니다.
   clearStatusCheckTimer() {
     if (this.statusCheckTimer) {
       clearInterval(this.statusCheckTimer);
@@ -60,6 +78,7 @@ class SyncManager {
     }
   }
 
+  // sync 활성화 여부와 현재 상태를 왼쪽 status bar에 반영합니다.
   updateStatusBar(state = "idle") {
     const settings = getSyncSettings();
     if (!settings.enabled) {
@@ -80,6 +99,7 @@ class SyncManager {
     this.statusBar.show();
   }
 
+  // 사용자가 설정 UI에서 Git sync를 처음 구성하는 흐름을 안내하고 초기 sync를 실행합니다.
   async setupSync() {
     const picked = await vscode.window.showQuickPick([
       {
@@ -122,6 +142,7 @@ class SyncManager {
         title: "Programmers Sync: remote URL",
         prompt: "먼저 GitHub에서 private repo를 만든 뒤, 그 repo의 HTTPS 또는 SSH URL을 입력하세요. 아직 repo 생성 자동화는 하지 않습니다.",
         placeHolder: "https://github.com/you/programmers-state.git",
+        // remote URL 입력이 비어 있으면 setup 흐름을 진행하지 않습니다.
         validateInput(value) {
           return value.trim() ? undefined : "원격 저장소 URL을 입력해주세요.";
         },
@@ -134,6 +155,7 @@ class SyncManager {
         title: "Programmers Sync: branch",
         prompt: "동기화에 사용할 브랜치입니다. 보통 main을 쓰면 됩니다.",
         value: getSyncSettings().branch || "main",
+        // Git이 허용하지 않는 브랜치 이름 문자를 설정 단계에서 걸러냅니다.
         validateInput(value) {
           return value.trim() && !/[\s~^:?*[\\]/.test(value.trim())
             ? undefined
@@ -171,6 +193,7 @@ class SyncManager {
     this.updateStatusBar("idle");
   }
 
+  // sync 설정만 켜져 있고 Git repo/remote가 없을 때 다음 행동을 안내합니다.
   async explainSetupAfterEnabled() {
     const settings = getSyncSettings();
     if (!settings.enabled) {
@@ -203,10 +226,10 @@ class SyncManager {
     }
   }
 
+  // HTTPS GitHub remote에서 사용할 token을 유지/교체/삭제할지 사용자에게 묻습니다.
   async ensureTokenForHttpsRemote() {
     const existing = await this.context.secrets.get(TOKEN_KEY);
     if (existing) {
-      this.cachedToken = existing;
       const picked = await vscode.window.showQuickPick([
         {
           label: "Use saved token",
@@ -238,6 +261,7 @@ class SyncManager {
     await this.promptAndStoreToken();
   }
 
+  // GitHub token을 입력받아 VS Code SecretStorage에 저장합니다.
   async promptAndStoreToken() {
     const token = await vscode.window.showInputBox({
       title: "Programmers Sync: GitHub token",
@@ -251,11 +275,11 @@ class SyncManager {
     }
 
     await this.context.secrets.store(TOKEN_KEY, token.trim());
-    this.cachedToken = token.trim();
     vscode.window.showInformationMessage("Programmers GitHub token을 안전 저장소에 저장했습니다.");
     return true;
   }
 
+  // SecretStorage에 저장된 GitHub token을 제거합니다.
   async clearGitHubToken() {
     const picked = await vscode.window.showWarningMessage(
       "저장된 Programmers GitHub token을 삭제할까요? HTTPS remote를 쓰는 경우 다음 Setup Sync에서 다시 입력할 수 있습니다.",
@@ -267,15 +291,16 @@ class SyncManager {
     }
 
     await this.context.secrets.delete(TOKEN_KEY);
-    this.cachedToken = "";
     vscode.window.showInformationMessage("저장된 Programmers GitHub token을 삭제했습니다.");
   }
 
+  // 현재 Programmers 저장소 폴더를 VS Code에서 엽니다.
   async openStorageFolder() {
     const programmersDir = await this.getProgrammersDir({ create: true });
     await vscode.commands.executeCommand("revealFileInOS", programmersDir);
   }
 
+  // extension activate 시 local 변경이 없으면 remote 변경을 자동으로 가져옵니다.
   async autoPullOnActivate() {
     const settings = getSyncSettings();
     if (this.suppressAutoPull || !settings.enabled || !settings.autoPullOnActivate) {
@@ -284,7 +309,6 @@ class SyncManager {
     }
 
     try {
-      await this.reportBackgroundSyncStatus();
       await this.pullOnly({ silent: true });
     } catch (error) {
       this.logError("Auto pull failed", error);
@@ -292,6 +316,7 @@ class SyncManager {
     }
   }
 
+  // push 없이 fetch/rebase만 수행해 remote 상태를 local에 반영합니다.
   async pullOnly({ silent = false } = {}) {
     if (this.syncInFlight) {
       return;
@@ -337,10 +362,11 @@ class SyncManager {
     }
   }
 
+  // 수동 Sync Now에서 저장, commit, fetch/rebase, push, 목록 refresh를 순서대로 수행합니다.
   async syncNow() {
     if (this.syncInFlight) {
       vscode.window.showInformationMessage("이미 Programmers sync를 실행 중입니다.");
-      return;
+      return false;
     }
 
     const settings = getSyncSettings();
@@ -352,7 +378,7 @@ class SyncManager {
       if (picked === "Setup Sync") {
         await this.setupSync();
       }
-      return;
+      return false;
     }
 
     this.syncInFlight = true;
@@ -366,6 +392,8 @@ class SyncManager {
         },
         async (progress) => {
           const context = await this.getGitContext({ requireConfigured: true });
+          progress.report({ message: "열려 있는 파일을 저장하는 중..." });
+          await vscode.workspace.saveAll(false);
           progress.report({ message: "Git 상태를 확인하는 중..." });
           await this.ensureNoGitOperationInProgress(context);
           progress.report({ message: "로컬 변경사항을 커밋하는 중..." });
@@ -377,21 +405,23 @@ class SyncManager {
             await this.integrateRemote(context);
           }
           progress.report({ message: "원격 저장소로 푸시하는 중..." });
-          await this.assertNoConflictMarkersInRepository(context);
+          await this.conflicts.assertNoConflictMarkersInRepository(context);
           await this.git(context, ["push", "-u", "origin", context.branch]);
           await this.refreshProblems?.({ invalidateCache: true, force: true });
         }
       );
       this.updateStatusBar("synced");
-      await this.clearBackgroundSyncStatus();
       vscode.window.showInformationMessage("Programmers sync 완료");
+      return true;
     } catch (error) {
       await this.handleSyncError(error);
+      return false;
     } finally {
       this.syncInFlight = false;
     }
   }
 
+  // remote/local 차이를 확인해 status bar에 unsynced/synced 상태만 표시합니다.
   async checkSyncStatus(reason = "manual") {
     if (this.syncInFlight) {
       return false;
@@ -421,6 +451,7 @@ class SyncManager {
     }
   }
 
+  // Git 상태를 조회해 commit/pull/push가 필요한지 계산합니다.
   async needsSync(context) {
     if (await this.hasChanges(context)) {
       return true;
@@ -442,104 +473,7 @@ class SyncManager {
     return ahead > 0 || behind > 0;
   }
 
-  async syncInBackgroundOnDeactivate() {
-    const settings = getSyncSettings();
-    const statusPath = path.join(this.context.globalStorageUri.fsPath, BACKGROUND_SYNC_STATUS_FILE);
-    if (!settings.enabled || !settings.autoSyncOnDeactivate || this.syncInFlight) {
-      await writeBackgroundSyncStatus(statusPath, false, `skipped: enabled=${settings.enabled} autoSyncOnDeactivate=${settings.autoSyncOnDeactivate} syncInFlight=${this.syncInFlight}`);
-      return false;
-    }
-
-    try {
-      const context = this.getBackgroundGitContext(settings);
-      const askpassPath = this.getAskpassScriptPath();
-      const child = cp.spawn(process.execPath, ["-e", buildBackgroundSyncScript({
-        cwd: context.cwd,
-        branch: context.branch,
-        askpassPath,
-        statusPath,
-        token: this.cachedToken || "",
-      })], {
-        detached: true,
-        stdio: "ignore",
-      });
-      child.unref();
-      return true;
-    } catch (error) {
-      this.logError("Background sync schedule failed", error);
-      const message = error instanceof Error ? error.message : String(error);
-      await writeBackgroundSyncStatus(statusPath, false, `schedule failed: ${message}`);
-      return false;
-    }
-  }
-
-  async prepareBackgroundSyncCredentials() {
-    try {
-      this.cachedToken = await this.context.secrets.get(TOKEN_KEY) || "";
-    } catch {
-      this.cachedToken = "";
-    }
-    try {
-      await this.ensureAskpassScript();
-    } catch (error) {
-      this.logError("Askpass preparation failed", error);
-    }
-  }
-
-  getBackgroundGitContext(settings) {
-    const developmentRoot = this.context.extensionMode === vscode.ExtensionMode.Development
-      ? this.context.extensionUri.fsPath
-      : undefined;
-    return {
-      cwd: developmentRoot ? path.join(developmentRoot, "Programmers") : path.join(this.context.globalStorageUri.fsPath, "Programmers"),
-      branch: settings.branch,
-    };
-  }
-
-  async reportBackgroundSyncStatus() {
-    const statusPath = path.join(this.context.globalStorageUri.fsPath, BACKGROUND_SYNC_STATUS_FILE);
-    let status;
-    try {
-      status = JSON.parse(await fs.readFile(statusPath, "utf8"));
-    } catch {
-      return;
-    }
-
-    if (!status || status.reported) {
-      return;
-    }
-
-    if (status.ok) {
-      await this.clearBackgroundSyncStatus();
-      try {
-        this.outputChannel?.appendLine(`[Programmers Helper] Background sync completed: ${status.detail || "ok"}`);
-      } catch {
-        // Output channels may be unavailable during fast reloads.
-      }
-      return;
-    }
-
-    await fs.writeFile(statusPath, `${JSON.stringify({ ...status, reported: true }, null, 2)}\n`, "utf8");
-
-    this.updateStatusBar("failed");
-    const detail = status.detail ? `\n${limitMessage(status.detail)}` : "";
-    vscode.window.showWarningMessage(`지난 종료 시 Programmers background sync가 실패했습니다.${detail}`, "Sync Now")
-      .then((picked) => {
-        if (picked === "Sync Now") {
-          void this.syncNow();
-        }
-      });
-  }
-
-  async clearBackgroundSyncStatus() {
-    const statusPath = path.join(this.context.globalStorageUri.fsPath, BACKGROUND_SYNC_STATUS_FILE);
-    try {
-      await fs.rm(statusPath, { force: true });
-    } catch {
-      // A stale background status should not make a successful manual sync fail.
-    }
-  }
-
+  // Programmers 저장소에 Git repo, remote, branch, hook, gitignore 기본 구성을 준비합니다.
   async initializeRepository() {
     const context = await this.getBasicContext();
     await this.ensureGitAvailable(context);
@@ -559,6 +493,7 @@ class SyncManager {
     await this.ensureConflictMarkerHooks(context.cwd);
   }
 
+  // sync 작업에 필요한 cwd, branch, remote URL, token을 한 번에 수집합니다.
   async getGitContext({ requireConfigured }) {
     const context = await this.getBasicContext();
     await this.ensureGitAvailable(context);
@@ -587,6 +522,7 @@ class SyncManager {
     return remote.code === 0 ? context : undefined;
   }
 
+  // Git 설정 여부와 무관하게 Programmers 저장소 경로와 branch 설정을 수집합니다.
   async getBasicContext() {
     const settings = getSyncSettings();
     const programmersDir = await this.getProgrammersDir({ create: true });
@@ -597,12 +533,14 @@ class SyncManager {
     };
   }
 
+  // sync 대상 Programmers 저장소 폴더를 찾거나 필요하면 생성합니다.
   async getProgrammersDir({ create }) {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     const programmersDir = await resolveProgrammersDir(this.context, workspaceFolder?.uri, { create });
     return programmersDir || getDefaultProgrammersDir(this.context, workspaceFolder?.uri);
   }
 
+  // sync를 시작하기 전에 git CLI와 .git 디렉터리 존재 여부를 확인합니다.
   async ensureGitAvailable(context) {
     try {
       await this.git(context, ["--version"], { timeoutMs: 5000 });
@@ -614,6 +552,7 @@ class SyncManager {
     }
   }
 
+  // sync 저장소에 포함하지 않을 helper/generated 파일 패턴을 .gitignore에 보장합니다.
   async ensureGitignore(cwd) {
     const gitignorePath = path.join(cwd, ".gitignore");
     if (await exists(gitignorePath)) {
@@ -633,6 +572,7 @@ class SyncManager {
     ].join(os.EOL), "utf8");
   }
 
+  // commit/push 전에 conflict marker가 남아 있으면 막는 Git hook을 설치합니다.
   async ensureConflictMarkerHooks(cwd) {
     const hooksDir = path.join(cwd, ".git", "hooks");
     if (!(await exists(hooksDir))) {
@@ -665,8 +605,9 @@ class SyncManager {
     }
   }
 
+  // local 변경이 있으면 전체 저장소 상태를 sync commit으로 묶습니다.
   async commitLocalChanges(context) {
-    await this.assertNoConflictMarkersInChangedFiles(context);
+    await this.conflicts.assertNoConflictMarkersInChangedFiles(context);
     await this.git(context, ["add", "-A"]);
     if (!(await this.hasChanges(context))) {
       return false;
@@ -676,31 +617,39 @@ class SyncManager {
     return true;
   }
 
+  // Git porcelain 출력으로 local working tree 변경 여부를 확인합니다.
   async hasChanges(context) {
     const status = await this.git(context, ["status", "--porcelain"], { allowNonZeroExit: true });
     return status.stdout.trim().length > 0;
   }
 
+  // merge/rebase/cherry-pick 중이면 sync를 멈추고 resolver 흐름으로 안내합니다.
   async ensureNoGitOperationInProgress(context) {
     const gitDir = path.join(context.cwd, ".git");
     if (await exists(path.join(gitDir, "MERGE_HEAD"))) {
-      const conflictFiles = await this.getConflictMarkerFiles(context);
+      const conflictFiles = await this.conflicts.getConflictMarkerFiles(context);
+      const deleteModifyFiles = conflictFiles.length === 0 ? await this.conflicts.getDeleteModifyConflictFiles(context) : [];
       throw createGitOperationError(
         "merge",
-        conflictFiles.length === 0
-          ? "Git merge 충돌 선택은 끝났습니다. Finish Merge를 눌러 완료 커밋을 만드세요."
-          : `Git merge 충돌을 해결해야 합니다.\n${conflictFiles.join("\n")}`,
-        { canFinish: true, canAbort: true, files: conflictFiles }
+        conflictFiles.length > 0
+          ? `Git merge 충돌을 해결해야 합니다.\n${conflictFiles.join("\n")}`
+          : deleteModifyFiles.length > 0
+            ? formatDeleteModifyMessage(deleteModifyFiles)
+            : "Git merge 충돌 선택은 끝났습니다. Finish Merge를 눌러 완료 커밋을 만드세요.",
+        {}
       );
     }
     if (await exists(path.join(gitDir, "rebase-merge")) || await exists(path.join(gitDir, "rebase-apply"))) {
-      const conflictFiles = await this.getConflictMarkerFiles(context);
+      const conflictFiles = await this.conflicts.getConflictMarkerFiles(context);
+      const deleteModifyFiles = conflictFiles.length === 0 ? await this.conflicts.getDeleteModifyConflictFiles(context) : [];
       throw createGitOperationError(
         "rebase",
-        conflictFiles.length === 0
-          ? "Git rebase 충돌 선택은 끝났습니다. Continue Rebase를 눌러 다음 단계로 진행하세요."
-          : `Git rebase 충돌을 해결해야 합니다.\n${conflictFiles.join("\n")}`,
-        { canContinueRebase: true, canAbort: true, files: conflictFiles }
+        conflictFiles.length > 0
+          ? `Git rebase 충돌을 해결해야 합니다.\n${conflictFiles.join("\n")}`
+          : deleteModifyFiles.length > 0
+            ? formatDeleteModifyMessage(deleteModifyFiles)
+            : "Git rebase 충돌 선택은 끝났습니다. Continue Rebase를 눌러 다음 단계로 진행하세요.",
+        {}
       );
     }
     if (await exists(path.join(gitDir, "CHERRY_PICK_HEAD"))) {
@@ -708,161 +657,31 @@ class SyncManager {
     }
   }
 
+  // 사용자가 해결한 충돌 파일을 stage하고 아직 남은 unmerged 파일을 반환합니다.
   async stageResolvedFilesAndGetUnmerged(context, options = {}) {
-    const unmergedBeforeStage = await this.getUnmergedFiles(context);
-    const markerFiles = await this.findConflictMarkerFiles(context, await this.getRepositoryFiles(context));
+    const markerFiles = await this.conflicts.findConflictMarkerFiles(context, await this.conflicts.getRepositoryFiles(context));
+    const deleteModifyFiles = await this.conflicts.getDeleteModifyConflictFiles(context);
     if (markerFiles.length > 0) {
       const operation = options.operation || "merge";
       throw createGitOperationError(
         operation,
         `충돌 마커가 아직 파일에 남아 있습니다.\n${markerFiles.join("\n")}`,
-        operation === "rebase"
-          ? { canContinueRebase: true, canAbort: true, files: markerFiles }
-          : { canFinish: true, canAbort: true, files: markerFiles }
+        {}
+      );
+    }
+    if (deleteModifyFiles.length > 0) {
+      const operation = options.operation || "merge";
+      throw createGitOperationError(
+        operation,
+        formatDeleteModifyMessage(deleteModifyFiles),
+        {}
       );
     }
     await this.git(context, ["add", "-A"]);
-    return this.getUnmergedFiles(context);
+    return this.conflicts.getUnmergedFiles(context);
   }
 
-  async getConflictMarkerFiles(context) {
-    const markerFiles = await this.findConflictMarkerFiles(context, await this.getRepositoryFiles(context));
-    return [...new Set(markerFiles)].sort((a, b) => a.localeCompare(b));
-  }
-
-  async openNextConflictFile(files) {
-    let context;
-    try {
-      context = await this.getGitContext({ requireConfigured: true });
-    } catch (error) {
-      await this.handleSyncError(error);
-      return;
-    }
-
-    await this.saveActiveConflictDocument(context);
-    const currentFiles = await this.getConflictMarkerFiles(context);
-    const candidates = currentFiles.length > 0
-      ? currentFiles
-      : await this.findConflictMarkerFiles(context, files || []);
-    if (candidates.length === 0) {
-      vscode.window.showInformationMessage("남은 충돌 마커가 없습니다. Continue Rebase 또는 Finish Merge를 눌러 동기화를 이어가세요.");
-      return;
-    }
-
-    const file = candidates[this.conflictCursor % candidates.length];
-    this.conflictCursor += 1;
-    const filePath = path.resolve(context.cwd, file);
-    if (!isPathInside(context.cwd, filePath)) {
-      return;
-    }
-    await vscode.window.showTextDocument(vscode.Uri.file(filePath), { preview: false });
-  }
-
-  async saveActiveConflictDocument(context) {
-    const activeDocument = vscode.window.activeTextEditor?.document;
-    if (!activeDocument || activeDocument.isUntitled || activeDocument.uri.scheme !== "file") {
-      return;
-    }
-
-    if (!isPathInside(context.cwd, activeDocument.uri.fsPath)) {
-      return;
-    }
-
-    if (activeDocument.isDirty) {
-      await activeDocument.save();
-    }
-  }
-
-  async getUnmergedFiles(context) {
-    const result = await this.git(context, ["diff", "--name-only", "--diff-filter=U"], {
-      allowNonZeroExit: true,
-    });
-    return result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  }
-
-  async assertNoConflictMarkersInChangedFiles(context) {
-    const changedFiles = await this.getChangedFiles(context);
-    const markerFiles = await this.findConflictMarkerFiles(context, changedFiles);
-    if (markerFiles.length === 0) {
-      return;
-    }
-
-    throw createConflictMarkerError(markerFiles);
-  }
-
-  async assertNoConflictMarkersInRepository(context) {
-    const files = await this.getRepositoryFiles(context);
-    const markerFiles = await this.findConflictMarkerFiles(context, files);
-    if (markerFiles.length === 0) {
-      return;
-    }
-
-    throw createConflictMarkerError(markerFiles);
-  }
-
-  async getChangedFiles(context) {
-    const commands = [
-      ["diff", "--name-only"],
-      ["diff", "--cached", "--name-only"],
-      ["ls-files", "--others", "--exclude-standard"],
-    ];
-    const files = new Set();
-    for (const args of commands) {
-      const result = await this.git(context, args, { allowNonZeroExit: true });
-      for (const line of result.stdout.split(/\r?\n/)) {
-        const file = line.trim();
-        if (file) {
-          files.add(file);
-        }
-      }
-    }
-    return [...files];
-  }
-
-  async getRepositoryFiles(context) {
-    const files = new Set();
-    for (const args of [
-      ["ls-files"],
-      ["ls-files", "--others", "--exclude-standard"],
-    ]) {
-      const result = await this.git(context, args, { allowNonZeroExit: true });
-      for (const line of result.stdout.split(/\r?\n/)) {
-        const file = line.trim();
-        if (file) {
-          files.add(file);
-        }
-      }
-    }
-    return [...files];
-  }
-
-  async findConflictMarkerFiles(context, relativeFiles) {
-    const markerFiles = [];
-    for (const relativeFile of relativeFiles) {
-      if (!relativeFile || relativeFile.includes("\0")) {
-        continue;
-      }
-      const filePath = path.resolve(context.cwd, relativeFile);
-      if (!isPathInside(context.cwd, filePath)) {
-        continue;
-      }
-      let content;
-      try {
-        const stat = await fs.stat(filePath);
-        if (!stat.isFile() || stat.size > 2 * 1024 * 1024) {
-          continue;
-        }
-        content = await fs.readFile(filePath, "utf8");
-      } catch {
-        continue;
-      }
-      if (hasConflictMarkers(content)) {
-        markerFiles.push(relativeFile);
-      }
-    }
-    return markerFiles;
-  }
-
+  // origin의 현재 branch 정보를 최신으로 가져옵니다.
   async fetchRemote(context) {
     const result = await this.git(context, ["fetch", "origin", context.branch], {
       allowNonZeroExit: true,
@@ -878,6 +697,7 @@ class SyncManager {
     throw new Error(`git fetch origin ${context.branch} 실패${detail.trim() ? `\n${detail.trim()}` : ""}`);
   }
 
+  // origin/<branch>가 존재하는지 확인해 첫 push인지 판단합니다.
   async hasRemoteBranch(context) {
     const result = await this.git(context, ["rev-parse", "--verify", `refs/remotes/origin/${context.branch}`], {
       allowNonZeroExit: true,
@@ -885,6 +705,7 @@ class SyncManager {
     return result.code === 0;
   }
 
+  // remote branch가 있으면 rebase로 remote 변경을 local sync commit 위에 통합합니다.
   async integrateRemote(context) {
     if (!(await this.hasLocalHead(context))) {
       await this.git(context, ["pull", "origin", context.branch]);
@@ -902,6 +723,7 @@ class SyncManager {
     await this.git(context, ["merge", `origin/${context.branch}`, "--allow-unrelated-histories", "--no-edit"]);
   }
 
+  // 저장소에 아직 첫 commit이 있는지 확인합니다.
   async hasLocalHead(context) {
     const result = await this.git(context, ["rev-parse", "--verify", "HEAD"], {
       allowNonZeroExit: true,
@@ -909,6 +731,7 @@ class SyncManager {
     return result.code === 0;
   }
 
+  // token askpass, 오류 마스킹, output 제한을 적용해 git 명령을 실행합니다.
   async git(context, args, options = {}) {
     const token = await this.context.secrets.get(TOKEN_KEY);
     const askpassPath = token ? await this.ensureAskpassScript() : undefined;
@@ -934,6 +757,7 @@ class SyncManager {
     };
   }
 
+  // HTTPS GitHub token을 Git credential prompt에 전달할 askpass 스크립트를 만듭니다.
   async ensureAskpassScript() {
     const scriptPath = this.getAskpassScriptPath();
     await fs.mkdir(path.dirname(scriptPath), { recursive: true });
@@ -967,16 +791,19 @@ class SyncManager {
     return scriptPath;
   }
 
+  // OS에 맞는 askpass 스크립트 파일 경로를 계산합니다.
   getAskpassScriptPath() {
     return process.platform === "win32"
       ? path.join(this.context.globalStorageUri.fsPath, "programmers-git-askpass.cmd")
       : path.join(this.context.globalStorageUri.fsPath, "programmers-git-askpass.sh");
   }
 
+  // sync 설정 변경을 VS Code global configuration에 저장합니다.
   async updateConfig(key, value) {
     await vscode.workspace.getConfiguration("programmersHelper").update(key, value, vscode.ConfigurationTarget.Global);
   }
 
+  // setup 과정에서 저장해 둔 remote URL을 workspace/global state에서 읽습니다.
   getStoredRemoteUrl() {
     const stored = this.context.globalState.get(REMOTE_URL_STATE_KEY);
     if (typeof stored === "string" && stored.trim()) {
@@ -987,15 +814,18 @@ class SyncManager {
     return typeof legacySetting === "string" ? legacySetting.trim() : "";
   }
 
+  // setup 과정에서 입력한 remote URL을 이후 sync 작업이 재사용하도록 저장합니다.
   async storeRemoteUrl(remoteUrl) {
     await this.context.globalState.update(REMOTE_URL_STATE_KEY, remoteUrl);
   }
 
+  // Git/sync 오류를 상태바, notification, conflict resolver 흐름으로 분기 처리합니다.
   async handleSyncError(error) {
     const message = error instanceof Error ? error.message : String(error);
     this.logError("Sync failed", error);
     if (error?.conflictMarkers) {
-      this.handleConflictMarkerError(error);
+      const context = await this.getGitContext({ requireConfigured: true });
+      await this.conflicts.openConflictResolver(await this.conflicts.getGitOperationKind(context));
       return;
     }
     if (error?.gitOperation === "merge") {
@@ -1021,17 +851,8 @@ class SyncManager {
         }
       }
       this.updateStatusBar("conflict");
-      vscode.window.showErrorMessage(
-        "Programmers sync 충돌이 발생했습니다. 충돌 파일을 해결한 뒤 Continue Rebase 또는 Finish Merge를 실행하세요.",
-        "Next Conflict",
-        "Open Storage Folder"
-      ).then((picked) => {
-        if (picked === "Next Conflict") {
-          void this.openNextConflictFile();
-        } else if (picked === "Open Storage Folder") {
-          void this.openStorageFolder();
-        }
-      });
+      const context = await this.getGitContext({ requireConfigured: true });
+      await this.conflicts.openConflictResolver(await this.conflicts.getGitOperationKind(context));
       return;
     }
 
@@ -1039,131 +860,19 @@ class SyncManager {
     vscode.window.showErrorMessage(`Programmers sync 실패\n${limitMessage(message)}`);
   }
 
-  handleConflictMarkerError(error) {
-    this.updateStatusBar("conflict");
-    vscode.window.showErrorMessage(
-      `충돌 마커가 남아 있어 sync를 중단했습니다.\n${limitMessage(error.message)}`,
-      "Next Conflict",
-      "Open Storage Folder"
-    ).then((picked) => {
-      if (picked === "Next Conflict") {
-        void this.openNextConflictFile(error.files);
-      } else if (picked === "Open Storage Folder") {
-        void this.openStorageFolder();
-      }
-    });
-  }
-
+  // merge 진행 중 오류를 resolver를 여는 notification으로 안내합니다.
   handleMergeInProgressError(error) {
     this.updateStatusBar("conflict");
-    const actions = error.files?.length
-      ? ["Next Conflict", "Finish Merge", "Abort Merge", "Open Storage Folder"]
-      : ["Finish Merge", "Abort Merge", "Open Storage Folder"];
-    vscode.window.showErrorMessage(
-      `Programmers sync가 merge 진행 중 상태에서 멈췄습니다.\n${limitMessage(error.message)}`,
-      ...actions
-    ).then((picked) => {
-      if (picked === "Next Conflict") {
-        void this.openNextConflictFile(error.files);
-      } else if (picked === "Finish Merge") {
-        void this.finishMergeAndSync();
-      } else if (picked === "Abort Merge") {
-        void this.abortGitOperation("merge");
-      } else if (picked === "Open Storage Folder") {
-        void this.openStorageFolder();
-      }
-    });
+    void this.conflicts.openConflictResolver("merge");
   }
 
+  // rebase 진행 중 오류를 resolver를 여는 notification으로 안내합니다.
   handleRebaseInProgressError(error) {
     this.updateStatusBar("conflict");
-    const actions = error.files?.length
-      ? ["Next Conflict", "Continue Rebase", "Abort Rebase", "Open Storage Folder"]
-      : ["Continue Rebase", "Abort Rebase", "Open Storage Folder"];
-    vscode.window.showErrorMessage(
-      `Programmers sync가 rebase 진행 중 상태에서 멈췄습니다.\n${limitMessage(error.message)}`,
-      ...actions
-    ).then((picked) => {
-      if (picked === "Next Conflict") {
-        void this.openNextConflictFile(error.files);
-      } else if (picked === "Continue Rebase") {
-        void this.continueRebaseAndSync();
-      } else if (picked === "Abort Rebase") {
-        void this.abortGitOperation("rebase");
-      } else if (picked === "Open Storage Folder") {
-        void this.openStorageFolder();
-      }
-    });
+    void this.conflicts.openConflictResolver("rebase");
   }
 
-  async finishMergeAndSync() {
-    try {
-      const context = await this.getGitContext({ requireConfigured: true });
-      const unmerged = await this.stageResolvedFilesAndGetUnmerged(context, { operation: "merge" });
-      if (unmerged.length > 0) {
-        vscode.window.showErrorMessage(`아직 해결되지 않은 충돌 파일이 있습니다.\n${limitMessage(unmerged.join("\n"))}`, "Next Conflict", "Open Storage Folder")
-          .then((picked) => {
-            if (picked === "Next Conflict") {
-              void this.openNextConflictFile(unmerged);
-            } else if (picked === "Open Storage Folder") {
-              void this.openStorageFolder();
-            }
-          });
-        return;
-      }
-      await this.git(context, ["commit", "--no-edit"]);
-      await this.syncNow();
-    } catch (error) {
-      await this.handleSyncError(error);
-    }
-  }
-
-  async continueRebaseAndSync() {
-    try {
-      const context = await this.getGitContext({ requireConfigured: true });
-      const unmerged = await this.stageResolvedFilesAndGetUnmerged(context, { operation: "rebase" });
-      if (unmerged.length > 0) {
-        vscode.window.showErrorMessage(`아직 해결되지 않은 충돌 파일이 있습니다.\n${limitMessage(unmerged.join("\n"))}`, "Next Conflict", "Open Storage Folder")
-          .then((picked) => {
-            if (picked === "Next Conflict") {
-              void this.openNextConflictFile(unmerged);
-            } else if (picked === "Open Storage Folder") {
-              void this.openStorageFolder();
-            }
-          });
-        return;
-      }
-      await this.git(context, ["rebase", "--continue"], {
-        env: { GIT_EDITOR: "true" },
-      });
-      await this.syncNow();
-    } catch (error) {
-      await this.handleSyncError(error);
-    }
-  }
-
-  async abortGitOperation(operation) {
-    try {
-      const context = await this.getGitContext({ requireConfigured: true });
-      const result = await this.git(context, [operation, "--abort"], {
-        allowNonZeroExit: true,
-      });
-      if (result.code !== 0) {
-        const detail = result.stderr || result.stdout || "";
-        if (/no rebase in progress|no merge to abort|there is no merge to abort|no cherry-pick or revert in progress/i.test(detail)) {
-          this.updateStatusBar("idle");
-          vscode.window.showInformationMessage(`진행 중인 Git ${operation} 작업이 이미 없습니다.`);
-          return;
-        }
-        throw new Error(`git ${operation} --abort 실패${detail.trim() ? `\n${detail.trim()}` : ""}`);
-      }
-      this.updateStatusBar("dirty");
-      vscode.window.showInformationMessage(`Git ${operation}를 취소했습니다. 필요하면 다시 Programmers: Sync Now를 실행하세요.`);
-    } catch (error) {
-      await this.handleSyncError(error);
-    }
-  }
-
+  // 사용자에게 보여주기 전 상세 오류를 OutputChannel에 안전하게 남깁니다.
   logError(prefix, error) {
     const message = error instanceof Error ? error.message : String(error);
     try {
@@ -1172,282 +881,6 @@ class SyncManager {
       // Output channels may already be closed during extension deactivation.
     }
   }
-}
-
-function isHttpsGitHubRemote(remoteUrl) {
-  return /^https:\/\/github\.com\//i.test(remoteUrl);
-}
-
-function maskToken(value, token) {
-  if (!token || !value) {
-    return value || "";
-  }
-  return String(value).split(token).join("<token>");
-}
-
-function limitMessage(value, max = 400) {
-  const text = String(value || "").trim();
-  return text.length > max ? `${text.slice(0, max)}...` : text;
-}
-
-function createGitOperationError(gitOperation, message, options = {}) {
-  const error = new Error(message);
-  error.gitOperation = gitOperation;
-  Object.assign(error, options);
-  return error;
-}
-
-function createConflictMarkerError(files) {
-  const error = new Error(files.join("\n"));
-  error.conflictMarkers = true;
-  error.files = files;
-  return error;
-}
-
-function hasConflictMarkers(content) {
-  return /^<{7}(?:\s|$)/m.test(content)
-    || /^={7}$/m.test(content)
-    || /^>{7}(?:\s|$)/m.test(content);
-}
-
-function isPathInside(root, target) {
-  const relative = path.relative(path.resolve(root), path.resolve(target));
-  return relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative));
-}
-
-function buildConflictMarkerHookScript() {
-  return `#!/bin/sh
-# Programmers Problem Helper conflict marker guard v2
-set -eu
-
-files=$(git ls-files 2>/dev/null || true)
-files="$files
-$(git ls-files --others --exclude-standard 2>/dev/null || true)"
-
-bad=""
-printf '%s\\n' "$files" | awk 'NF' | sort -u | while IFS= read -r file; do
-  [ -f "$file" ] || continue
-  if grep -q '^<<<<<<< ' "$file" && grep -q '^=======$' "$file" && grep -q '^>>>>>>> ' "$file"; then
-    printf '%s\\n' "$file"
-  fi
-done > .git/programmers-conflict-markers
-
-if [ -s .git/programmers-conflict-markers ]; then
-  echo "Programmers Problem Helper: conflict markers remain. Resolve these files before commit/push:" >&2
-  cat .git/programmers-conflict-markers >&2
-  rm -f .git/programmers-conflict-markers
-  exit 1
-fi
-
-rm -f .git/programmers-conflict-markers
-exit 0
-`;
-}
-
-async function exists(filePath) {
-  try {
-    await fs.stat(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function appendGitignorePatterns(gitignorePath, patterns) {
-  let content = "";
-  try {
-    content = await fs.readFile(gitignorePath, "utf8");
-  } catch {
-    content = "";
-  }
-
-  const existing = new Set(content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
-  const missing = patterns.filter((pattern) => !existing.has(pattern));
-  if (missing.length === 0) {
-    return;
-  }
-
-  const prefix = content && !content.endsWith("\n") ? os.EOL : "";
-  await fs.appendFile(gitignorePath, `${prefix}${missing.join(os.EOL)}${os.EOL}`, "utf8");
-}
-
-async function writeBackgroundSyncStatus(statusPath, ok, detail) {
-  try {
-    await fs.mkdir(path.dirname(statusPath), { recursive: true });
-    await fs.writeFile(statusPath, `${JSON.stringify({
-      ok,
-      detail: String(detail || ""),
-      finishedAt: new Date().toISOString(),
-      reported: false,
-    }, null, 2)}\n`, "utf8");
-  } catch {
-    // Shutdown paths should never fail because diagnostics could not be written.
-  }
-}
-
-function buildBackgroundSyncScript({ cwd, branch, askpassPath, statusPath, token }) {
-  return `
-const cp = require("child_process");
-const fs = require("fs");
-const env = {
-  ...process.env,
-  GIT_TERMINAL_PROMPT: "0",
-  GIT_ASKPASS: ${JSON.stringify(askpassPath)},
-  PROGRAMMERS_GITHUB_TOKEN: ${JSON.stringify(token)},
-};
-function writeStatus(ok, detail) {
-  try {
-    fs.writeFileSync(${JSON.stringify(statusPath)}, JSON.stringify({
-      ok,
-      detail: String(detail || ""),
-      finishedAt: new Date().toISOString(),
-      reported: false,
-    }, null, 2) + "\\n");
-  } catch {}
-}
-function run(args, options = {}) {
-  const gitArgs = args[0] === "--version" ? args : ["-c", "core.quotepath=false", ...args];
-  return cp.spawnSync("git", gitArgs, {
-    cwd: ${JSON.stringify(cwd)},
-    env,
-    encoding: "utf8",
-    timeout: options.timeout || 30000,
-  });
-}
-function ok(result) {
-  return result && result.status === 0;
-}
-function hasConflictMarkers(content) {
-  return /^<{7}(?:\\s|$)/m.test(content)
-    || /^={7}$/m.test(content)
-    || /^>{7}(?:\\s|$)/m.test(content);
-}
-function changedFiles() {
-  const files = new Set();
-  for (const args of [
-    ["diff", "--name-only"],
-    ["diff", "--cached", "--name-only"],
-    ["ls-files", "--others", "--exclude-standard"],
-  ]) {
-    const result = run(args);
-    if (!ok(result)) {
-      continue;
-    }
-    for (const line of String(result.stdout || "").split(/\\r?\\n/)) {
-      const file = line.trim();
-      if (file) files.add(file);
-    }
-  }
-  return [...files];
-}
-function repositoryFiles() {
-  const files = new Set();
-  for (const args of [
-    ["ls-files"],
-    ["ls-files", "--others", "--exclude-standard"],
-  ]) {
-    const result = run(args);
-    if (!ok(result)) {
-      continue;
-    }
-    for (const line of String(result.stdout || "").split(/\\r?\\n/)) {
-      const file = line.trim();
-      if (file) files.add(file);
-    }
-  }
-  return [...files];
-}
-function conflictMarkerFiles(files) {
-  const markerFiles = [];
-  for (const file of files) {
-    const fullPath = require("path").resolve(${JSON.stringify(cwd)}, file);
-    if (!fullPath.startsWith(require("path").resolve(${JSON.stringify(cwd)}) + require("path").sep)) {
-      continue;
-    }
-    try {
-      const stat = fs.statSync(fullPath);
-      if (!stat.isFile() || stat.size > 2 * 1024 * 1024) continue;
-      if (hasConflictMarkers(fs.readFileSync(fullPath, "utf8"))) {
-        markerFiles.push(file);
-      }
-    } catch {}
-  }
-  return markerFiles;
-}
-writeStatus(false, "started");
-let result;
-if (!fs.existsSync(${JSON.stringify(cwd)})) {
-  writeStatus(false, "skipped: sync folder does not exist");
-  process.exit(0);
-}
-if (!fs.existsSync(${JSON.stringify(path.join(cwd, ".git"))})) {
-  writeStatus(false, "skipped: sync repository is not configured");
-  process.exit(0);
-}
-for (const marker of ["MERGE_HEAD", "CHERRY_PICK_HEAD"]) {
-  if (fs.existsSync(${JSON.stringify(path.join(cwd, ".git"))} + "/" + marker)) {
-    writeStatus(false, "skipped: git operation in progress: " + marker);
-    process.exit(0);
-  }
-}
-if (fs.existsSync(${JSON.stringify(path.join(cwd, ".git", "rebase-merge"))}) || fs.existsSync(${JSON.stringify(path.join(cwd, ".git", "rebase-apply"))})) {
-  writeStatus(false, "skipped: git rebase in progress");
-  process.exit(0);
-}
-result = run(["remote", "get-url", "origin"]);
-if (!ok(result)) {
-  writeStatus(false, "skipped: origin remote is not configured");
-  process.exit(0);
-}
-const markerFiles = conflictMarkerFiles(repositoryFiles());
-if (markerFiles.length > 0) {
-  writeStatus(false, "conflict markers remain\\n" + markerFiles.join("\\n"));
-  process.exit(0);
-}
-result = run(["add", "-A"]);
-if (!ok(result)) {
-  writeStatus(false, "git add failed\\n" + ((result && (result.stderr || result.stdout)) || ""));
-  process.exit(0);
-}
-const status = run(["status", "--porcelain"]);
-if (!ok(status)) {
-  writeStatus(false, "git status failed\\n" + ((status && (status.stderr || status.stdout)) || ""));
-  process.exit(0);
-}
-if (String(status.stdout || "").trim()) {
-  result = run(["commit", "-m", "Sync programmers state"]);
-  if (!ok(result)) {
-    writeStatus(false, "git commit failed\\n" + ((result && (result.stderr || result.stdout)) || ""));
-    process.exit(0);
-  }
-}
-const fetch = run(["fetch", "origin", ${JSON.stringify(branch)}]);
-const fetchDetail = String((fetch && (fetch.stderr || fetch.stdout)) || "");
-if (!ok(fetch) && !/couldn't find remote ref|could not find remote ref|fatal: couldn't find remote ref/i.test(fetchDetail)) {
-  writeStatus(false, "git fetch failed\\n" + fetchDetail);
-  process.exit(0);
-}
-const remote = run(["rev-parse", "--verify", "refs/remotes/origin/${branch}"]);
-if (ok(remote)) {
-  const mergeBase = run(["merge-base", "HEAD", "origin/${branch}"]);
-  const integrated = ok(mergeBase)
-    ? run(["pull", "--rebase", "origin", ${JSON.stringify(branch)}])
-    : run(["merge", "origin/${branch}", "--allow-unrelated-histories", "--no-edit"]);
-  if (!ok(integrated)) {
-    writeStatus(false, "git integrate failed\\n" + ((integrated && (integrated.stderr || integrated.stdout)) || ""));
-    process.exit(0);
-  }
-}
-const ahead = run(["rev-list", "--count", "origin/${branch}..HEAD"]);
-if (!ok(remote) || (ok(ahead) && Number(String(ahead.stdout || "0").trim()) > 0)) {
-  result = run(["push", "-u", "origin", ${JSON.stringify(branch)}], { timeout: 60000 });
-  if (!ok(result)) {
-    writeStatus(false, "git push failed\\n" + ((result && (result.stderr || result.stdout)) || ""));
-    process.exit(0);
-  }
-}
-writeStatus(true, "synced");
-`;
 }
 
 module.exports = {

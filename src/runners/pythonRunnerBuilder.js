@@ -2,6 +2,7 @@ const {
   parseCustomTests,
 } = require("./cppRunnerBuilder");
 
+// Python solution 함수 정의에서 인자 목록을 추출합니다.
 function parseSolutionSignature(pythonSource) {
   const match = pythonSource.match(/(?:^|\n)\s*def\s+solution\s*\(([\s\S]*?)\)\s*:/);
   if (!match) {
@@ -22,6 +23,7 @@ function parseSolutionSignature(pythonSource) {
   return { params };
 }
 
+// 샘플/커스텀 테스트를 실행할 Python test_runner.py 코드를 생성합니다.
 function buildRunner(signature, examples, solutionIncludePath = "../solution.py", options = {}) {
   const tests = examples.map((example, index) => buildTestCase(signature, example, index));
   const solutionPath = JSON.stringify(solutionIncludePath);
@@ -71,6 +73,7 @@ if __name__ == "__main__":
 `;
 }
 
+// 예제 하나를 Python solution 호출과 PASS/FAIL 출력 코드로 변환합니다.
 function buildTestCase(signature, example, index) {
   if (example.inputs.length !== signature.params.length) {
     throw new Error(`입출력 예 #${index + 1}의 인자 수가 solution 시그니처와 다릅니다.`);
@@ -79,6 +82,7 @@ function buildTestCase(signature, example, index) {
   return `  {"inputs": [${example.inputs.map(toPythonLiteral).join(", ")}], "expected": ${toPythonLiteral(example.expected)}}`;
 }
 
+// Python runner가 tracemalloc 기반 메모리 값을 출력할 helper 코드를 만듭니다.
 function buildMemorySupportCode(options) {
   if ((options.memoryMode || "judge") !== "judge") {
     return `
@@ -99,6 +103,7 @@ def current_memory_label():
 `;
 }
 
+// Programmers 예제 텍스트를 Python literal로 변환합니다.
 function toPythonLiteral(rawValue) {
   const value = String(rawValue || "").trim().replace(/^`|`$/g, "");
   if (!value) {
@@ -122,6 +127,7 @@ function toPythonLiteral(rawValue) {
   return JSON.stringify(value);
 }
 
+// 커스텀 테스트 JSON 값을 Python literal 문자열로 변환합니다.
 function jsValueToPythonLiteral(value) {
   if (value === null) return "None";
   if (typeof value === "boolean") return value ? "True" : "False";
@@ -134,6 +140,7 @@ function jsValueToPythonLiteral(value) {
   return "None";
 }
 
+// 중첩 리스트 안 delimiter를 무시하고 최상위 항목만 나눕니다.
 function splitTopLevel(value, delimiter) {
   const parts = [];
   let current = "";
