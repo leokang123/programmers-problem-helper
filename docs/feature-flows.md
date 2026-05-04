@@ -395,26 +395,28 @@ Git 동기화는 기본값이 꺼져 있고, 설정이 켜진 뒤 `Programmers: 
 3. `ProblemCommands.openProblemFromDir(problemDir)`
 4. `validateProblemDir(problemDir)`로 안전한 문제 폴더인지 확인한다.
 5. `workspaceState.lastProblemDir`을 갱신한다.
-6. 현재 언어 풀이 파일을 보장한 뒤 `openProblem(problem.md, solutionFile)` 호출
+6. 현재 언어 풀이 파일을 보장한 뒤 `openProblem(problem.md, solutionFile, options)` 호출
 7. 현재 실행 모드에 맞는 실행 환경 준비
 8. `showOpenedProblemState(problemDir, runtimeStatus)` 호출
 
 ### 에디터 열기 세부 동작
 
-`openProblem(mdUri, cppUri)`:
+`openProblem(mdUri, solutionUri, options)`:
 
 1. `vscode.workspace.saveAll(false)`
 2. `openLockedMarkdownPreview(mdUri, ViewColumn.One)`로 문제 Markdown preview를 왼쪽에 연다.
    - 우선 `vscode.openWith(..., "vscode.markdown.preview.editor")`를 사용한다.
    - 실패하면 `markdown.showPreview`와 `markdown.preview.toggleLock` fallback을 사용한다.
-3. `closeInactiveProblemTabs(mdUri, cppUri)`로 같은 `Programmers` 루트의 비활성 `problem.md` 탭을 정리한다.
-4. `showSolution(solutionUri)`로 현재 언어 풀이 파일을 `ViewColumn.Two`에 연다.
-5. `closeStaleSolutionTabs(solutionUri)`로 같은 `Programmers` 루트의 오래된 풀이 탭을 정리한다.
-6. `keepOnlyProblemLayoutTabs(mdUri, cppUri)`로 현재 문제 레이아웃에 맞지 않는 탭을 정리한다.
+3. `closeInactiveProblemTabs(mdUri, solutionUri)`로 같은 `Programmers` 루트의 비활성 `problem.md` 탭을 정리한다.
+4. `showSolution(solutionUri)`로 현재 언어 풀이 파일이나 풀이기록 snapshot을 `ViewColumn.Two`에 연다.
+5. `options.preserveRightProblemTabs`가 꺼져 있으면 `closeStaleSolutionTabs(solutionUri)`로 같은 `Programmers` 루트의 오래된 풀이 탭을 정리한다.
+6. `keepOnlyProblemLayoutTabs(mdUri, solutionUri, options)`로 현재 문제 레이아웃에 맞지 않는 탭을 정리한다.
 
 주의:
 
 - 현재 구현은 전체 에디터를 닫지 않고 필요한 문제 탭만 선별 정리한다.
+- `programmersHelper.tabResetMode`가 `onProblemChange`이면 다른 문제로 전환할 때는 오른쪽 풀이 탭을 정리하고, 같은 문제에서 현재 풀이와 풀이기록을 오갈 때는 오른쪽 탭을 유지한다.
+- `programmersHelper.tabResetMode=always`는 현재 `problem.md`와 선택한 풀이 파일만 남기고, `never`는 문제를 바꿔도 오른쪽 풀이/풀이기록 탭을 가능한 한 유지한다.
 - 저장된 풀이 스냅샷을 열 때는 오른쪽 풀이 파일이 기본 파일이 아니라 `.programmers-helper/solutions/solution-*.<ext>`일 수 있다.
 
 ### 사이드바 상태 갱신
@@ -896,7 +898,7 @@ python3 .programmers-helper/generated/runners/test_runner.py <testIndex>
 1. Webview `openSolutionSnapshot`
 2. `ProblemCommands.openSolutionSnapshot(problemDir, snapshotPath)`
 3. `getSolutionSnapshotPath(safeDir, snapshotPath)`
-4. `problem.md`와 snapshot 풀이 파일을 나란히 연다.
+4. 왼쪽 `problem.md`는 유지하고, 오른쪽 editor group에 snapshot 풀이 파일을 열거나 이미 있으면 해당 탭으로 포커스한다.
 
 ### 이전 풀이 삭제
 

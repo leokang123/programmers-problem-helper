@@ -2,7 +2,7 @@
   "name": "programmers-problem-helper",
   "displayName": "Programmers Problem Helper",
   "description": "Solve Programmers coding-test problems in VS Code with language templates, split previews, and local sample test runs.",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "publisher": "leokang123",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -45,80 +45,117 @@
   },
   "main": "./extension.js",
   "contributes": {
-    "configuration": {
-      "title": "Programmers Helper",
-      "properties": {
-        "programmersHelper.language": {
-          "type": "string",
-          "enum": [
-            "cpp",
-            "java",
-            "python"
-          ],
-          "enumItemLabels": [
-            "C++",
-            "Java",
-            "Python"
-          ],
-          "default": "cpp",
-          "markdownDescription": "Choose the language used when opening problem solution templates and running tests."
-        },
-        "programmersHelper.executionMode": {
-          "type": "string",
-          "enum": [
-            "docker",
-            "local"
-          ],
-          "default": "docker",
-          "markdownDescription": "Choose whether sample and custom tests run inside the helper Docker container or directly on the local machine. Docker is recommended on Windows. If you use local mode on Windows, install a GNU/Clang-style compiler such as MinGW `g++` or LLVM `clang++` and make sure it is available in PATH."
-        },
-        "programmersHelper.compilerCommand": {
-          "type": "string",
-          "enum": [
-            "clang++",
-            "g++"
-          ],
-          "default": "clang++",
-          "markdownDescription": "Choose the C++ compiler command used for building the generated test runner. Local Windows mode supports `g++` or `clang++`; MSVC `cl.exe` is not supported by the current compile flags."
-        },
-        "programmersHelper.cppStandard": {
-          "type": "string",
-          "enum": [
-            "c++17",
-            "c++20"
-          ],
-          "default": "c++17",
-          "markdownDescription": "Choose the `-std=` flag used when compiling tests."
-        },
-        "programmersHelper.testTimeoutMs": {
-          "type": "number",
-          "default": 3000,
-          "minimum": 100,
-          "markdownDescription": "Set the timeout in milliseconds for each sample or custom test case."
-        },
-        "programmersHelper.sync.enabled": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "Enable Git-based synchronization for the Programmers storage folder. This is off by default. After turning it on, run `Programmers: Setup Sync` to choose a remote repository, branch, and token/SSH authentication. Sync uses Git commands against the storage folder: pull on activate, and commit/fetch/merge/push when you run `Programmers: Sync Now`."
-        },
-        "programmersHelper.sync.branch": {
-          "type": "string",
-          "default": "main",
-          "markdownDescription": "Git branch used for Programmers storage synchronization. `Programmers: Setup Sync` will initialize or rename the local branch to this value."
-        },
-        "programmersHelper.sync.autoPullOnActivate": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "When sync is enabled and configured, pull remote changes in the background when the extension activates. If local unsynced changes exist, auto pull is skipped and the status bar shows unsynced."
-        },
-        "programmersHelper.sync.statusCheckIntervalMinutes": {
-          "type": "number",
-          "default": 0,
-          "minimum": 0,
-          "markdownDescription": "Periodically check whether the Programmers storage Git repository needs synchronization without committing, pulling, or pushing. Set to `30` to check every 30 minutes. `0` disables periodic status checks."
+    "configuration": [
+      {
+        "title": "Programmers Helper: General",
+        "properties": {
+          "programmersHelper.language": {
+            "order": 1,
+            "type": "string",
+            "enum": [
+              "cpp",
+              "java",
+              "python"
+            ],
+            "enumItemLabels": [
+              "C++",
+              "Java",
+              "Python"
+            ],
+            "default": "cpp",
+            "markdownDescription": "Default language for new problem templates, opened solution files, and test runs."
+          },
+          "programmersHelper.executionMode": {
+            "order": 2,
+            "type": "string",
+            "enum": [
+              "docker",
+              "local"
+            ],
+            "default": "docker",
+            "markdownDescription": "Where sample and custom tests run. `docker` uses the helper container; `local` runs directly on your machine. Docker is recommended on Windows."
+          },
+          "programmersHelper.tabResetMode": {
+            "order": 3,
+            "type": "string",
+            "enum": [
+              "always",
+              "onProblemChange",
+              "never"
+            ],
+            "enumItemLabels": [
+              "Always",
+              "On Problem Change",
+              "Never"
+            ],
+            "default": "onProblemChange",
+            "markdownDescription": "When editor tabs are reset while opening problems. `always` keeps only the active problem and code tab, `onProblemChange` preserves right-side code/history tabs within the same problem, and `never` preserves right-side code/history tabs across problem changes."
+          }
+        }
+      },
+      {
+        "title": "Programmers Helper: Test Runner",
+        "properties": {
+          "programmersHelper.testTimeoutMs": {
+            "order": 1,
+            "type": "number",
+            "default": 3000,
+            "minimum": 100,
+            "markdownDescription": "Maximum time in milliseconds for each sample or custom test case."
+          },
+          "programmersHelper.compilerCommand": {
+            "order": 2,
+            "type": "string",
+            "enum": [
+              "clang++",
+              "g++"
+            ],
+            "default": "clang++",
+            "markdownDescription": "C++ compiler command for generated test runners. Local Windows mode supports GNU/Clang-style compilers such as `g++` or `clang++`; MSVC `cl.exe` is not supported."
+          },
+          "programmersHelper.cppStandard": {
+            "order": 3,
+            "type": "string",
+            "enum": [
+              "c++17",
+              "c++20"
+            ],
+            "default": "c++17",
+            "markdownDescription": "C++ language standard used for the generated test runner compile flags."
+          }
+        }
+      },
+      {
+        "title": "Programmers Helper: Sync",
+        "properties": {
+          "programmersHelper.sync.enabled": {
+            "order": 1,
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "Enable Git-based synchronization for the Programmers storage folder. After enabling it, run `Programmers: Setup Sync` to choose a remote repository, branch, and authentication method."
+          },
+          "programmersHelper.sync.branch": {
+            "order": 2,
+            "type": "string",
+            "default": "main",
+            "markdownDescription": "Git branch used for Programmers storage synchronization. Setup Sync initializes or renames the local branch to this value."
+          },
+          "programmersHelper.sync.autoPullOnActivate": {
+            "order": 3,
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "When sync is enabled and configured, pull remote changes in the background when the extension activates. Local unsynced changes skip auto pull."
+          },
+          "programmersHelper.sync.statusCheckIntervalMinutes": {
+            "order": 4,
+            "type": "number",
+            "default": 0,
+            "minimum": 0,
+            "markdownDescription": "How often to check whether the Programmers storage Git repository needs synchronization. `0` disables periodic checks."
+          }
         }
       }
-    },
+    ],
     "viewsContainers": {
       "activitybar": [
         {

@@ -10,13 +10,21 @@ const {
 } = require("./languages");
 
 // 문제 설명과 풀이 파일을 좌/우 editor group에 엽니다.
-async function openProblem(mdUri, solutionUri) {
+async function openProblem(mdUri, solutionUri, options = {}) {
+  const preserveRightProblemTabs = Boolean(options.preserveRightProblemTabs);
+  const preserveRightProblemTabsAcrossProblems = Boolean(options.preserveRightProblemTabsAcrossProblems);
+
   await vscode.workspace.saveAll(false);
   await openLockedMarkdownPreview(mdUri, vscode.ViewColumn.One);
   await closeInactiveProblemTabs(mdUri, solutionUri);
   await showSolution(solutionUri);
-  await closeStaleSolutionTabs(solutionUri);
-  await keepOnlyProblemLayoutTabs(mdUri, solutionUri);
+  if (!preserveRightProblemTabs) {
+    await closeStaleSolutionTabs(solutionUri);
+  }
+  await keepOnlyProblemLayoutTabs(mdUri, solutionUri, {
+    preserveRightProblemTabs,
+    preserveRightProblemTabsAcrossProblems,
+  });
 }
 
 // 풀이 파일을 오른쪽 그룹에 보여주되 기존 탭은 닫지 않고 재사용합니다.
@@ -130,10 +138,14 @@ async function closeStaleSolutionTabs(solutionUri) {
   }
 }
 
-// 문제 열기 후 좌/우 editor group에 현재 problem.md와 풀이 파일만 남깁니다.
-async function keepOnlyProblemLayoutTabs(mdUri, solutionUri) {
+// 문제 열기 후 좌/우 editor group의 문제 풀이 레이아웃을 정리합니다.
+async function keepOnlyProblemLayoutTabs(mdUri, solutionUri, options = {}) {
   const keepLeft = path.resolve(mdUri.fsPath);
   const keepRight = path.resolve(solutionUri.fsPath);
+  const keepProblemDir = path.resolve(path.dirname(mdUri.fsPath));
+  const keepProgrammersRoot = path.resolve(path.dirname(keepProblemDir));
+  const preserveRightProblemTabs = Boolean(options.preserveRightProblemTabs);
+  const preserveRightProblemTabsAcrossProblems = Boolean(options.preserveRightProblemTabsAcrossProblems);
   const tabs = [];
 
   for (const group of vscode.window.tabGroups?.all || []) {
@@ -145,7 +157,20 @@ async function keepOnlyProblemLayoutTabs(mdUri, solutionUri) {
 
       const hasLeft = uris.some((uri) => path.resolve(uri.fsPath) === keepLeft);
       const hasRight = uris.some((uri) => path.resolve(uri.fsPath) === keepRight);
+      const hasCurrentProblemSource = preserveRightProblemTabs && uris.some((uri) => {
+        const target = getRunTargetFromPath(uri.fsPath);
+        return target && path.resolve(target.problemDir) === keepProblemDir;
+      });
+      const hasProgrammersSource = preserveRightProblemTabsAcrossProblems && uris.some((uri) => {
+        const target = path.resolve(uri.fsPath);
+        return isSupportedSourceExtension(path.extname(target))
+          && target.startsWith(keepProgrammersRoot + path.sep);
+      });
+
       if (!hasLeft && !hasRight) {
+        if (group.viewColumn === vscode.ViewColumn.Two && (hasCurrentProblemSource || hasProgrammersSource)) {
+          continue;
+        }
         tabs.push(tab);
         continue;
       }

@@ -1,5 +1,13 @@
 # 변경 이력
 
+## 0.5.2
+
+- 같은 문제 안에서 현재 풀이와 풀이기록을 오갈 때 왼쪽 에디터는 `problem.md`로 유지하고, 오른쪽 풀이/풀이기록 탭은 닫지 않고 보존하도록 했습니다.
+- 에디터 탭 정리 방식을 고르는 `programmersHelper.tabResetMode` 설정을 추가했습니다. `always`, `onProblemChange`, `never` 모드를 지원합니다.
+- Settings UI 설정 항목을 General, Test Runner, Sync 그룹으로 나누고 순서와 설명을 정리했습니다.
+- README에 탭 reset 모드 설명을 추가했습니다.
+- `package.json`과 `package-lock.json` 버전을 `0.5.2`로 올렸습니다.
+
 ## 0.5.1
 
 - Marketplace 배포를 태그 push release workflow에서 분리해 수동 실행 GitHub Actions workflow로 옮겼습니다.

@@ -14,6 +14,7 @@ const EXECUTION_MODES = new Set(["docker", "local"]);
 const LANGUAGES = new Set(getLanguageIds());
 const COMPILER_COMMANDS = new Set(["clang++", "g++"]);
 const CPP_STANDARDS = new Set(["c++17", "c++20"]);
+const TAB_RESET_MODES = new Set(["always", "onProblemChange", "never"]);
 const DEFAULT_SYNC_BRANCH = "main";
 
 // 테스트 실행과 문제 생성에 필요한 사용자 설정을 VS Code 설정에서 읽습니다.
@@ -25,6 +26,7 @@ function getExecutionSettings() {
     compilerCommand: normalizeEnum(config.get("compilerCommand"), COMPILER_COMMANDS, DEFAULT_COMPILER_COMMAND),
     cppStandard: normalizeEnum(config.get("cppStandard"), CPP_STANDARDS, DEFAULT_CPP_STANDARD),
     testTimeoutMs: normalizeTimeoutMs(config.get("testTimeoutMs"), DEFAULT_TEST_TIMEOUT_MS),
+    tabResetMode: normalizeEnum(config.get("tabResetMode"), TAB_RESET_MODES, "onProblemChange"),
   };
 }
 

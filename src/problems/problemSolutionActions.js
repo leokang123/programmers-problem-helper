@@ -144,7 +144,12 @@ class ProblemSolutionActions {
       return;
     }
 
-    await openProblem(vscode.Uri.file(path.join(safeDir, "problem.md")), vscode.Uri.file(filePath));
+    const settings = getExecutionSettings();
+    const preserveRightProblemTabs = settings.tabResetMode !== "always";
+    await openProblem(vscode.Uri.file(path.join(safeDir, "problem.md")), vscode.Uri.file(filePath), {
+      preserveRightProblemTabs,
+      preserveRightProblemTabsAcrossProblems: settings.tabResetMode === "never",
+    });
   }
 
   async deleteSolutionSnapshot(problemDir, snapshotPath) {

@@ -129,10 +129,18 @@ class ProblemCrudActions {
       return undefined;
     }
 
+    const lastProblemDir = this.commands.context.workspaceState.get("lastProblemDir");
     await this.commands.context.workspaceState.update("lastProblemDir", safeDir);
     const settings = getExecutionSettings();
+    const sameProblem = typeof lastProblemDir === "string" && path.resolve(lastProblemDir) === path.resolve(safeDir);
+    const preserveRightProblemTabs = settings.tabResetMode === "never"
+      || (settings.tabResetMode === "onProblemChange" && sameProblem);
+    const preserveRightProblemTabsAcrossProblems = settings.tabResetMode === "never";
     const solution = await ensureSolutionForLanguage(safeDir, settings.language);
-    await openProblem(vscode.Uri.file(path.join(safeDir, "problem.md")), solution.solutionUri);
+    await openProblem(vscode.Uri.file(path.join(safeDir, "problem.md")), solution.solutionUri, {
+      preserveRightProblemTabs,
+      preserveRightProblemTabsAcrossProblems,
+    });
     const runtimeStatus = options.deferDockerRuntime && settings.executionMode === "docker"
       ? {
           kind: "",

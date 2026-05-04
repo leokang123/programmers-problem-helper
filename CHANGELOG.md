@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.2
+
+- Preserve right-side solution and solution-history tabs while switching within the same problem, keeping the left editor on `problem.md`.
+- Add the `programmersHelper.tabResetMode` setting with `always`, `onProblemChange`, and `never` modes for editor tab cleanup behavior.
+- Reorganize the Settings UI contribution into General, Test Runner, and Sync groups with explicit ordering and clearer descriptions.
+- Document the tab reset modes in the README.
+- Bump the extension manifest and lockfile to `0.5.2`.
+
 ## 0.5.1
 
 - Split Marketplace publishing from the tag-push release workflow into a manual GitHub Actions workflow.
