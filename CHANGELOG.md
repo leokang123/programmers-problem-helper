@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.3
+
+- Split the stored Git sync remote URL key between development and packaged extension runs so shared VS Code user data cannot mix their remotes.
+- Stop development runs from falling back to the legacy `programmersHelper.sync.remoteUrl` setting, preventing packaged or stale settings from rewriting the development `Programmers` repository `origin`.
+- Log the resolved `Programmers` storage path at activation time so development workspace storage and packaged globalStorage are easier to distinguish.
+- Remove the automatic update reload-prompt detection code and update the worker flow documentation.
+- Bump the extension manifest and lockfile to `0.5.3`.
+
 ## 0.5.2
 
 - Preserve right-side solution and solution-history tabs while switching within the same problem, keeping the left editor on `problem.md`.

@@ -6,6 +6,9 @@ const {
   getSyncSettings,
 } = require("../core/settings");
 const {
+  isDevelopmentExtension,
+} = require("../core/environment");
+const {
   getDefaultProgrammersDir,
   resolveProgrammersDir,
 } = require("../problems/problemStore");
@@ -111,7 +114,7 @@ class SyncManager {
       {
         label: "Local Git repo already configured",
         description: "I already ran git init and remote add",
-        detail: "Use this when globalStorage/Programmers already has .git and origin configured. The extension only turns sync on and uses the existing Git/SSH/credential setup.",
+        detail: "Use this when the Programmers storage folder already has .git and origin configured. The extension only turns sync on and uses the existing Git/SSH/credential setup.",
         kind: "configured",
       },
       {
@@ -805,18 +808,33 @@ class SyncManager {
 
   // setup 과정에서 저장해 둔 remote URL을 workspace/global state에서 읽습니다.
   getStoredRemoteUrl() {
-    const stored = this.context.globalState.get(REMOTE_URL_STATE_KEY);
+    const isDevelopment = isDevelopmentExtension(this.context);
+    const stored = this.context.globalState.get(this.getRemoteUrlStateKey());
     if (typeof stored === "string" && stored.trim()) {
       return stored.trim();
     }
 
-    const legacySetting = vscode.workspace.getConfiguration("programmersHelper").get("sync.remoteUrl");
-    return typeof legacySetting === "string" ? legacySetting.trim() : "";
+    if (!isDevelopment) {
+      const legacyStored = this.context.globalState.get(REMOTE_URL_STATE_KEY);
+      if (typeof legacyStored === "string" && legacyStored.trim()) {
+        return legacyStored.trim();
+      }
+
+      const legacySetting = vscode.workspace.getConfiguration("programmersHelper").get("sync.remoteUrl");
+      return typeof legacySetting === "string" ? legacySetting.trim() : "";
+    }
+
+    return "";
   }
 
   // setup 과정에서 입력한 remote URL을 이후 sync 작업이 재사용하도록 저장합니다.
   async storeRemoteUrl(remoteUrl) {
-    await this.context.globalState.update(REMOTE_URL_STATE_KEY, remoteUrl);
+    await this.context.globalState.update(this.getRemoteUrlStateKey(), remoteUrl);
+  }
+
+  // 개발판과 배포판이 같은 VS Code user data를 써도 remote 설정이 섞이지 않도록 분리합니다.
+  getRemoteUrlStateKey() {
+    return `${REMOTE_URL_STATE_KEY}.${isDevelopmentExtension(this.context) ? "development" : "production"}`;
   }
 
   // Git/sync 오류를 상태바, notification, conflict resolver 흐름으로 분기 처리합니다.

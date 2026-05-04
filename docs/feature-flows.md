@@ -14,7 +14,6 @@
   - 사이드바 Webview 메시지를 실제 명령으로 연결한다.
   - VS Code 명령 `programmersHelper.createProblem`, `programmersHelper.runSamples`, `programmersHelper.stopTests`, `programmersHelper.runCustomTests`, `programmersHelper.openNotes`를 등록한다.
   - `programmersHelper.executionMode` 설정 변경을 감지해 실행 모드 전환 피드백과 Docker 컨테이너 정리를 처리한다.
-  - `vscode.extensions.onDidChange`로 자동 업데이트 후 설치된 확장 버전이 현재 실행 중인 버전과 달라졌는지 확인하고, 새 버전 적용을 위한 VS Code 재로드 안내를 표시한다.
   - `deactivate()`에서 실행 중인 테스트와 타이머를 멈추고 helper Docker 컨테이너 정리를 백그라운드 프로세스에 맡긴다.
 
 ### 주요 모듈

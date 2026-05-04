@@ -6,8 +6,11 @@ const {
 } = require("./src/ui/sidebarProvider");
 const {
   getExtensionRuntimeLabel,
-  isDevelopmentExtension,
 } = require("./src/core/environment");
+const {
+  getDefaultProgrammersDir,
+  resolveProgrammersDir,
+} = require("./src/problems/problemStore");
 
 let sidebarProvider;
 let problemCommands;
@@ -18,8 +21,6 @@ let outputChannel;
 let diagnosticCollection;
 let lastExecutionMode;
 let latestStatusMessage;
-
-const RELOAD_PROMPT_VERSION_STATE_KEY = "programmersHelper.reloadPromptVersion";
 
 function postSidebarMessage(message) {
   const nextMessage = message?.type === "status"
@@ -81,8 +82,8 @@ function activate(context) {
   outputChannel.appendLine(`[Programmers Helper] Runtime: ${getExtensionRuntimeLabel(context)}`);
   outputChannel.appendLine(`[Programmers Helper] Extension path: ${context.extensionUri.fsPath}`);
   outputChannel.appendLine(`[Programmers Helper] Global storage: ${context.globalStorageUri.fsPath}`);
+  logResolvedProgrammersStorage(context);
   lastExecutionMode = getConfiguredExecutionMode();
-  registerExtensionUpdateReloadPrompt(context);
   syncManager = createSyncManager(context);
   sidebarProvider = new ProgrammersSidebarProvider(context, {
     create: async (message) => {
@@ -251,6 +252,19 @@ function activate(context) {
   void syncManager.autoPullOnActivate();
 }
 
+function logResolvedProgrammersStorage(context) {
+  const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+  resolveProgrammersDir(context, workspaceFolder?.uri, { create: false })
+    .then((programmersDir) => {
+      const resolved = programmersDir || getDefaultProgrammersDir(context, workspaceFolder?.uri);
+      outputChannel?.appendLine(`[Programmers Helper] Programmers storage: ${resolved.fsPath}`);
+    })
+    .catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      outputChannel?.appendLine(`[Programmers Helper] Programmers storage resolve failed: ${message}`);
+    });
+}
+
 function createSyncManager(context) {
   const {
     SyncManager,
@@ -301,56 +315,6 @@ function ensureServices(context) {
   });
 
   return { problemCommands, testRunner, timerManager };
-}
-
-function registerExtensionUpdateReloadPrompt(context) {
-  if (isDevelopmentExtension(context)) {
-    outputChannel?.appendLine("[Programmers Helper] Update reload notification skipped for development mode");
-    return;
-  }
-
-  const runningVersion = getExtensionPackageVersion(context.extension);
-  const extensionId = context.extension?.id;
-  if (!runningVersion || !extensionId) {
-    return;
-  }
-
-  const checkForInstalledUpdate = () => {
-    notifyReloadIfInstalledVersionChanged(context, extensionId, runningVersion).catch((error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      outputChannel?.appendLine(`[Programmers Helper] Update reload notification skipped: ${message}`);
-    });
-  };
-
-  context.subscriptions.push(vscode.extensions.onDidChange(checkForInstalledUpdate));
-  checkForInstalledUpdate();
-}
-
-async function notifyReloadIfInstalledVersionChanged(context, extensionId, runningVersion) {
-  const installedExtension = vscode.extensions.getExtension(extensionId);
-  const installedVersion = getExtensionPackageVersion(installedExtension);
-  if (!installedVersion || installedVersion === runningVersion) {
-    return;
-  }
-
-  const promptedVersion = context.globalState.get(RELOAD_PROMPT_VERSION_STATE_KEY);
-  if (promptedVersion === installedVersion) {
-    return;
-  }
-  await context.globalState.update(RELOAD_PROMPT_VERSION_STATE_KEY, installedVersion);
-
-  const action = await vscode.window.showInformationMessage(
-    `Programmers Helper ${installedVersion} 버전이 설치되었습니다. VS Code를 다시 로드하면 새 버전이 적용됩니다.`,
-    "Reload VS Code"
-  );
-  if (action === "Reload VS Code") {
-    await vscode.commands.executeCommand("workbench.action.reloadWindow");
-  }
-}
-
-function getExtensionPackageVersion(extension) {
-  const version = extension?.packageJSON?.version;
-  return typeof version === "string" && version ? version : undefined;
 }
 
 // 확장 종료 시 테스트를 중지하고 Docker 정리는 백그라운드에 맡깁니다.

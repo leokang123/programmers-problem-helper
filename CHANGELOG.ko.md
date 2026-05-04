@@ -1,5 +1,13 @@
 # 변경 이력
 
+## 0.5.3
+
+- 개발판과 배포판이 같은 VS Code user data를 쓰더라도 Git sync remote URL이 섞이지 않도록 remote URL 저장 키를 개발판/배포판으로 분리했습니다.
+- 개발판에서는 기존 legacy `programmersHelper.sync.remoteUrl` 설정을 fallback으로 읽지 않게 해 배포판 또는 오래된 설정이 개발판 `Programmers` 저장소의 `origin`을 바꾸는 문제를 막았습니다.
+- 확장 시작 로그에 실제로 선택된 `Programmers` storage 경로를 출력해 개발판 workspace 저장소와 배포판 globalStorage 저장소를 구분하기 쉽게 했습니다.
+- 자동 업데이트 후 reload 안내 감지 코드를 제거하고 관련 작업자 문서를 정리했습니다.
+- `package.json`과 `package-lock.json` 버전을 `0.5.3`으로 올렸습니다.
+
 ## 0.5.2
 
 - 같은 문제 안에서 현재 풀이와 풀이기록을 오갈 때 왼쪽 에디터는 `problem.md`로 유지하고, 오른쪽 풀이/풀이기록 탭은 닫지 않고 보존하도록 했습니다.
