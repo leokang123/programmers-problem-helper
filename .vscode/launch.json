@@ -6,13 +6,15 @@
       "type": "extensionHost",
       "request": "launch",
       "args": [
+        "--user-data-dir=/tmp/vscode-pph-a",
+        "--extensions-dir=/tmp/vscode-ext-a",
         "--extensionDevelopmentPath=${workspaceFolder}",
-        "${workspaceFolder}"
+        "/tmp/pph-workspace-a"
       ],
       "outFiles": [
         "${workspaceFolder}/out/**/*.js"
       ],
-      "preLaunchTask": "npm: check"
+      "preLaunchTask": "prepare isolated extension host"
     }
   ]
 }

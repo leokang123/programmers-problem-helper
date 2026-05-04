@@ -8,6 +8,21 @@
       "problemMatcher": []
     },
     {
+      "label": "prepare isolated extension host",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "npm: check",
+        "create isolated extension host folders"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "create isolated extension host folders",
+      "type": "shell",
+      "command": "mkdir -p /tmp/vscode-pph-a /tmp/vscode-ext-a /tmp/pph-workspace-a",
+      "problemMatcher": []
+    },
+    {
       "type": "npm",
       "script": "package",
       "label": "npm: package",
