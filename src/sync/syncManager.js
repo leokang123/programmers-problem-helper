@@ -282,6 +282,24 @@ class SyncManager {
     return true;
   }
 
+  // 현재 HTTPS GitHub remote에 사용할 token만 별도로 저장하거나 교체합니다.
+  async storeGitHubToken() {
+    const context = await this.getGitContext({ requireConfigured: false });
+    if (!context?.remoteUrl) {
+      vscode.window.showInformationMessage("먼저 Programmers: Setup Sync로 GitHub remote를 설정해주세요.");
+      return;
+    }
+    if (!isHttpsGitHubRemote(context.remoteUrl)) {
+      vscode.window.showInformationMessage("현재 remote는 HTTPS GitHub remote가 아니라 저장된 GitHub token을 사용하지 않습니다.");
+      return;
+    }
+
+    const stored = await this.promptAndStoreToken();
+    if (stored) {
+      await this.showSyncInfo();
+    }
+  }
+
   // SecretStorage에 저장된 GitHub token을 제거합니다.
   async clearGitHubToken() {
     const picked = await vscode.window.showWarningMessage(
@@ -308,25 +326,29 @@ class SyncManager {
     const context = await this.getGitContext({ requireConfigured: false });
     if (!context) {
       const basic = await this.getBasicContext();
-      this.logSyncInfo(basic, "Sync info");
+      const authLabel = await this.getAuthLabel(basic.remoteUrl);
+      this.logSyncInfo(basic, "Sync info", authLabel);
       vscode.window.showInformationMessage(
         [
           "Programmers sync is not configured.",
           `Storage: ${basic.cwd}`,
           `Branch: ${basic.branch}`,
           "Remote: not configured",
+          `Auth: ${authLabel}`,
         ].join("\n")
       );
       return;
     }
 
-    this.logSyncInfo(context, "Sync info");
+    const authLabel = await this.getAuthLabel(context.remoteUrl);
+    this.logSyncInfo(context, "Sync info", authLabel);
     vscode.window.showInformationMessage(
       [
         "Programmers sync info",
         `Storage: ${context.cwd}`,
         `Branch: ${context.branch}`,
         `Remote: ${context.remoteUrl || "not configured"}`,
+        `Auth: ${authLabel}`,
       ].join("\n")
     );
   }
@@ -423,7 +445,6 @@ class SyncManager {
         },
         async (progress) => {
           const context = await this.getGitContext({ requireConfigured: true });
-          this.logSyncInfo(context, "Sync target");
           progress.report({ message: "열려 있는 파일을 저장하는 중..." });
           await vscode.workspace.saveAll(false);
           progress.report({ message: "Git 상태를 확인하는 중..." });
@@ -566,11 +587,27 @@ class SyncManager {
   }
 
   // sync 대상 정보를 Output에 남깁니다.
-  logSyncInfo(context, label) {
+  logSyncInfo(context, label, authLabel = "unknown") {
     this.outputChannel?.appendLine(`[Programmers Helper] ${label}`);
     this.outputChannel?.appendLine(`[Programmers Helper]   Storage: ${context.cwd}`);
     this.outputChannel?.appendLine(`[Programmers Helper]   Branch: ${context.branch || "main"}`);
     this.outputChannel?.appendLine(`[Programmers Helper]   Remote: ${context.remoteUrl || "not configured"}`);
+    this.outputChannel?.appendLine(`[Programmers Helper]   Auth: ${authLabel}`);
+  }
+
+  // token 값은 출력하지 않고 현재 Git 인증 경로만 설명합니다.
+  async getAuthLabel(remoteUrl) {
+    if (!remoteUrl) {
+      return "not configured";
+    }
+    if (isHttpsGitHubRemote(remoteUrl)) {
+      const token = await this.context.secrets.get(TOKEN_KEY);
+      return token ? "stored GitHub token" : "system Git credentials";
+    }
+    if (/^(ssh:\/\/|git@)/i.test(remoteUrl)) {
+      return "SSH key / agent";
+    }
+    return "system Git credentials";
   }
 
   // sync 대상 Programmers 저장소 폴더를 찾거나 필요하면 생성합니다.

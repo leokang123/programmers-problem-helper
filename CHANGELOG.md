@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.5
+
+- Add the `Programmers: Store GitHub Token` command so HTTPS GitHub tokens can be stored or replaced without re-entering the remote URL and branch.
+- Add an `Auth` line to `Programmers: Show Sync Info`, distinguishing stored tokens, system Git credentials, SSH key/agent, and unconfigured states.
+- Stop printing sync info automatically when `Programmers: Sync Now` runs.
+- Bump the extension manifest and lockfile to `0.5.5`.
+
 ## 0.5.4
 
 - Make the default `Run Extension` debug configuration use isolated `/tmp` user data, extensions, and workspace folders to reduce accidental state sharing with packaged installs.

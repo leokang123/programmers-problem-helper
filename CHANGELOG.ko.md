@@ -1,5 +1,12 @@
 # 변경 이력
 
+## 0.5.5
+
+- `Programmers: Store GitHub Token` 명령을 추가해 remote URL과 branch를 다시 설정하지 않고도 HTTPS GitHub token을 저장하거나 교체할 수 있게 했습니다.
+- `Programmers: Show Sync Info`에 현재 인증 경로를 나타내는 `Auth` 정보를 추가했습니다. 저장된 token, system Git credentials, SSH key/agent, 미설정 상태를 구분합니다.
+- `Programmers: Sync Now` 실행 시 자동으로 sync info를 Output에 출력하지 않도록 정리했습니다.
+- `package.json`과 `package-lock.json` 버전을 `0.5.5`로 올렸습니다.
+
 ## 0.5.4
 
 - 기본 `Run Extension` 디버그 설정이 분리된 `/tmp` user data, extensions, workspace 폴더를 사용하도록 바꿔 개발판과 배포판 상태가 섞일 가능성을 줄였습니다.

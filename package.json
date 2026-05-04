@@ -2,7 +2,7 @@
   "name": "programmers-problem-helper",
   "displayName": "Programmers Problem Helper",
   "description": "Solve Programmers coding-test problems in VS Code with language templates, split previews, and local sample test runs.",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "publisher": "leokang123",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -207,6 +207,10 @@
       {
         "command": "programmersHelper.showSyncInfo",
         "title": "Programmers: Show Sync Info"
+      },
+      {
+        "command": "programmersHelper.storeGitHubToken",
+        "title": "Programmers: Store GitHub Token"
       },
       {
         "command": "programmersHelper.openStorageFolder",

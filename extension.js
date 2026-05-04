@@ -230,6 +230,9 @@ function activate(context) {
     vscode.commands.registerCommand("programmersHelper.showSyncInfo", async () => {
       await syncManager?.showSyncInfo();
     }),
+    vscode.commands.registerCommand("programmersHelper.storeGitHubToken", async () => {
+      await syncManager?.storeGitHubToken();
+    }),
     vscode.commands.registerCommand("programmersHelper.openStorageFolder", async () => {
       await syncManager?.openStorageFolder();
     }),
