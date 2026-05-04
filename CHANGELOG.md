@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.4
+
+- Make the default `Run Extension` debug configuration use isolated `/tmp` user data, extensions, and workspace folders to reduce accidental state sharing with packaged installs.
+- Add the `Programmers: Show Sync Info` command for checking the active sync storage folder, branch, and remote URL.
+- Log the sync target storage, branch, and remote URL to Output when `Programmers: Sync Now` starts.
+- Bump the extension manifest and lockfile to `0.5.4`.
+
 ## 0.5.3
 
 - Split the stored Git sync remote URL key between development and packaged extension runs so shared VS Code user data cannot mix their remotes.

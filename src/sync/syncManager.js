@@ -303,6 +303,34 @@ class SyncManager {
     await vscode.commands.executeCommand("revealFileInOS", programmersDir);
   }
 
+  // 현재 sync 저장소, 브랜치, 원격 주소를 사용자와 Output에 표시합니다.
+  async showSyncInfo() {
+    const context = await this.getGitContext({ requireConfigured: false });
+    if (!context) {
+      const basic = await this.getBasicContext();
+      this.logSyncInfo(basic, "Sync info");
+      vscode.window.showInformationMessage(
+        [
+          "Programmers sync is not configured.",
+          `Storage: ${basic.cwd}`,
+          `Branch: ${basic.branch}`,
+          "Remote: not configured",
+        ].join("\n")
+      );
+      return;
+    }
+
+    this.logSyncInfo(context, "Sync info");
+    vscode.window.showInformationMessage(
+      [
+        "Programmers sync info",
+        `Storage: ${context.cwd}`,
+        `Branch: ${context.branch}`,
+        `Remote: ${context.remoteUrl || "not configured"}`,
+      ].join("\n")
+    );
+  }
+
   // extension activate 시 local 변경이 없으면 remote 변경을 자동으로 가져옵니다.
   async autoPullOnActivate() {
     const settings = getSyncSettings();
@@ -395,6 +423,7 @@ class SyncManager {
         },
         async (progress) => {
           const context = await this.getGitContext({ requireConfigured: true });
+          this.logSyncInfo(context, "Sync target");
           progress.report({ message: "열려 있는 파일을 저장하는 중..." });
           await vscode.workspace.saveAll(false);
           progress.report({ message: "Git 상태를 확인하는 중..." });
@@ -534,6 +563,14 @@ class SyncManager {
       branch: settings.branch,
       remoteUrl: this.getStoredRemoteUrl(),
     };
+  }
+
+  // sync 대상 정보를 Output에 남깁니다.
+  logSyncInfo(context, label) {
+    this.outputChannel?.appendLine(`[Programmers Helper] ${label}`);
+    this.outputChannel?.appendLine(`[Programmers Helper]   Storage: ${context.cwd}`);
+    this.outputChannel?.appendLine(`[Programmers Helper]   Branch: ${context.branch || "main"}`);
+    this.outputChannel?.appendLine(`[Programmers Helper]   Remote: ${context.remoteUrl || "not configured"}`);
   }
 
   // sync 대상 Programmers 저장소 폴더를 찾거나 필요하면 생성합니다.

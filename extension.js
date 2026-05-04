@@ -227,6 +227,9 @@ function activate(context) {
     vscode.commands.registerCommand("programmersHelper.syncNow", async () => {
       await syncManager?.syncNow();
     }),
+    vscode.commands.registerCommand("programmersHelper.showSyncInfo", async () => {
+      await syncManager?.showSyncInfo();
+    }),
     vscode.commands.registerCommand("programmersHelper.openStorageFolder", async () => {
       await syncManager?.openStorageFolder();
     }),

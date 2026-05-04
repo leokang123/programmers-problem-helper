@@ -1,5 +1,12 @@
 # 변경 이력
 
+## 0.5.4
+
+- 기본 `Run Extension` 디버그 설정이 분리된 `/tmp` user data, extensions, workspace 폴더를 사용하도록 바꿔 개발판과 배포판 상태가 섞일 가능성을 줄였습니다.
+- `Programmers: Show Sync Info` 명령을 추가해 현재 sync storage, branch, remote URL을 확인할 수 있게 했습니다.
+- `Programmers: Sync Now` 실행 시 Output에 sync 대상 storage, branch, remote URL을 기록하도록 했습니다.
+- `package.json`과 `package-lock.json` 버전을 `0.5.4`로 올렸습니다.
+
 ## 0.5.3
 
 - 개발판과 배포판이 같은 VS Code user data를 쓰더라도 Git sync remote URL이 섞이지 않도록 remote URL 저장 키를 개발판/배포판으로 분리했습니다.
