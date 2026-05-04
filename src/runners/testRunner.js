@@ -186,7 +186,7 @@ class TestRunner {
     }
 
     try {
-      await this.compiler.compileRunner(runtime, runContext, runContext.debugArtifactPath, runContext.debugCompileFlags, "디버그 컴파일", runContext.debugFingerprint);
+      await this.compiler.compileRunner(runtime, runContext, runContext.debugArtifactPath, runContext.debugCompileFlags, "디버그 컴파일");
       return true;
     } catch (compileError) {
       if (this.runtime.shouldSkipSanitizerFallback(runContext.settings, compileError)) {
@@ -199,17 +199,21 @@ class TestRunner {
   }
 
   async runDebugRetry(runtime, runContext, testIndex, originalError) {
-    const debugOutput = await this.executor.runTestArtifact(runtime, runContext, runContext.debugArtifactPath, testIndex, {
-      label: `테스트 #${testIndex}`,
-      timeoutMs: runContext.settings.testTimeoutMs,
-      streamOutput: false,
-      streamSanitizedRuntime: true,
-      debugEnv: runContext.settings.executionMode === "docker",
-    });
-    if (hasSanitizerOutput(debugOutput)) {
-      throw buildProcessFailureError(runContext.settings.executionMode === "docker" ? "docker" : runContext.debugArtifactPath, { label: `테스트 #${testIndex}` }, 1, undefined, debugOutput, "", 0);
+    try {
+      const debugOutput = await this.executor.runTestArtifact(runtime, runContext, runContext.debugArtifactPath, testIndex, {
+        label: `테스트 #${testIndex}`,
+        timeoutMs: runContext.settings.testTimeoutMs,
+        streamOutput: false,
+        streamSanitizedRuntime: true,
+        debugEnv: runContext.settings.executionMode === "docker",
+      });
+      if (hasSanitizerOutput(debugOutput)) {
+        throw buildProcessFailureError(runContext.settings.executionMode === "docker" ? "docker" : runContext.debugArtifactPath, { label: `테스트 #${testIndex}` }, 1, undefined, debugOutput, "", 0);
+      }
+      throw originalError;
+    } finally {
+      await cleanupDebugArtifact(runContext);
     }
-    throw originalError;
   }
 
   async prepareTestRunContext(problemDir, customTestsText = "", selectedSolutionPath, selectedLanguage) {
@@ -281,6 +285,22 @@ class TestRunner {
     if (this.stopRequested) {
       throw new Error("테스트 실행이 중지되었습니다.");
     }
+  }
+}
+
+async function cleanupDebugArtifact(runContext) {
+  if (runContext.language.id !== "cpp") {
+    return;
+  }
+
+  await deleteIfExists(path.join(runContext.problemDir, runContext.debugArtifactPath));
+}
+
+async function deleteIfExists(filePath) {
+  try {
+    await vscode.workspace.fs.delete(vscode.Uri.file(filePath));
+  } catch {
+    // Debug artifacts are best-effort cleanup.
   }
 }
 

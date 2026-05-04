@@ -1,5 +1,12 @@
 # 변경 이력
 
+## 0.5.6
+
+- C++ sanitizer 디버그 실행 파일을 임시 산출물로 취급해 debug fingerprint cache를 만들지 않고, 재시도 실행이 끝나면 `cpp-debug`를 삭제합니다.
+- C++ debug 재시도 빌드에서 `-g`를 제거해 macOS debug symbol bundle 생성을 피하고 임시 산출물 크기를 줄였습니다.
+- Docker 런타임 컨테이너를 네트워크 비활성 상태로 생성해 테스트 중 제출 코드가 외부 네트워크에 접근하지 못하도록 했습니다.
+- `package.json`과 `package-lock.json` 버전을 `0.5.6`으로 올렸습니다.
+
 ## 0.5.5
 
 - `Programmers: Store GitHub Token` 명령을 추가해 remote URL과 branch를 다시 설정하지 않고도 HTTPS GitHub token을 저장하거나 교체할 수 있게 했습니다.

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.6
+
+- Treat C++ sanitizer debug binaries as temporary artifacts: skip the debug fingerprint cache and delete `cpp-debug` after the retry run finishes.
+- Remove `-g` from C++ debug retry builds to avoid macOS debug-symbol bundles and reduce temporary artifact size.
+- Create Docker runtime containers with networking disabled so submitted code cannot access external networks during tests.
+- Bump the extension manifest and lockfile to `0.5.6`.
+
 ## 0.5.5
 
 - Add the `Programmers: Store GitHub Token` command so HTTPS GitHub tokens can be stored or replaced without re-entering the remote URL and branch.

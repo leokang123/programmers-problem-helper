@@ -92,6 +92,8 @@ async function ensureDockerContainerRunning({ containerName, mountSource, execCo
     reportRuntimeStatus(statusContext, `실행 컨테이너를 생성하고 있습니다.\n${containerName}`);
     await execCommand("docker", [
       "create",
+      "--network",
+      "none",
       "--name",
       containerName,
       "--workdir",

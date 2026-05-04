@@ -37,7 +37,6 @@ function getDebugCompileFlagsForMode(executionMode = DEFAULT_EXECUTION_MODE, cpp
     `-std=${cppStandard}`,
     "-Wall",
     "-O0",
-    "-g",
     "-fno-omit-frame-pointer",
   ];
 
