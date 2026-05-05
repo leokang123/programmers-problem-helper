@@ -121,9 +121,9 @@ function activate(context) {
       await timerManager.pauseAllRunning();
       await problemCommands.openLastProblem();
     },
-    toggleReview: async (message) => {
+    saveReviewStates: async (message) => {
       const { problemCommands } = ensureServices(context);
-      await problemCommands.toggleReview(String(message.problemDir || ""), Boolean(message.review));
+      await problemCommands.saveReviewStates(message.updates || []);
     },
     resetCurrentSolution: async (message) => {
       const { problemCommands } = ensureServices(context);

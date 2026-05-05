@@ -21,6 +21,7 @@ const {
   loadSavedCustomTests,
   resolveProgrammersDir,
   updateProblemIndexEntry,
+  updateProblemIndexEntries,
 } = require("./problemStore");
 const {
   getLanguage,
@@ -99,8 +100,8 @@ class ProblemCommands {
     return this.solutions.deleteSolutionSnapshot(problemDir, snapshotPath);
   }
 
-  toggleReview(problemDir, review) {
-    return this.solutions.toggleReview(problemDir, review);
+  saveReviewStates(updates) {
+    return this.solutions.saveReviewStates(updates);
   }
 
   runCustomTestsFromMessage(tests, problemDir) {
@@ -149,6 +150,15 @@ class ProblemCommands {
     const programmersDir = await resolveProgrammersDir(this.context, workspaceFolder?.uri);
     if (programmersDir) {
       return updateProblemIndexEntry(programmersDir, problemDir);
+    }
+    return undefined;
+  }
+
+  async updateProblemIndexForDirs(problemDirs) {
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    const programmersDir = await resolveProgrammersDir(this.context, workspaceFolder?.uri);
+    if (programmersDir) {
+      return updateProblemIndexEntries(programmersDir, problemDirs);
     }
     return undefined;
   }

@@ -178,17 +178,39 @@ class ProblemSolutionActions {
     vscode.window.showInformationMessage("이전 풀이 기록을 삭제했습니다.");
   }
 
-  async toggleReview(problemDir, review) {
-    const safeDir = await this.commands.validateProblemDir(problemDir);
-    if (!safeDir) {
-      vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다.");
+  async saveReviewStates(updates) {
+    const normalized = Array.isArray(updates)
+      ? updates
+        .filter((update) => update && typeof update.problemDir === "string")
+        .map((update) => ({
+          problemDir: update.problemDir,
+          review: Boolean(update.review),
+        }))
+      : [];
+    if (normalized.length === 0) {
+      this.commands.postMessage?.({ type: "reviewStatesSaved", ok: true });
       return;
     }
 
-    await writeReviewState(safeDir, review);
-    await this.commands.context.workspaceState.update("lastProblemDir", safeDir);
-    const problems = await this.commands.updateProblemIndexForDir(safeDir);
-    await this.commands.refreshProblemsFromIndex(problems);
+    try {
+      const safeDirs = [];
+      for (const update of normalized) {
+        const safeDir = await this.commands.validateProblemDir(update.problemDir);
+        if (!safeDir) {
+          throw new Error("문제 폴더를 찾지 못했습니다.");
+        }
+        await writeReviewState(safeDir, update.review);
+        safeDirs.push(safeDir);
+      }
+      const problems = await this.commands.updateProblemIndexForDirs(safeDirs);
+      if (Array.isArray(problems)) {
+        await this.commands.refreshProblems?.({ problems, silent: true });
+      }
+      this.commands.postMessage?.({ type: "reviewStatesSaved", ok: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.commands.postMessage?.({ type: "reviewStatesSaved", ok: false, message });
+    }
   }
 }
 

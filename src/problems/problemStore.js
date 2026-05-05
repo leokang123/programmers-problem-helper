@@ -207,6 +207,27 @@ async function updateProblemIndexEntry(programmersDir, problemDir) {
   return sorted;
 }
 
+// 여러 문제가 바뀌었을 때 problem-index를 한 번만 읽고 써서 갱신합니다.
+async function updateProblemIndexEntries(programmersDir, problemDirs) {
+  const targets = Array.from(new Set(
+    (Array.isArray(problemDirs) ? problemDirs : [])
+      .filter(Boolean)
+      .map((problemDir) => path.resolve(problemDir))
+  ));
+  if (targets.length === 0) {
+    return readProblemIndex(programmersDir) || rebuildProblemIndex(programmersDir);
+  }
+
+  const existing = await readProblemIndex(programmersDir) || await rebuildProblemIndex(programmersDir);
+  const targetSet = new Set(targets);
+  const summaries = await Promise.all(targets.map((problemDir) => loadProblemSummary(problemDir)));
+  const next = existing.filter((problem) => !targetSet.has(path.resolve(problem.problemDir)));
+  next.push(...summaries);
+  const sorted = sortProblemSummaries(next);
+  await writeProblemIndex(programmersDir, sorted);
+  return sorted;
+}
+
 // 문제 삭제 후 problem-index에서 해당 폴더 항목을 제거합니다.
 async function removeProblemIndexEntry(programmersDir, problemDir) {
   const existing = await readProblemIndex(programmersDir) || await rebuildProblemIndex(programmersDir);
@@ -662,5 +683,6 @@ module.exports = {
   resetSolutionToInitial,
   resolveProgrammersDir,
   saveCustomTests,
+  updateProblemIndexEntries,
   updateProblemIndexEntry,
 };

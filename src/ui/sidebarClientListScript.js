@@ -124,14 +124,15 @@ function buildSidebarClientListScript() {
       const row = document.createElement('div');
       row.className = 'problem-row';
       row.innerHTML =
-        '<div><div class="problem-title"><span class="problem-title-text"></span><span class="current-badge">현재</span></div><div class="problem-id"><span class="problem-level"></span><span class="problem-id-text"></span></div></div>' +
+        '<div><div class="problem-title"><span class="problem-title-text"></span></div><div class="problem-meta"><span class="problem-lesson-id"></span><span class="problem-level"></span><span class="problem-history"></span></div></div>' +
         '<div class="problem-actions">' +
           '<label class="review-toggle"><input class="review-check" type="checkbox" /> 다시풀</label>' +
           '<button class="delete-problem" type="button" title="문제 삭제">삭제</button>' +
         '</div>';
       row._title = row.querySelector('.problem-title-text');
+      row._lessonId = row.querySelector('.problem-lesson-id');
       row._level = row.querySelector('.problem-level');
-      row._id = row.querySelector('.problem-id-text');
+      row._history = row.querySelector('.problem-history');
       row._review = row.querySelector('.review-check');
       return row;
     }
@@ -141,12 +142,15 @@ function buildSidebarClientListScript() {
       row.dataset.index = String(index);
       row.classList.toggle('current', Boolean(currentProblemDir && problem.problemDir === currentProblemDir));
       row._title.textContent = problem.title || '';
+      const lessonId = problem.lessonId ? '#' + problem.lessonId : '';
+      row._lessonId.textContent = lessonId;
+      row._lessonId.hidden = !lessonId;
       const level = formatProblemLevel(problem.level);
       row._level.textContent = level;
       row._level.hidden = !level;
-      row._id.textContent =
-        '#' + (problem.lessonId || '-') +
-        (problem.solutionHistoryCount ? ' · 이전풀이 ' + problem.solutionHistoryCount + '개' : '');
+      const history = problem.solutionHistoryCount ? '이전풀이 ' + problem.solutionHistoryCount + '개' : '';
+      row._history.textContent = history;
+      row._history.hidden = !history;
       row._review.checked = Boolean(problem.review);
     }
 
@@ -162,7 +166,7 @@ function buildSidebarClientListScript() {
       const row = document.createElement('div');
       row.className = 'snapshot-row';
       row.innerHTML =
-        '<div><div class="snapshot-title"><span class="snapshot-title-text"></span><span class="current-badge">현재</span></div><div class="snapshot-meta"></div></div>' +
+        '<div><div class="snapshot-title"><span class="snapshot-title-text"></span></div><div class="snapshot-meta"></div></div>' +
         '<div class="problem-actions">' +
           '<button class="solution-action open-snapshot" type="button">열기</button>' +
           '<button class="delete-problem delete-snapshot" type="button">삭제</button>' +
@@ -179,8 +183,7 @@ function buildSidebarClientListScript() {
       row.classList.toggle('current', selectedSnapshotKey === getSnapshotSelectionKey(problem.problemDir, snapshot.path));
       row._title.textContent = problem.title || '';
       row._meta.textContent =
-        '#' + (problem.lessonId || '-') +
-        ' · ' + formatLanguageLabel(snapshot.language) +
+        formatLanguageLabel(snapshot.language) +
         ' · ' + (snapshot.label || '이전 풀이') +
         ' · ' + formatSnapshotTime(snapshot.createdAt);
     }
@@ -297,13 +300,6 @@ function buildSidebarClientListScript() {
       if (pendingProblemListScrollTop === undefined) return;
       problemList.scrollTop = pendingProblemListScrollTop;
       pendingProblemListScrollTop = undefined;
-    }
-
-    // 리스트가 같은 맥락에서 갱신될 때 현재 스크롤 위치를 유지합니다.
-    function preserveProblemListScrollTop(render) {
-      const scrollTop = problemList.scrollTop;
-      render();
-      problemList.scrollTop = scrollTop;
     }
 
     // 스크롤 중 과도한 저장을 피하도록 위치 저장을 debounce합니다.

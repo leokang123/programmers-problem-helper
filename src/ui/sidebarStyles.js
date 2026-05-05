@@ -60,12 +60,13 @@ function buildSidebarStyles() {
     .problem-row:hover { background: var(--vscode-list-hoverBackground); }
     .problem-row.current { padding: 7px 2px; border-left: 3px solid var(--vscode-focusBorder); background: var(--vscode-list-activeSelectionBackground); }
     .problem-row.current .problem-title { color: var(--vscode-list-activeSelectionForeground); font-weight: 600; }
-    .current-badge { display: none; margin-left: 5px; padding: 1px 4px; border: 1px solid currentColor; border-radius: 2px; font-size: 10px; font-weight: 400; color: var(--vscode-list-activeSelectionForeground); vertical-align: 1px; }
-    .problem-row.current .current-badge { display: inline-block; }
     .problem-title { font-size: 12px; line-height: 1.35; color: var(--vscode-foreground); word-break: break-word; }
-    .problem-id { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 2px; font-size: 11px; color: var(--vscode-descriptionForeground); }
-    .problem-level { flex: 0 0 auto; padding: 0 4px; border: 1px solid var(--vscode-panel-border); border-radius: 2px; font-size: 10px; line-height: 1.45; color: var(--vscode-descriptionForeground); }
+    .problem-meta { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin-top: 2px; font-size: 11px; color: var(--vscode-descriptionForeground); }
+    .problem-lesson-id { flex: 0 0 auto; font-size: 10px; line-height: 1.45; color: var(--vscode-descriptionForeground); opacity: 0.82; }
+    .problem-lesson-id[hidden] { display: none; }
+    .problem-level { flex: 0 0 auto; padding: 0 2px; font-size: 10px; line-height: 1.45; color: var(--vscode-descriptionForeground); }
     .problem-level[hidden] { display: none; }
+    .problem-history[hidden] { display: none; }
     .problem-actions { display: flex; gap: 6px; align-items: center; }
     .review-toggle { display: flex; gap: 4px; align-items: center; margin: 0; font-size: 11px; color: var(--vscode-descriptionForeground); }
     .review-toggle input { width: auto; margin: 0; }
@@ -75,7 +76,6 @@ function buildSidebarStyles() {
     .snapshot-row:hover { background: var(--vscode-list-hoverBackground); }
     .snapshot-row.current { padding: 7px 2px; border-left: 3px solid var(--vscode-focusBorder); background: var(--vscode-list-activeSelectionBackground); }
     .snapshot-row.current .snapshot-title { color: var(--vscode-list-activeSelectionForeground); font-weight: 600; }
-    .snapshot-row.current .current-badge { display: inline-block; }
     .snapshot-title { font-size: 12px; line-height: 1.35; color: var(--vscode-foreground); word-break: break-word; }
     .snapshot-meta { margin-top: 2px; font-size: 11px; color: var(--vscode-descriptionForeground); }
     .snapshot-other { border-bottom: 1px solid var(--vscode-panel-border); }

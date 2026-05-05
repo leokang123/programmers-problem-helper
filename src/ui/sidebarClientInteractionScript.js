@@ -124,6 +124,55 @@ function buildSidebarClientInteractionScript() {
       vscode.postMessage({ type: 'saveCustomTests', problemDir: currentProblemDir, tests: collectTests() });
     }
 
+    // review checkbox 변경은 UI에 먼저 반영하고 저장 요청은 짧게 묶어서 보냅니다.
+    function applyReviewToggle(problem, row, review) {
+      problem.review = review;
+      const source = problems.find((item) => item.problemDir === problem.problemDir);
+      if (source) {
+        source.review = review;
+      }
+      if (currentProblem?.problemDir === problem.problemDir) {
+        currentProblem = { ...currentProblem, review };
+      }
+
+      const filter = document.querySelector('input[name="problemFilter"]:checked')?.value || 'all';
+      if (filter === 'review' && !review) {
+        renderProblems();
+      } else {
+        updateProblemRow(row, problem, Number(row.dataset.index));
+      }
+      updatePaneSummaries();
+      saveSidebarState();
+    }
+
+    // 저장이 필요한 문제만 기록하고, 실제 값은 flush 시점의 로컬 상태에서 읽습니다.
+    function queueReviewSave(problemDir) {
+      pendingReviewProblemDirs.add(problemDir);
+      if (reviewSaveTimer) {
+        clearTimeout(reviewSaveTimer);
+      }
+      reviewSaveTimer = setTimeout(flushReviewSaves, 500);
+    }
+
+    // 모아 둔 review 변경분을 extension으로 전송합니다.
+    function flushReviewSaves() {
+      if (reviewSaveTimer) {
+        clearTimeout(reviewSaveTimer);
+        reviewSaveTimer = undefined;
+      }
+      if (pendingReviewProblemDirs.size === 0) return;
+      const problemDirs = Array.from(pendingReviewProblemDirs);
+      pendingReviewProblemDirs.clear();
+      const updates = problemDirs
+        .map((problemDir) => {
+          const problem = problems.find((item) => item.problemDir === problemDir);
+          return problem ? { problemDir, review: Boolean(problem.review) } : undefined;
+        })
+        .filter(Boolean);
+      if (updates.length === 0) return;
+      vscode.postMessage({ type: 'saveReviewStates', updates });
+    }
+
     // 문제 목록/풀이 기록 영역의 이벤트 위임 클릭을 각 extension 메시지로 변환합니다.
     function handleProblemListClick(event) {
       const problemRow = event.target.closest('.problem-row');
@@ -133,14 +182,12 @@ function buildSidebarClientInteractionScript() {
         const problem = renderedProblems[Number(problemRow.dataset.index)];
         if (!problem) return;
         if (event.target.closest('.review-check')) {
-          vscode.postMessage({
-            type: 'toggleReview',
-            problemDir: problem.problemDir,
-            review: event.target.checked
-          });
+          applyReviewToggle(problem, problemRow, event.target.checked);
+          queueReviewSave(problem.problemDir);
           return;
         }
         if (event.target.closest('.delete-problem')) {
+          flushReviewSaves();
           vscode.postMessage({
             type: 'deleteProblem',
             problemDir: problem.problemDir
@@ -150,6 +197,7 @@ function buildSidebarClientInteractionScript() {
         selectedSnapshotKey = '';
         renderProblems();
         saveSidebarState();
+        flushReviewSaves();
         vscode.postMessage({ type: 'openProblem', problemDir: problem.problemDir });
         return;
       }
@@ -282,10 +330,12 @@ function buildSidebarClientInteractionScript() {
       scheduleRenderProblems();
     });
     document.getElementById('refreshProblems').addEventListener('click', () => {
+      flushReviewSaves();
       vscode.postMessage({ type: 'refreshProblems', force: true });
     });
     problemList.addEventListener('scroll', scheduleProblemListScrollSave, { passive: true });
     problemList.addEventListener('click', handleProblemListClick);
+    window.addEventListener('beforeunload', flushReviewSaves);
     window.addEventListener('message', (event) => {
       if (event.data.type === 'status') {
         status.textContent = event.data.text;
@@ -309,14 +359,18 @@ function buildSidebarClientInteractionScript() {
         updateCustomTestsSaveState();
         saveSidebarState();
       }
+      if (event.data.type === 'reviewStatesSaved') {
+        if (!event.data.ok) {
+          status.textContent = '오류\\n\\n다시풀 상태 저장에 실패해 문제 목록을 다시 불러옵니다.';
+          status.className = 'status error';
+          vscode.postMessage({ type: 'refreshProblems', force: true });
+        }
+        updatePaneSummaries();
+      }
       if (event.data.type === 'problems') {
         problems = event.data.problems || [];
-        if (pendingProblemListScrollTop === undefined) {
-          preserveProblemListScrollTop(renderProblems);
-        } else {
-          renderProblems();
-          restoreProblemListScrollTop();
-        }
+        renderProblems();
+        restoreProblemListScrollTop();
         saveSidebarState();
       }
       if (event.data.type === 'currentProblem') {

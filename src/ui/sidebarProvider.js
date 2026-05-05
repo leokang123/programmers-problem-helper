@@ -76,7 +76,9 @@ class ProgrammersSidebarProvider {
       if (this.problemListRefreshPromise?.cacheKey === cacheKey) {
         this.problemListRefreshPromise = undefined;
       }
-      this.post({ type: "problems", problems });
+      if (!options.silent) {
+        this.post({ type: "problems", problems });
+      }
       return;
     }
 

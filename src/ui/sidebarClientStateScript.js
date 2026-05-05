@@ -38,7 +38,9 @@ function buildSidebarClientStateScript() {
     let savedCustomTestsSignature = '';
     let searchRenderTimer = undefined;
     let scrollSaveTimer = undefined;
+    let reviewSaveTimer = undefined;
     let pendingProblemListScrollTop = undefined;
+    const pendingReviewProblemDirs = new Set();
     let sidebarStateReady = false;
     let renderedProblems = [];
     let renderedSnapshots = [];
