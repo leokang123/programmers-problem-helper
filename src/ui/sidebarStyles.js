@@ -63,7 +63,9 @@ function buildSidebarStyles() {
     .current-badge { display: none; margin-left: 5px; padding: 1px 4px; border: 1px solid currentColor; border-radius: 2px; font-size: 10px; font-weight: 400; color: var(--vscode-list-activeSelectionForeground); vertical-align: 1px; }
     .problem-row.current .current-badge { display: inline-block; }
     .problem-title { font-size: 12px; line-height: 1.35; color: var(--vscode-foreground); word-break: break-word; }
-    .problem-id { margin-top: 2px; font-size: 11px; color: var(--vscode-descriptionForeground); }
+    .problem-id { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 2px; font-size: 11px; color: var(--vscode-descriptionForeground); }
+    .problem-level { flex: 0 0 auto; padding: 0 4px; border: 1px solid var(--vscode-panel-border); border-radius: 2px; font-size: 10px; line-height: 1.45; color: var(--vscode-descriptionForeground); }
+    .problem-level[hidden] { display: none; }
     .problem-actions { display: flex; gap: 6px; align-items: center; }
     .review-toggle { display: flex; gap: 4px; align-items: center; margin: 0; font-size: 11px; color: var(--vscode-descriptionForeground); }
     .review-toggle input { width: auto; margin: 0; }

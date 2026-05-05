@@ -182,11 +182,14 @@ async function loadProblemSummary(problemDir) {
   const reviewData = await readJson(vscode.Uri.joinPath(helperDir, "review.json"));
   const history = await readSolutionHistory(problemDir);
   const fallback = parseProblemFolderName(folderName);
+  const markdownMetadata = metadata?.level && metadata?.category ? {} : await readProblemMarkdownMetadata(problemDir);
   return {
     problemDir,
     folderName,
     lessonId: String(metadata?.lessonId || fallback.lessonId || ""),
     title: String(metadata?.title || fallback.title || folderName),
+    level: String(metadata?.level || markdownMetadata.level || ""),
+    category: String(metadata?.category || markdownMetadata.category || ""),
     review: Boolean(reviewData?.review),
     solutionHistoryCount: history.attempts.length,
   };
@@ -216,7 +219,7 @@ async function removeProblemIndexEntry(programmersDir, problemDir) {
 // 빠른 사이드바 로딩을 위해 저장된 problem-index를 읽습니다.
 async function readProblemIndex(programmersDir) {
   const index = await readJson(getProblemIndexUri(programmersDir));
-  if (!Array.isArray(index?.problems)) {
+  if (index?.version !== 2 || !Array.isArray(index?.problems)) {
     return undefined;
   }
 
@@ -236,6 +239,8 @@ async function readProblemIndex(programmersDir) {
       folderName: String(problem.folderName || path.basename(problem.problemDir)),
       lessonId: String(problem.lessonId || ""),
       title: String(problem.title || problem.folderName || path.basename(problem.problemDir)),
+      level: String(problem.level || ""),
+      category: String(problem.category || ""),
       review: Boolean(problem.review),
       solutionHistoryCount: Number.isInteger(problem.solutionHistoryCount) ? problem.solutionHistoryCount : 0,
     })));
@@ -246,7 +251,7 @@ async function writeProblemIndex(programmersDir, problems) {
   const helperDir = vscode.Uri.joinPath(programmersDir, HELPER_DIR_NAME);
   await vscode.workspace.fs.createDirectory(helperDir);
   await writeJson(getProblemIndexUri(programmersDir), {
-    version: 1,
+    version: 2,
     problems,
   });
 }
@@ -359,6 +364,8 @@ async function createProblem(programmersDir, lessonId, languageId = DEFAULT_LANG
   const metadata = {
     lessonId,
     title,
+    level: page.level,
+    category: page.category,
     languages: {
       [language.id]: { url },
     },
@@ -435,6 +442,8 @@ async function ensureSolutionForLanguage(problemDir, languageId = DEFAULT_LANGUA
   const nextMetadata = normalizeProgrammersMetadata(metadata);
   nextMetadata.lessonId = lessonId;
   nextMetadata.title = nextMetadata.title || page.title;
+  nextMetadata.level = nextMetadata.level || page.level;
+  nextMetadata.category = nextMetadata.category || page.category;
   nextMetadata.languages = {
     ...nextMetadata.languages,
     [language.id]: { url },
@@ -567,12 +576,31 @@ function normalizeProgrammersMetadata(metadata) {
     title: String(source.title || ""),
     languages,
   };
+  if (source.level !== undefined && source.level !== null && String(source.level).trim()) {
+    normalized.level = String(source.level).trim();
+  }
+  if (source.category !== undefined && source.category !== null && String(source.category).trim()) {
+    normalized.category = String(source.category).trim();
+  }
 
   if (Array.isArray(source.examples)) {
     normalized.examples = source.examples;
   }
 
   return normalized;
+}
+
+// 예전 metadata에 난이도가 없으면 problem.md 상단 메타 정보에서 보완합니다.
+async function readProblemMarkdownMetadata(problemDir) {
+  try {
+    const markdown = await readText(vscode.Uri.file(path.join(problemDir, "problem.md")));
+    return {
+      level: matchFirst(markdown, /^-\s*난이도:\s*(?:Level\s*)?(.+?)\s*$/mi),
+      category: matchFirst(markdown, /^-\s*분류:\s*(.+?)\s*$/mi),
+    };
+  } catch {
+    return {};
+  }
 }
 
 // metadata 저장 전에 legacy initialCode를 파일로 보존하고 정규화된 JSON을 씁니다.

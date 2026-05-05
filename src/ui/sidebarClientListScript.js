@@ -124,13 +124,14 @@ function buildSidebarClientListScript() {
       const row = document.createElement('div');
       row.className = 'problem-row';
       row.innerHTML =
-        '<div><div class="problem-title"><span class="problem-title-text"></span><span class="current-badge">현재</span></div><div class="problem-id"></div></div>' +
+        '<div><div class="problem-title"><span class="problem-title-text"></span><span class="current-badge">현재</span></div><div class="problem-id"><span class="problem-level"></span><span class="problem-id-text"></span></div></div>' +
         '<div class="problem-actions">' +
           '<label class="review-toggle"><input class="review-check" type="checkbox" /> 다시풀</label>' +
           '<button class="delete-problem" type="button" title="문제 삭제">삭제</button>' +
         '</div>';
       row._title = row.querySelector('.problem-title-text');
-      row._id = row.querySelector('.problem-id');
+      row._level = row.querySelector('.problem-level');
+      row._id = row.querySelector('.problem-id-text');
       row._review = row.querySelector('.review-check');
       return row;
     }
@@ -140,10 +141,20 @@ function buildSidebarClientListScript() {
       row.dataset.index = String(index);
       row.classList.toggle('current', Boolean(currentProblemDir && problem.problemDir === currentProblemDir));
       row._title.textContent = problem.title || '';
+      const level = formatProblemLevel(problem.level);
+      row._level.textContent = level;
+      row._level.hidden = !level;
       row._id.textContent =
         '#' + (problem.lessonId || '-') +
         (problem.solutionHistoryCount ? ' · 이전풀이 ' + problem.solutionHistoryCount + '개' : '');
       row._review.checked = Boolean(problem.review);
+    }
+
+    // Programmers 난이도 값을 작은 목록 배지 텍스트로 정리합니다.
+    function formatProblemLevel(level) {
+      const value = String(level || '').trim();
+      if (!value) return '';
+      return /^level\\s+/i.test(value) ? value.replace(/^level/i, 'Lv.') : 'Lv. ' + value;
     }
 
     // 풀이 기록 목록에서 재사용할 snapshot row DOM 구조를 만듭니다.
@@ -286,6 +297,13 @@ function buildSidebarClientListScript() {
       if (pendingProblemListScrollTop === undefined) return;
       problemList.scrollTop = pendingProblemListScrollTop;
       pendingProblemListScrollTop = undefined;
+    }
+
+    // 리스트가 같은 맥락에서 갱신될 때 현재 스크롤 위치를 유지합니다.
+    function preserveProblemListScrollTop(render) {
+      const scrollTop = problemList.scrollTop;
+      render();
+      problemList.scrollTop = scrollTop;
     }
 
     // 스크롤 중 과도한 저장을 피하도록 위치 저장을 debounce합니다.

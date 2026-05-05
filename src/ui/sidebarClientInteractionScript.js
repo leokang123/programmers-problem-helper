@@ -311,8 +311,12 @@ function buildSidebarClientInteractionScript() {
       }
       if (event.data.type === 'problems') {
         problems = event.data.problems || [];
-        renderProblems();
-        restoreProblemListScrollTop();
+        if (pendingProblemListScrollTop === undefined) {
+          preserveProblemListScrollTop(renderProblems);
+        } else {
+          renderProblems();
+          restoreProblemListScrollTop();
+        }
         saveSidebarState();
       }
       if (event.data.type === 'currentProblem') {
