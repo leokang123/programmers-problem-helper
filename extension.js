@@ -315,6 +315,7 @@ function ensureServices(context) {
     execCommand,
     postMessage: postSidebarMessage,
     refreshProblems: async (options) => sidebarProvider?.refreshProblems(options),
+    getCachedProblems: (cacheKey) => sidebarProvider?.getCachedProblems(cacheKey),
     runTests: async (customTestsText, providedProblemDir) => {
       await testRunner.runFromCommand(context, customTestsText, providedProblemDir, () => problemCommands.getProblemDir());
     },

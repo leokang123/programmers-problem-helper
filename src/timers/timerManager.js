@@ -16,6 +16,7 @@ class TimerManager {
     this.context = context;
     this.runningProblemDir = undefined;
     this.checkpointInterval = undefined;
+    this.timerCache = new Map();
   }
 
   // 현재 문제의 타이머를 읽고 legacy 저장소 값이 있으면 파일 저장소로 옮깁니다.
@@ -23,7 +24,8 @@ class TimerManager {
     if (!problemDir) {
       return undefined;
     }
-    const saved = await this.readTimer(problemDir);
+    const cacheKey = this.getCacheKey(problemDir);
+    const saved = this.timerCache.get(cacheKey) || await this.readTimer(problemDir);
     const legacy = this.getLegacyTimer(problemDir);
     let timer = saved || legacy;
     if (!saved && legacy) {
@@ -39,6 +41,7 @@ class TimerManager {
     if (normalized.isRunning) {
       this.runningProblemDir = problemDir;
     }
+    this.timerCache.set(cacheKey, this.toStoredTimer(normalized));
     return normalized;
   }
 
@@ -159,11 +162,13 @@ class TimerManager {
   // 문제 helper 영역에 timer.json을 저장합니다.
   async writeTimer(problemDir, timer) {
     const uri = this.getTimerUri(problemDir);
+    const stored = this.toStoredTimer(timer);
     await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(uri.fsPath)));
     await vscode.workspace.fs.writeFile(
       uri,
-      Buffer.from(JSON.stringify(this.toStoredTimer(timer), null, 2) + "\n", "utf8")
+      Buffer.from(JSON.stringify(stored, null, 2) + "\n", "utf8")
     );
+    this.timerCache.set(this.getCacheKey(problemDir), stored);
   }
 
   // 실행 중 타이머를 주기적으로 파일에 반영하는 interval을 시작합니다.
@@ -193,7 +198,7 @@ class TimerManager {
       return;
     }
 
-    const timer = this.normalizeTimer(await this.readTimer(problemDir), problemDir);
+    const timer = this.normalizeTimer(this.timerCache.get(this.getCacheKey(problemDir)) || await this.readTimer(problemDir), problemDir);
     if (!timer.isRunning) {
       this.runningProblemDir = undefined;
       this.stopCheckpointInterval();
@@ -216,6 +221,10 @@ class TimerManager {
   // 문제별 timer.json 파일 URI를 계산합니다.
   getTimerUri(problemDir) {
     return vscode.Uri.file(helperPath(problemDir, "timer.json"));
+  }
+
+  getCacheKey(problemDir) {
+    return path.resolve(problemDir);
   }
 
   // 이전 버전 workspaceState에 저장된 전체 timer map을 읽습니다.

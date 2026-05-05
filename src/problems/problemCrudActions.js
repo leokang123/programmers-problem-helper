@@ -79,7 +79,7 @@ class ProblemCrudActions {
         }
       );
 
-      const runtimeStatus = await this.openProblemFromDir(result.problemDir.fsPath, { forceRefreshProblems: true });
+      const runtimeStatus = await this.openProblemFromDir(result.problemDir.fsPath);
       if (runtimeStatus?.kind === "ready") {
         vscode.window.showInformationMessage(`Programmers ${lessonId} 준비 완료`);
       } else {
@@ -112,6 +112,7 @@ class ProblemCrudActions {
     const safeDir = await this.commands.validateProblemDir(last);
     if (!safeDir) {
       await this.commands.context.workspaceState.update("lastProblemDir", undefined);
+      this.commands.clearCachedProblemInfo(last);
       this.commands.postMessage?.({ type: "currentProblem", problem: undefined });
       return;
     }
@@ -125,7 +126,7 @@ class ProblemCrudActions {
   async openProblemFromDir(problemDir, options = {}) {
     const safeDir = await this.commands.validateProblemDir(problemDir);
     if (!safeDir) {
-      vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다.");
+      vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다. 외부에서 삭제했다면 문제 목록을 새로고침해주세요.");
       return undefined;
     }
 
@@ -148,14 +149,14 @@ class ProblemCrudActions {
           detail: "문제를 열거나 테스트를 실행하면 준비합니다.",
         }
       : await this.commands.prepareDockerRuntimeOnOpen(safeDir);
-    await this.commands.showOpenedProblemState(safeDir, runtimeStatus, { forceRefreshProblems: Boolean(options.forceRefreshProblems) });
+    await this.commands.showOpenedProblemState(safeDir, runtimeStatus);
     return runtimeStatus;
   }
 
   async deleteProblem(problemDir) {
     const safeDir = await this.commands.validateProblemDir(problemDir);
     if (!safeDir) {
-      vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다.");
+      vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다. 외부에서 삭제했다면 문제 목록을 새로고침해주세요.");
       return;
     }
 
@@ -184,13 +185,16 @@ class ProblemCrudActions {
     const last = this.commands.context.workspaceState.get("lastProblemDir");
     if (typeof last === "string" && path.resolve(last) === path.resolve(safeDir)) {
       await this.commands.context.workspaceState.update("lastProblemDir", undefined);
+      this.commands.clearCachedProblemInfo(safeDir);
       this.commands.postMessage?.({ type: "currentProblem", problem: undefined });
       this.commands.postMessage?.({ type: "status", kind: "", text: "대기 중\n\n문제 번호를 입력하고 생성 버튼을 누르세요." });
     }
 
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     const programmersDir = await resolveProgrammersDir(this.commands.context, workspaceFolder?.uri);
-    const problems = programmersDir ? await removeProblemIndexEntry(programmersDir, safeDir) : undefined;
+    const problems = programmersDir
+      ? await removeProblemIndexEntry(programmersDir, safeDir, this.commands.getCachedProblemsForProgrammersDir(programmersDir))
+      : undefined;
     await this.commands.refreshProblemsFromIndex(problems);
     vscode.window.showInformationMessage(`${folderName} 삭제 완료`);
   }

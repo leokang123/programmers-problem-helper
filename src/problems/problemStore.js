@@ -158,10 +158,15 @@ function getDevelopmentRootUri(context, workspaceUri) {
 
 // 현재 문제 화면에 필요한 metadata, 예제, 풀이 기록, 커스텀 테스트를 묶어 읽습니다.
 async function loadProblemInfo(problemDir, languageId = DEFAULT_LANGUAGE_ID) {
-  const summary = await loadProblemSummary(problemDir);
+  const folderName = path.basename(problemDir);
+  const helperDir = vscode.Uri.file(helperPath(problemDir));
   const metadata = await readJson(vscode.Uri.file(helperPath(problemDir, "programmers.json")));
+  const reviewData = await readJson(vscode.Uri.joinPath(helperDir, "review.json"));
   const language = getLanguage(languageId);
   const history = await readSolutionHistory(problemDir);
+  const fallback = parseProblemFolderName(folderName);
+  const markdownMetadata = metadata?.level && metadata?.category ? {} : await readProblemMarkdownMetadata(problemDir);
+  const summary = buildProblemSummary(problemDir, folderName, metadata, reviewData, history, fallback, markdownMetadata);
   const currentLanguageHistory = history.attempts.filter((attempt) => attempt.language === language.id);
   const otherLanguageHistory = history.attempts.filter((attempt) => attempt.language !== language.id);
   return {
@@ -183,6 +188,11 @@ async function loadProblemSummary(problemDir) {
   const history = await readSolutionHistory(problemDir);
   const fallback = parseProblemFolderName(folderName);
   const markdownMetadata = metadata?.level && metadata?.category ? {} : await readProblemMarkdownMetadata(problemDir);
+  return buildProblemSummary(problemDir, folderName, metadata, reviewData, history, fallback, markdownMetadata);
+}
+
+// 이미 읽은 metadata/history/review를 재사용해 목록 summary를 구성합니다.
+function buildProblemSummary(problemDir, folderName, metadata, reviewData, history, fallback, markdownMetadata = {}) {
   return {
     problemDir,
     folderName,
@@ -195,42 +205,62 @@ async function loadProblemSummary(problemDir) {
   };
 }
 
-// 문제 하나가 바뀌었을 때 전체 scan 없이 problem-index 항목만 갱신합니다.
-async function updateProblemIndexEntry(programmersDir, problemDir) {
-  const existing = await readProblemIndex(programmersDir) || await rebuildProblemIndex(programmersDir);
-  const summary = await loadProblemSummary(problemDir);
-  const target = path.resolve(problemDir);
-  const next = existing.filter((problem) => path.resolve(problem.problemDir) !== target);
+// 이미 가지고 있는 summary가 있으면 파일을 다시 읽지 않고 problem-index에 반영합니다.
+async function updateProblemIndexSummary(programmersDir, existing, summary) {
+  if (!summary?.problemDir) {
+    return Array.isArray(existing) ? existing : await readProblemIndex(programmersDir) || await rebuildProblemIndex(programmersDir);
+  }
+  const entries = Array.isArray(existing) ? existing : await readProblemIndex(programmersDir) || await rebuildProblemIndex(programmersDir);
+  const target = path.resolve(summary.problemDir);
+  const next = entries.filter((problem) => path.resolve(problem.problemDir) !== target);
   next.push(summary);
   const sorted = sortProblemSummaries(next);
   await writeProblemIndex(programmersDir, sorted);
   return sorted;
 }
 
-// 여러 문제가 바뀌었을 때 problem-index를 한 번만 읽고 써서 갱신합니다.
-async function updateProblemIndexEntries(programmersDir, problemDirs) {
-  const targets = Array.from(new Set(
-    (Array.isArray(problemDirs) ? problemDirs : [])
-      .filter(Boolean)
-      .map((problemDir) => path.resolve(problemDir))
-  ));
-  if (targets.length === 0) {
-    return readProblemIndex(programmersDir) || rebuildProblemIndex(programmersDir);
+// 이미 알고 있는 review 값은 problem-index cache에 먼저 반영하고, 누락 항목만 파일에서 보완합니다.
+async function updateProblemIndexReviewStates(programmersDir, updates, cachedProblems) {
+  const normalized = Array.isArray(updates)
+    ? updates
+      .filter((update) => update && typeof update.problemDir === "string")
+      .map((update) => ({
+        problemDir: path.resolve(update.problemDir),
+        review: Boolean(update.review),
+      }))
+    : [];
+  if (normalized.length === 0) {
+    return Array.isArray(cachedProblems) ? cachedProblems : await readProblemIndex(programmersDir) || await rebuildProblemIndex(programmersDir);
   }
 
-  const existing = await readProblemIndex(programmersDir) || await rebuildProblemIndex(programmersDir);
-  const targetSet = new Set(targets);
-  const summaries = await Promise.all(targets.map((problemDir) => loadProblemSummary(problemDir)));
-  const next = existing.filter((problem) => !targetSet.has(path.resolve(problem.problemDir)));
-  next.push(...summaries);
+  const reviewByDir = new Map(normalized.map((update) => [update.problemDir, update.review]));
+  const existing = Array.isArray(cachedProblems) ? cachedProblems : await readProblemIndex(programmersDir) || await rebuildProblemIndex(programmersDir);
+  const seen = new Set();
+  const next = existing.map((problem) => {
+    const target = path.resolve(problem.problemDir);
+    if (!reviewByDir.has(target)) {
+      return problem;
+    }
+    seen.add(target);
+    return {
+      ...problem,
+      review: reviewByDir.get(target),
+    };
+  });
+
+  const missing = normalized.filter((update) => !seen.has(update.problemDir));
+  if (missing.length > 0) {
+    next.push(...await Promise.all(missing.map((update) => loadProblemSummary(update.problemDir))));
+  }
+
   const sorted = sortProblemSummaries(next);
   await writeProblemIndex(programmersDir, sorted);
   return sorted;
 }
 
-// 문제 삭제 후 problem-index에서 해당 폴더 항목을 제거합니다.
-async function removeProblemIndexEntry(programmersDir, problemDir) {
-  const existing = await readProblemIndex(programmersDir) || await rebuildProblemIndex(programmersDir);
+// 문제 삭제 후 cache/index에서 해당 폴더 항목을 제거합니다.
+async function removeProblemIndexEntry(programmersDir, problemDir, cachedProblems) {
+  const existing = Array.isArray(cachedProblems) ? cachedProblems : await readProblemIndex(programmersDir) || await rebuildProblemIndex(programmersDir);
   const target = path.resolve(problemDir);
   const sorted = sortProblemSummaries(existing.filter((problem) => path.resolve(problem.problemDir) !== target));
   await writeProblemIndex(programmersDir, sorted);
@@ -683,6 +713,6 @@ module.exports = {
   resetSolutionToInitial,
   resolveProgrammersDir,
   saveCustomTests,
-  updateProblemIndexEntries,
-  updateProblemIndexEntry,
+  updateProblemIndexSummary,
+  updateProblemIndexReviewStates,
 };

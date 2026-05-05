@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0
+
+- Rework problem-list updates around cached state: review toggles, current-problem index updates, deletes, and command fallback lists now reuse the in-memory problem list before reading `problem-index.json`.
+- Save review checkbox changes optimistically in the Webview and flush only the latest state per problem after a short delay, while patching the index from the known review values instead of rereading each problem.
+- Keep sidebar list rows stable with small problem numbers, difficulty metadata, and solution-history counts, preserving scroll position across review changes.
+- Reuse the currently opened problem info for Notes and Website actions, and reuse timer state in memory before falling back to `timer.json`.
+- Treat the problem-list refresh button as an explicit full rescan that rebuilds `problem-index.json`, while ordinary sidebar restores use memory cache, index JSON, then filesystem scan fallback.
+- Show a clearer message when a cached problem row points to a folder that was deleted externally.
+- Bump the extension manifest and lockfile to `0.6.0`.
+
 ## 0.5.6
 
 - Treat C++ sanitizer debug binaries as temporary artifacts: skip the debug fingerprint cache and delete `cpp-debug` after the retry run finishes.

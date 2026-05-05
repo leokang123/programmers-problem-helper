@@ -50,6 +50,11 @@ class ProgrammersSidebarProvider {
     return true;
   }
 
+  // 현재 Programmers 저장소에 대해 메모리에 들고 있는 문제 목록 cache를 반환합니다.
+  getCachedProblems(cacheKey) {
+    return this.problemListCache?.cacheKey === cacheKey ? this.problemListCache.problems : undefined;
+  }
+
   // 문제 목록과 현재 문제 상태를 새로 보냅니다.
   async refreshProblems(options = {}) {
     if (options.progress) {

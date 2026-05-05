@@ -20,8 +20,8 @@ const {
   loadProblemInfo,
   loadSavedCustomTests,
   resolveProgrammersDir,
-  updateProblemIndexEntry,
-  updateProblemIndexEntries,
+  updateProblemIndexSummary,
+  updateProblemIndexReviewStates,
 } = require("./problemStore");
 const {
   getLanguage,
@@ -38,15 +38,17 @@ const {
 
 // 문제 명령의 공개 API를 유지하고 실제 작업은 목적별 action으로 위임합니다.
 class ProblemCommands {
-  constructor({ context, extensionDir, execCommand, postMessage, refreshProblems, runTests }) {
+  constructor({ context, extensionDir, execCommand, postMessage, refreshProblems, getCachedProblems, runTests }) {
     this.context = context;
     this.extensionDir = extensionDir;
     this.execCommand = execCommand;
     this.postMessage = postMessage;
     this.refreshProblems = refreshProblems;
+    this.getCachedProblems = getCachedProblems;
     this.runTests = runTests;
     this.createProblemInFlight = false;
     this.createProblemCooldownUntil = 0;
+    this.currentProblemInfo = undefined;
     this.crud = new ProblemCrudActions(this);
     this.solutions = new ProblemSolutionActions(this);
     this.tests = new ProblemTestActions(this);
@@ -127,9 +129,10 @@ class ProblemCommands {
     const savedCustomTests = await loadSavedCustomTests(problemDir);
 
     await this.context.workspaceState.update("lastProblemDir", problemDir);
+    this.currentProblemInfo = problem;
     this.postMessage?.({ type: "currentProblem", problem });
     this.postMessage?.({ type: "customTests", tests: savedCustomTests.length > 0 ? savedCustomTests : examples.length > 0 ? [examples[0]] : [] });
-    const problems = await this.updateProblemIndexForDir(problemDir);
+    const problems = await this.updateProblemIndexForSummary(problem);
     await this.refreshProblemsFromIndex(problems);
 
     const statusKind = runtimeStatus.kind || "";
@@ -145,22 +148,26 @@ class ProblemCommands {
     });
   }
 
-  async updateProblemIndexForDir(problemDir) {
+  async updateProblemIndexForSummary(summary) {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     const programmersDir = await resolveProgrammersDir(this.context, workspaceFolder?.uri);
     if (programmersDir) {
-      return updateProblemIndexEntry(programmersDir, problemDir);
+      return updateProblemIndexSummary(programmersDir, this.getCachedProblems?.(programmersDir.fsPath), summary);
     }
     return undefined;
   }
 
-  async updateProblemIndexForDirs(problemDirs) {
+  async updateProblemIndexForReviewStates(updates) {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     const programmersDir = await resolveProgrammersDir(this.context, workspaceFolder?.uri);
     if (programmersDir) {
-      return updateProblemIndexEntries(programmersDir, problemDirs);
+      return updateProblemIndexReviewStates(programmersDir, updates, this.getCachedProblems?.(programmersDir.fsPath));
     }
     return undefined;
+  }
+
+  getCachedProblemsForProgrammersDir(programmersDir) {
+    return programmersDir ? this.getCachedProblems?.(programmersDir.fsPath) : undefined;
   }
 
   async refreshProblemsFromIndex(problems) {
@@ -189,6 +196,21 @@ class ProblemCommands {
     }
 
     return await hasProblemFiles(vscode.Uri.file(target)) ? target : undefined;
+  }
+
+  getCachedProblemInfo(problemDir) {
+    if (!problemDir || !this.currentProblemInfo?.problemDir) {
+      return undefined;
+    }
+    return path.resolve(this.currentProblemInfo.problemDir) === path.resolve(problemDir)
+      ? this.currentProblemInfo
+      : undefined;
+  }
+
+  clearCachedProblemInfo(problemDir) {
+    if (!problemDir || !this.currentProblemInfo?.problemDir || path.resolve(this.currentProblemInfo.problemDir) === path.resolve(problemDir)) {
+      this.currentProblemInfo = undefined;
+    }
   }
 
   async prepareDockerRuntimeOnOpen(problemDir) {

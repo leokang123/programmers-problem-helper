@@ -88,7 +88,7 @@ class ProblemTestActions {
       return undefined;
     }
 
-    const problems = await loadProblems(programmersDir);
+    const problems = this.commands.getCachedProblemsForProgrammersDir(programmersDir) || await loadProblems(programmersDir);
     if (problems.length === 0) {
       vscode.window.showErrorMessage("실행할 문제 폴더가 없습니다.");
       return undefined;

@@ -33,7 +33,7 @@ class ProblemSolutionActions {
   async startReviewAttempt(problemDir) {
     const safeDir = await this.commands.validateProblemDir(problemDir);
     if (!safeDir) {
-      vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다.");
+      vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다. 외부에서 삭제했다면 문제 목록을 새로고침해주세요.");
       return;
     }
 
@@ -44,7 +44,7 @@ class ProblemSolutionActions {
     await this.commands.context.workspaceState.update("lastProblemDir", safeDir);
     await showSolution(vscode.Uri.file(getSolutionPath(safeDir, settings.language)));
     const runtimeStatus = await this.commands.prepareDockerRuntimeOnOpen(safeDir);
-    await this.commands.showOpenedProblemState(safeDir, runtimeStatus, { forceRefreshProblems: true });
+    await this.commands.showOpenedProblemState(safeDir, runtimeStatus);
 
     if (result.resetToInitialCode) {
       vscode.window.showInformationMessage("이전 풀이를 보관하고 새 풀이 템플릿을 열었습니다.");
@@ -56,12 +56,12 @@ class ProblemSolutionActions {
   async openNotes(problemDir) {
     const safeDir = await this.commands.validateProblemDir(problemDir);
     if (!safeDir) {
-      vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다.");
+      vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다. 외부에서 삭제했다면 문제 목록을 새로고침해주세요.");
       return;
     }
 
     const settings = getExecutionSettings();
-    const problem = await loadProblemInfo(safeDir, settings.language);
+    const problem = this.commands.getCachedProblemInfo(safeDir) || await loadProblemInfo(safeDir, settings.language);
     const notesUri = vscode.Uri.file(helperPath(safeDir, "notes.md"));
     await ensureNotesFile(notesUri, problem);
     await this.commands.context.workspaceState.update("lastProblemDir", safeDir);
@@ -79,12 +79,12 @@ class ProblemSolutionActions {
   async openWebsite(problemDir) {
     const safeDir = await this.commands.validateProblemDir(problemDir);
     if (!safeDir) {
-      vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다.");
+      vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다. 외부에서 삭제했다면 문제 목록을 새로고침해주세요.");
       return;
     }
 
     const settings = getExecutionSettings();
-    const problem = await loadProblemInfo(safeDir, settings.language);
+    const problem = this.commands.getCachedProblemInfo(safeDir) || await loadProblemInfo(safeDir, settings.language);
     if (!problem.url) {
       vscode.window.showWarningMessage("이 문제의 웹사이트 URL을 찾지 못했습니다.");
       return;
@@ -104,7 +104,7 @@ class ProblemSolutionActions {
   async resetCurrentSolution(problemDir) {
     const target = await this.commands.getActiveCodeTarget(problemDir);
     if (!target) {
-      vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다.");
+      vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다. 외부에서 삭제했다면 문제 목록을 새로고침해주세요.");
       return;
     }
 
@@ -134,7 +134,7 @@ class ProblemSolutionActions {
   async openSolutionSnapshot(problemDir, snapshotPath) {
     const safeDir = await this.commands.validateProblemDir(problemDir);
     if (!safeDir) {
-      vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다.");
+      vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다. 외부에서 삭제했다면 문제 목록을 새로고침해주세요.");
       return;
     }
 
@@ -155,7 +155,7 @@ class ProblemSolutionActions {
   async deleteSolutionSnapshot(problemDir, snapshotPath) {
     const safeDir = await this.commands.validateProblemDir(problemDir);
     if (!safeDir) {
-      vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다.");
+      vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다. 외부에서 삭제했다면 문제 목록을 새로고침해주세요.");
       return;
     }
 
@@ -193,16 +193,16 @@ class ProblemSolutionActions {
     }
 
     try {
-      const safeDirs = [];
+      const safeUpdates = [];
       for (const update of normalized) {
         const safeDir = await this.commands.validateProblemDir(update.problemDir);
         if (!safeDir) {
-          throw new Error("문제 폴더를 찾지 못했습니다.");
+          throw new Error("문제 폴더를 찾지 못했습니다. 외부에서 삭제했다면 문제 목록을 새로고침해주세요.");
         }
         await writeReviewState(safeDir, update.review);
-        safeDirs.push(safeDir);
+        safeUpdates.push({ problemDir: safeDir, review: update.review });
       }
-      const problems = await this.commands.updateProblemIndexForDirs(safeDirs);
+      const problems = await this.commands.updateProblemIndexForReviewStates(safeUpdates);
       if (Array.isArray(problems)) {
         await this.commands.refreshProblems?.({ problems, silent: true });
       }

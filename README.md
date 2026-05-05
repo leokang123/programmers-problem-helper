@@ -21,6 +21,8 @@
 - PASS/FAIL 모두 expected / actual 출력
 - 문제 목록에서 `새풀이`를 눌러 현재 언어 풀이 파일을 이전 풀이로 보관
 - `풀이기록` 필터에서 이전 풀이를 시간순으로 열거나 삭제
+- 문제 목록에서 문제 번호, 난이도, 이전 풀이 수, 다시풀 상태를 작게 확인
+- 다시풀 checkbox 변경과 문제 삭제 후에도 문제 목록 스크롤 위치 유지
 - `programmersHelper.tabResetMode` 설정으로 풀이/풀이기록 탭 reset 방식을 선택
 - 처음 받아온 풀이 원본을 `.programmers-helper/initial/initial-solution.<ext>`로 보관
 - 현재 풀이 파일 코드를 클립보드에 복사하고 프로그래머스 웹 페이지 열기
@@ -210,6 +212,8 @@ git push origin v0.1.0
 10. 보관된 코드는 `풀이기록` 필터에서 시간순으로 확인하거나 삭제합니다.
 
 타이머 기록은 문제 폴더의 `.programmers-helper/timer.json`에 저장됩니다.
+
+문제 목록의 새로고침 버튼은 실제 문제 폴더를 다시 스캔해 목록 인덱스를 재생성합니다. 일반적인 사이드바 복원과 문제 내부 상태 변경은 메모리 캐시와 `.programmers-helper/problem-index.json`을 먼저 사용해 불필요한 파일 읽기를 줄입니다.
 
 ### 키보드 단축키
 

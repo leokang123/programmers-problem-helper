@@ -40,6 +40,7 @@
   - VS Code 명령에서 호출하는 public facade다.
   - 문제 CRUD, 풀이 action, 테스트 action은 아래 목적별 action 객체로 위임한다.
   - 현재 문제를 열면 `showOpenedProblemState()`로 사이드바 상태를 갱신한다.
+  - 현재 열린 문제 정보와 사이드바 문제 목록 cache를 우선 사용하고, 없을 때만 store 계층의 JSON/파일 읽기로 fallback한다.
 - `src/problems/problemCrudActions.js`
   - 문제 생성, 마지막 문제 열기, 문제 폴더 열기, 문제 삭제를 담당한다.
 - `src/problems/problemSolutionActions.js`
@@ -149,6 +150,7 @@ Programmers/
 - 샘플 테스트 fallback: `problem.md`의 입출력 예 테이블
 - 커스텀 테스트: `.programmers-helper/custom-tests.json`
 - 현재 문제: Webview 내부 `currentProblemDir`
+- 현재 문제 상세 cache: `ProblemCommands.currentProblemInfo`
 - 마지막 문제: `context.workspaceState.lastProblemDir`
 - 문제별 타이머: `<problemDir>/.programmers-helper/timer.json`
 - 현재 언어: VS Code 설정 `programmersHelper.language`
@@ -274,7 +276,10 @@ Git 동기화는 기본값이 꺼져 있고, 설정이 켜진 뒤 `Programmers: 
 - `deleteSolutionSnapshot`
   - Extension handler: `problemCommands.deleteSolutionSnapshot(problemDir, snapshotPath)`
 - `toggleReview`
-  - Extension handler: `problemCommands.toggleReview(problemDir, review)`
+  - 이전 메시지 이름이다. 현재 Webview는 여러 변경분을 `{ type: "saveReviewStates", updates }`로 모아 보낸다.
+- `saveReviewStates`
+  - Extension handler: `problemCommands.saveReviewStates(updates)`
+  - Webview는 checkbox 변경을 즉시 로컬 상태에 반영하고, 문제별 최신 상태만 짧게 모아 저장 요청을 보낸다.
 - `deleteProblem`
   - Extension handler: `problemCommands.deleteProblem(problemDir)`
 - `refreshProblems`
@@ -324,6 +329,7 @@ Git 동기화는 기본값이 꺼져 있고, 설정이 켜진 뒤 `Programmers: 
 - 저장되는 `elapsedMs`는 화면 표시와 맞도록 초 단위로 내림한다. 실행 중 checkpoint는 초 미만 나머지를 `startedAt`에 반영해 checkpoint마다 시간이 누락되지 않게 한다.
 - 다음에 문제를 열 때 `isRunning: true`가 남아 있으면 마지막 `updatedAt` 기준으로 멈춘 상태로 복구한다.
 - 현재 열린 문제 하나의 타이머만 매초 계산한다.
+- extension host의 `TimerManager`는 세션 중 `timerCache`를 먼저 확인하고, 캐시가 없을 때만 `timer.json`을 읽는다. 쓰기 후에는 같은 cache를 갱신한다.
 
 ## 문제 생성 flow
 
@@ -426,12 +432,13 @@ Git 동기화는 기본값이 꺼져 있고, 설정이 켜진 뒤 `Programmers: 
 2. `loadProblemExamples(problemDir)`
 3. `loadSavedCustomTests(problemDir)`
 4. `workspaceState.lastProblemDir` 갱신
-5. Webview에 `currentProblem` 전송
-6. Webview에 `customTests` 전송
+5. `currentProblemInfo` cache 갱신
+6. Webview에 `currentProblem` 전송
+7. Webview에 `customTests` 전송
    - 저장된 커스텀 테스트가 있으면 그것을 사용
    - 없으면 샘플 첫 번째 케이스를 커스텀 입력 기본값으로 사용
-7. `refreshProblems()` 호출
-8. Webview에 `status` 전송
+8. 이미 읽은 현재 문제 summary로 `problem-index.json`과 사이드바 문제 목록 cache를 갱신
+9. Webview에 `status` 전송
 
 ### 현재 문제와 마지막 문제의 의미
 
@@ -451,13 +458,15 @@ Git 동기화는 기본값이 꺼져 있고, 설정이 켜진 뒤 `Programmers: 
 
 1. `sidebarProvider.refreshProblems()`
 2. `resolveProgrammersDir(context, workspaceFolder?.uri)`
-3. `loadProblems(programmersDir)`
-4. Webview에 `{ type: "problems", problems }` 전송
+3. `force`가 아니고 같은 `programmersDir`의 `problemListCache`가 있으면 즉시 Webview에 전송
+4. 같은 저장소의 refresh promise가 이미 진행 중이면 그 결과를 재사용
+5. 캐시가 없으면 `loadProblems(programmersDir)`
+6. Webview에 `{ type: "problems", problems }` 전송
 
 ### `loadProblems()` 세부 동작
 
 1. `problem-index.json`이 있고 모든 항목이 현재 `programmersDir` 아래를 가리키면 인덱스를 우선 반환한다.
-2. 인덱스가 없거나 현재 `programmersDir` 밖의 경로를 포함하면 전체 스캔으로 재생성한다.
+2. `rebuildIndex` 옵션이 켜져 있거나 인덱스가 없거나 현재 `programmersDir` 밖의 경로를 포함하면 전체 스캔으로 재생성한다.
 3. `vscode.workspace.fs.readDirectory(programmersDir)`
 4. 디렉터리만 필터링
 5. 각 디렉터리에 대해 병렬로:
@@ -479,7 +488,8 @@ Git 동기화는 기본값이 꺼져 있고, 설정이 켜진 뒤 `Programmers: 
 ### 사이드바 목록 UI 상태
 
 - 문제 목록의 필터, 새로고침, 검색 영역은 고정하고 `problemList` row 영역만 스크롤한다.
-- 현재 열린 문제 row와 풀이기록에서 선택한 snapshot row는 `현재` 배지와 왼쪽 표시선으로 구분한다.
+- 현재 열린 문제 row와 풀이기록에서 선택한 snapshot row는 row 배경/표시선으로 구분한다.
+- 문제 row metadata에는 작은 문제 번호, 난이도, 이전 풀이 수가 표시된다.
 - 필터 변경 시 `전체`/`다시풀`은 현재 문제 row로, `풀이기록`은 선택된 snapshot row로 스크롤한다. 해당 항목이 없으면 스크롤하지 않는다.
 - 다시풀 토글, 삭제, 목록 refresh처럼 사용자가 목록 위치를 유지하길 기대하는 갱신에서는 자동 포커스를 수행하지 않는다.
 - 사이드바 Webview state에는 선택된 snapshot key, 선택한 필터, 문제 목록 `scrollTop`을 저장한다. 스크롤 위치는 마지막 scroll 이벤트 이후 500ms 동안 멈추면 저장하고, 사이드바를 다시 열어 목록 렌더가 끝난 뒤 한 번 복원한다.
@@ -487,9 +497,12 @@ Git 동기화는 기본값이 꺼져 있고, 설정이 켜진 뒤 `Programmers: 
 ### 성능 주의점
 
 - 문제 목록 새로고침은 문제 수만큼 metadata 파일을 여러 개 읽는다.
-- 일반 새로고침은 사이드바 메모리 캐시를 우선 사용한다.
-- 명시적 강제 새로고침은 전체 스캔으로 인덱스를 재생성한다.
-- 문제 열기, 리뷰 토글, 삭제, 풀이기록 변경은 단일 문제 인덱스 갱신 결과로 사이드바 메모리 캐시를 교체한다.
+- Webview 초기화와 일반 refresh는 사이드바 메모리 캐시를 우선 사용하고, 없으면 `problem-index.json`, 그다음 전체 스캔으로 fallback한다.
+- 문제 목록 새로고침 버튼은 `{ force: true }`를 보내므로 전체 스캔으로 인덱스를 재생성한다.
+- 문제 열기는 이미 읽은 현재 문제 summary로 index/cache를 갱신한다.
+- 리뷰 토글은 Webview 로컬 상태를 먼저 바꾸고, 저장 시 이미 알고 있는 review 값으로 index/cache row만 patch한다.
+- 삭제는 실제 폴더 삭제 후 캐시된 목록에서 해당 문제만 제거하고 index/cache를 갱신한다. 캐시가 없을 때만 index JSON 또는 전체 스캔으로 fallback한다.
+- 명령 팔레트에서 실행 대상을 고를 때도 active editor, `lastProblemDir`, 사이드바 cache, `loadProblems()` 순서로 fallback한다.
 
 ## 샘플 테스트 flow
 
