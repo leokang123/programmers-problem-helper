@@ -6,6 +6,12 @@
 
 문제 번호를 입력하면 프로그래머스 문제 페이지를 가져와서 `problem.md`와 현재 설정 언어의 풀이 파일을 만들고, 왼쪽에는 문제 미리보기, 오른쪽에는 풀이 파일을 열어줍니다. 샘플 테스트와 직접 추가한 커스텀 테스트도 실행할 수 있습니다.
 
+## 화면
+
+![Programmers Problem Helper overview](media/screenshots/overview.png)
+
+![Programmers Problem Helper sample test run](media/screenshots/sample-tests.png)
+
 ## 주요 기능
 
 - 왼쪽 Activity Bar에 `Programmers` 사이드바 추가
@@ -72,6 +78,11 @@ docker version
 Windows에서는 Docker 실행 모드를 권장합니다. Docker 모드는 확장이 준비한 Linux 컨테이너 안에서 컴파일하므로 Windows C++ toolchain 차이를 덜 탑니다.
 
 로컬 실행 모드를 사용하려면 MinGW `g++` 또는 LLVM `clang++`처럼 `-std=c++17`, `-Wall`, `-O2` 형식의 옵션을 지원하는 컴파일러가 PATH에 있어야 합니다. Visual Studio의 `cl.exe`만 설치된 환경은 현재 로컬 실행 모드에서 지원하지 않습니다.
+
+## 알려진 제한 사항
+
+- 입출력 예 표는 기본적으로 프로그래머스의 일반적인 가로형 표를 기준으로 파싱합니다. `매개변수 | 값`처럼 한 예제를 여러 행으로 표현하는 세로형 표는 현재 지원하지 않습니다.
+- 입출력 예 컬럼은 현재 표의 순서를 기준으로 solution 함수 인자 순서에 매핑합니다. 함수 시그니처와 표 헤더명을 비교해 여분 컬럼을 자동 제외하거나 컬럼 순서를 보정하는 방식은 검토했지만, 실제 문제 호환성과 변경 범위를 고려해 적용을 보류했습니다.
 
 ## 보안 안내
 
