@@ -15,6 +15,16 @@ const RETRYABLE_NETWORK_ERROR_CODES = new Set([
   "ENETUNREACH",
   "EHOSTUNREACH",
 ]);
+const EXAMPLE_LABEL_COLUMN_HEADERS = new Set([
+  "no",
+  "번호",
+  "순번",
+  "case",
+  "test case",
+  "testcase",
+  "example",
+  "예시",
+]);
 
 // problem.md 본문에서 입출력 예 표를 찾아 테스트 예제로 변환합니다.
 function extractExamplesFromMarkdown(markdown) {
@@ -38,13 +48,18 @@ function extractExamplesFromMarkdown(markdown) {
   }
 
   const header = parseMarkdownRow(tableLines[0]);
+  const inputStart = isExampleLabelColumnHeader(header[0]) ? 1 : 0;
   return tableLines.slice(2).map((line) => {
     const row = parseMarkdownRow(line);
     return {
-      inputs: row.slice(0, header.length - 1).map(cleanCell),
+      inputs: row.slice(inputStart, header.length - 1).map(cleanCell),
       expected: cleanCell(row[header.length - 1] || ""),
     };
   });
+}
+
+function isExampleLabelColumnHeader(value) {
+  return EXAMPLE_LABEL_COLUMN_HEADERS.has(String(value || "").trim().toLowerCase());
 }
 
 // Markdown 표 한 줄을 셀 단위로 나눕니다.
@@ -202,6 +217,37 @@ function slugify(text) {
     .replace(/^_+|_+$/g, "");
 }
 
+// Programmers 문제 본문 div 안에 중첩 div가 있어도 바깥 div의 내용 전체를 추출합니다.
+function extractProgrammersMarkdownHtml(html) {
+  const start = html.match(/<div\b[^>]*class="[^"]*\bmarkdown\b[^"]*\bsolarized-dark\b[^"]*"[^>]*>/i);
+  if (!start || start.index === undefined) {
+    return "";
+  }
+
+  return extractBalancedDivContents(html, start.index, start[0].length);
+}
+
+function extractBalancedDivContents(html, startIndex, startTagLength) {
+  const tagPattern = /<\/?div\b[^>]*>/gi;
+  tagPattern.lastIndex = startIndex + startTagLength;
+  let depth = 1;
+  let match;
+
+  while ((match = tagPattern.exec(html))) {
+    if (match[0].startsWith("</")) {
+      depth -= 1;
+    } else if (!/\/\s*>$/.test(match[0])) {
+      depth += 1;
+    }
+
+    if (depth === 0) {
+      return html.slice(startIndex + startTagLength, match.index);
+    }
+  }
+
+  return "";
+}
+
 // Programmers HTML 설명 영역을 problem.md에 저장할 Markdown으로 변환합니다.
 function htmlToMarkdown(htmlText) {
   let text = htmlText.replace(/\u001d/g, "");
@@ -295,6 +341,7 @@ function decodeHtml(value) {
 
 module.exports = {
   decodeHtml,
+  extractProgrammersMarkdownHtml,
   extractExamplesFromMarkdown,
   fetchText,
   htmlToMarkdown,

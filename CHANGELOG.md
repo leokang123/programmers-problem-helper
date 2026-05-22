@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.1
+
+- Fix Programmers problem parsing when nested HTML `div` elements appear inside the statement body, preventing truncated `problem.md` files.
+- Ignore leading example-label columns such as `no`, `case`, and `번호` when parsing horizontal sample tables.
+- Bump the extension manifest and lockfile to `0.6.1`.
+
 ## 0.6.0
 
 - Rework problem-list updates around cached state: review toggles, current-problem index updates, deletes, and command fallback lists now reuse the in-memory problem list before reading `problem-index.json`.

@@ -12,6 +12,7 @@ const {
 const {
   decodeHtml,
   extractExamplesFromMarkdown,
+  extractProgrammersMarkdownHtml,
   fetchText,
   htmlToMarkdown,
   matchFirst,
@@ -436,7 +437,7 @@ function parseProgrammersProblemPage(html, url, language = getLanguage(DEFAULT_L
     throw new Error(`문제 제목을 찾지 못했습니다: ${url}`);
   }
 
-  const markdownHtml = matchFirst(html, /<div class="markdown solarized-dark">([\s\S]*?)<\/div>/);
+  const markdownHtml = extractProgrammersMarkdownHtml(html);
   if (!markdownHtml) {
     throw new Error(`문제 본문을 찾지 못했습니다: ${url}`);
   }
