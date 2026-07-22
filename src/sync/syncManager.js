@@ -172,9 +172,14 @@ class SyncManager {
       await this.storeRemoteUrl(remoteUrl.trim());
       await this.updateConfig("sync.branch", branch.trim());
       if (isHttpsGitHubRemote(remoteUrl)) {
-        await this.ensureTokenForHttpsRemote();
+        if (!(await this.ensureTokenForHttpsRemote())) {
+          return;
+        }
       }
       await this.initializeRepository();
+      if (!(await this.ensureGitIdentity())) {
+        return;
+      }
       this.suppressAutoPull = true;
       try {
         await this.updateConfig("sync.enabled", true);
@@ -186,6 +191,9 @@ class SyncManager {
     }
 
     await this.initializeRepository();
+    if (!(await this.ensureGitIdentity())) {
+      return;
+    }
     this.suppressAutoPull = true;
     try {
       await this.updateConfig("sync.enabled", true);
@@ -253,15 +261,19 @@ class SyncManager {
         title: "Programmers Sync: GitHub token",
         placeHolder: "HTTPS remote는 token 또는 기존 Git credential이 필요합니다.",
       });
-      if (!picked || picked.action === "keep") {
-        return;
+      if (!picked) {
+        return false;
+      }
+      if (picked.action === "keep") {
+        return true;
       }
       if (picked.action === "skip") {
-        return;
+        await this.context.secrets.delete(TOKEN_KEY);
+        return true;
       }
     }
 
-    await this.promptAndStoreToken();
+    return this.promptAndStoreToken();
   }
 
   // GitHub token을 입력받아 VS Code SecretStorage에 저장합니다.
@@ -273,8 +285,13 @@ class SyncManager {
       ignoreFocusOut: true,
       placeHolder: "비워두면 기존 Git credential을 사용합니다.",
     });
-    if (!token) {
+    if (token === undefined) {
       return false;
+    }
+    if (!token.trim()) {
+      await this.context.secrets.delete(TOKEN_KEY);
+      vscode.window.showInformationMessage("저장된 token 없이 system Git credentials를 사용합니다.");
+      return true;
     }
 
     await this.context.secrets.store(TOKEN_KEY, token.trim());
@@ -544,6 +561,48 @@ class SyncManager {
     }
     await this.ensureGitignore(context.cwd);
     await this.ensureConflictMarkerHooks(context.cwd);
+  }
+
+  // 첫 commit에 필요한 Git identity가 없으면 현재 sync 저장소에만 설정합니다.
+  async ensureGitIdentity() {
+    const context = await this.getBasicContext();
+    const fields = [
+      {
+        key: "user.name",
+        title: "Programmers Sync: Git user name",
+        prompt: "동기화 commit에 기록할 이름입니다. 이 storage 저장소에만 설정됩니다.",
+        placeHolder: "Git user name",
+      },
+      {
+        key: "user.email",
+        title: "Programmers Sync: Git user email",
+        prompt: "동기화 commit에 기록할 이메일입니다. 이 storage 저장소에만 설정됩니다.",
+        placeHolder: "you@example.com",
+      },
+    ];
+
+    for (const field of fields) {
+      const configured = await this.git(context, ["config", "--get", field.key], { allowNonZeroExit: true });
+      if (configured.code === 0 && configured.stdout.trim()) {
+        continue;
+      }
+
+      const value = await vscode.window.showInputBox({
+        title: field.title,
+        prompt: field.prompt,
+        placeHolder: field.placeHolder,
+        ignoreFocusOut: true,
+        validateInput(input) {
+          return input.trim() ? undefined : "값을 입력해주세요.";
+        },
+      });
+      if (value === undefined) {
+        return false;
+      }
+      await this.git(context, ["config", field.key, value.trim()]);
+    }
+
+    return true;
   }
 
   // sync 작업에 필요한 cwd, branch, remote URL, token을 한 번에 수집합니다.
@@ -820,7 +879,11 @@ class SyncManager {
     };
     const gitArgs = args[0] === "--version"
       ? args
-      : ["-c", "core.quotepath=false", ...args];
+      : [
+        "-c", "core.quotepath=false",
+        ...(token ? ["-c", "credential.helper="] : []),
+        ...args,
+      ];
     const result = await this.execCommand("git", gitArgs, {
       cwd: context.cwd,
       env,

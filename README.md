@@ -98,7 +98,7 @@ Windows에서는 Docker 실행 모드를 권장합니다. Docker 모드는 확�
 
 Git 동기화는 기본값이 꺼져 있습니다. Windows와 macOS처럼 여러 환경에서 같은 문제 폴더와 풀이 상태를 쓰고 싶을 때 설정에서 `programmersHelper.sync.enabled`를 켠 뒤 `Programmers: Setup Sync`를 실행합니다.
 
-Setup Sync에서는 원격 저장소 URL과 브랜치를 입력합니다. HTTPS GitHub remote를 쓰는 경우 토큰을 입력할 수 있고, 입력한 토큰은 VS Code SecretStorage에 저장됩니다. SSH remote나 시스템 Git credential을 쓰는 경우 토큰을 비워둘 수 있습니다. 저장된 토큰은 `Programmers: Clear Stored GitHub Token` 명령으로 삭제할 수 있습니다.
+Setup Sync에서는 원격 저장소 URL과 브랜치를 입력합니다. Git commit에 필요한 user name 또는 email이 설정되지 않았다면 현재 storage 저장소에만 사용할 값을 추가로 입력합니다. HTTPS GitHub remote를 쓰는 경우 토큰을 입력할 수 있고, 입력한 토큰은 VS Code SecretStorage에 저장되어 기존 시스템 Git credential보다 우선 사용됩니다. SSH remote나 시스템 Git credential을 쓰는 경우 토큰을 비워둘 수 있습니다. 저장된 토큰은 `Programmers: Clear Stored GitHub Token` 명령으로 삭제할 수 있습니다.
 
 `Programmers: Sync Now`는 현재 열려 있는 파일을 저장한 뒤 Git 저장소에서 다음 순서로 동작합니다.
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.2
+
+- Prompt for missing Git user name and email during Setup Sync and store them only in the Programmers storage repository.
+- Make a token entered in Setup Sync override cached system credentials, and clear the saved token when switching to system Git credentials.
+- Stop Setup Sync when token selection or entry is cancelled instead of continuing with a previously saved token.
+- Document the updated Git identity and authentication behavior.
+- Bump the extension manifest and lockfile to `0.6.2`.
+
 ## 0.6.1
 
 - Fix Programmers problem parsing when nested HTML `div` elements appear inside the statement body, preventing truncated `problem.md` files.

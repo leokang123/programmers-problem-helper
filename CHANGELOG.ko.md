@@ -1,5 +1,13 @@
 # 변경 이력
 
+## 0.6.2
+
+- Setup Sync에서 Git user name 또는 email이 없으면 입력받아 Programmers storage 저장소에만 설정하도록 했습니다.
+- Setup Sync에서 입력한 token이 기존 system credential보다 우선하도록 하고, system Git credentials로 전환할 때 저장된 token을 삭제하도록 했습니다.
+- token 선택이나 입력을 취소했을 때 이전에 저장된 token으로 계속 진행하지 않고 Setup Sync를 중단하도록 했습니다.
+- 변경된 Git identity와 인증 동작을 문서에 반영했습니다.
+- `package.json`과 `package-lock.json` 버전을 `0.6.2`로 올렸습니다.
+
 ## 0.6.1
 
 - Programmers 문제 본문에 중첩된 HTML `div`가 있는 경우 `problem.md`가 중간에서 잘리던 문제를 수정했습니다.
