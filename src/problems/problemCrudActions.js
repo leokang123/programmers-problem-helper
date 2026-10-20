@@ -1,3 +1,4 @@
+const { measurePerformance } = require("../core/performance");
 const path = require("path");
 const vscode = require("vscode");
 const {
@@ -73,7 +74,10 @@ class ProblemCrudActions {
         async (progress) => {
           progress.report({ message: "기존 문제를 확인하는 중..." });
           const settings = getExecutionSettings();
-          const created = await createProblem(programmersDir, lessonId, settings.language);
+          const created = await createProblem(programmersDir, lessonId, settings.language, (message) => {
+            progress.report({ message });
+            this.commands.postMessage?.({ type: "status", kind: "running", text: `생성 중\n\n${message}` });
+          });
           progress.report({ message: "에디터를 여는 중..." });
           return created;
         }
@@ -124,7 +128,11 @@ class ProblemCrudActions {
   }
 
   async openProblemFromDir(problemDir, options = {}) {
-    const safeDir = await this.commands.validateProblemDir(problemDir);
+    return measurePerformance("open.total", () => this.openProblemFromDirMeasured(problemDir, options));
+  }
+
+  async openProblemFromDirMeasured(problemDir, options) {
+    const safeDir = await measurePerformance("open.validate", () => this.commands.validateProblemDir(problemDir));
     if (!safeDir) {
       vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다. 외부에서 삭제했다면 문제 목록을 새로고침해주세요.");
       return undefined;
@@ -137,18 +145,18 @@ class ProblemCrudActions {
     const preserveRightProblemTabs = settings.tabResetMode === "never"
       || (settings.tabResetMode === "onProblemChange" && sameProblem);
     const preserveRightProblemTabsAcrossProblems = settings.tabResetMode === "never";
-    const solution = await ensureSolutionForLanguage(safeDir, settings.language);
-    await openProblem(vscode.Uri.file(path.join(safeDir, "problem.md")), solution.solutionUri, {
+    const solution = await measurePerformance("open.ensureSolution", () => ensureSolutionForLanguage(safeDir, settings.language));
+    await measurePerformance("open.editor", () => openProblem(vscode.Uri.file(path.join(safeDir, "problem.md")), solution.solutionUri, {
       preserveRightProblemTabs,
       preserveRightProblemTabsAcrossProblems,
-    });
+    }));
     const runtimeStatus = options.deferDockerRuntime && settings.executionMode === "docker"
       ? {
           kind: "",
           title: "Docker 대기 중",
           detail: "문제를 열거나 테스트를 실행하면 준비합니다.",
         }
-      : await this.commands.prepareDockerRuntimeOnOpen(safeDir);
+      : await measurePerformance("open.runtime", () => this.commands.prepareDockerRuntimeOnOpen(safeDir));
     await this.commands.showOpenedProblemState(safeDir, runtimeStatus);
     return runtimeStatus;
   }

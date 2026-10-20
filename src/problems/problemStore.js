@@ -1,3 +1,4 @@
+const { measurePerformance } = require("../core/performance");
 const path = require("path");
 const vscode = require("vscode");
 const {
@@ -47,13 +48,13 @@ const {
 // 저장된 문제 목록을 빠른 인덱스에서 읽고, 필요할 때만 전체 스캔으로 재생성합니다.
 async function loadProblems(programmersDir, options = {}) {
   if (!options.rebuildIndex) {
-    const indexed = await readProblemIndex(programmersDir);
+    const indexed = await measurePerformance("list.readIndex", () => readProblemIndex(programmersDir));
     if (indexed) {
       return indexed;
     }
   }
 
-  return rebuildProblemIndex(programmersDir);
+  return measurePerformance("list.rebuildIndex", () => rebuildProblemIndex(programmersDir));
 }
 
 // 문제 폴더를 스캔해서 목록 인덱스를 다시 만듭니다.
@@ -213,8 +214,22 @@ async function updateProblemIndexSummary(programmersDir, existing, summary) {
   }
   const entries = Array.isArray(existing) ? existing : await readProblemIndex(programmersDir) || await rebuildProblemIndex(programmersDir);
   const target = path.resolve(summary.problemDir);
+  const listSummary = {
+    problemDir: summary.problemDir,
+    folderName: summary.folderName,
+    lessonId: summary.lessonId,
+    title: summary.title,
+    level: summary.level,
+    category: summary.category,
+    review: summary.review,
+    solutionHistoryCount: summary.solutionHistoryCount,
+  };
+  const previous = entries.find((problem) => path.resolve(problem.problemDir) === target);
+  if (previous && Object.keys(listSummary).every((key) => previous[key] === listSummary[key])) {
+    return entries;
+  }
   const next = entries.filter((problem) => path.resolve(problem.problemDir) !== target);
-  next.push(summary);
+  next.push(listSummary);
   const sorted = sortProblemSummaries(next);
   await writeProblemIndex(programmersDir, sorted);
   return sorted;
@@ -378,10 +393,11 @@ async function saveCustomTests(problemDir, tests) {
 }
 
 // 문제 번호로 Programmers 페이지를 가져와 폴더, metadata, 풀이 파일을 생성합니다.
-async function createProblem(programmersDir, lessonId, languageId = DEFAULT_LANGUAGE_ID) {
+async function createProblem(programmersDir, lessonId, languageId = DEFAULT_LANGUAGE_ID, reportProgress) {
   const language = getLanguage(languageId);
   const existing = await findExistingProblem(programmersDir, lessonId);
   if (existing) {
+    reportProgress?.("기존 문제의 언어 템플릿을 확인하는 중...");
     const solution = await ensureSolutionForLanguage(existing.problemDir.fsPath, language.id);
     return {
       ...existing,
@@ -392,6 +408,7 @@ async function createProblem(programmersDir, lessonId, languageId = DEFAULT_LANG
   }
 
   const url = getProgrammersProblemUrl(lessonId, language.id);
+  reportProgress?.("프로그래머스에서 문제를 다운로드하는 중...");
   const html = await fetchText(url);
   const page = parseProgrammersProblemPage(html, url, language);
   const { title, initialCode } = page;
@@ -404,6 +421,7 @@ async function createProblem(programmersDir, lessonId, languageId = DEFAULT_LANG
   const metadataUri = vscode.Uri.joinPath(helperDir, "programmers.json");
   const initialSolutionUri = vscode.Uri.joinPath(initialDir, language.initialSolutionFileName);
 
+  reportProgress?.("문제와 풀이 파일을 저장하는 중...");
   await vscode.workspace.fs.createDirectory(problemDir);
   await vscode.workspace.fs.createDirectory(helperDir);
   await vscode.workspace.fs.createDirectory(initialDir);

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.3
+
+- Skip full problem rescans after automatic sync when the repository commit matches the last successful index refresh; keep full validation for manual sync and changed repositories.
+- Avoid unchanged index writes, full-list messages, and redundant list renders when opening problems. Keep only summary fields in updated index entries.
+- Fix problem downloads hanging with Node network inspection enabled by preserving Buffer response chunks; handle response stream errors and drain redirects.
+- Show download and file-save progress during problem creation and add loading timings to the Programmers Helper Output channel.
+- Add regression tests for loading, sync index reuse, UTF-8 downloads, and response failures.
+- Bump the extension manifest and lockfile to `0.6.3`.
+
 ## 0.6.2
 
 - Prompt for missing Git user name and email during Setup Sync and store them only in the Programmers storage repository.

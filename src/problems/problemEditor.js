@@ -1,3 +1,4 @@
+const { measurePerformance } = require("../core/performance");
 const path = require("path");
 const vscode = require("vscode");
 const {
@@ -14,17 +15,17 @@ async function openProblem(mdUri, solutionUri, options = {}) {
   const preserveRightProblemTabs = Boolean(options.preserveRightProblemTabs);
   const preserveRightProblemTabsAcrossProblems = Boolean(options.preserveRightProblemTabsAcrossProblems);
 
-  await vscode.workspace.saveAll(false);
-  await openLockedMarkdownPreview(mdUri, vscode.ViewColumn.One);
-  await closeInactiveProblemTabs(mdUri, solutionUri);
-  await showSolution(solutionUri);
+  await measurePerformance("editor.saveAll", () => vscode.workspace.saveAll(false));
+  await measurePerformance("editor.markdownPreview", () => openLockedMarkdownPreview(mdUri, vscode.ViewColumn.One));
+  await measurePerformance("editor.closeInactive", () => closeInactiveProblemTabs(mdUri, solutionUri));
+  await measurePerformance("editor.solution", () => showSolution(solutionUri));
   if (!preserveRightProblemTabs) {
-    await closeStaleSolutionTabs(solutionUri);
+    await measurePerformance("editor.closeStale", () => closeStaleSolutionTabs(solutionUri));
   }
-  await keepOnlyProblemLayoutTabs(mdUri, solutionUri, {
+  await measurePerformance("editor.layout", () => keepOnlyProblemLayoutTabs(mdUri, solutionUri, {
     preserveRightProblemTabs,
     preserveRightProblemTabsAcrossProblems,
-  });
+  }));
 }
 
 // 풀이 파일을 오른쪽 그룹에 보여주되 기존 탭은 닫지 않고 재사용합니다.

@@ -128,6 +128,7 @@ function fetchTextOnce(targetUrl, redirects = 0) {
         },
       },
       (response) => {
+        response.on("error", reject);
         if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
           if (redirects >= MAX_REDIRECTS) {
             reject(new Error("프로그래머스 페이지 redirect가 너무 많습니다."));
@@ -142,6 +143,7 @@ function fetchTextOnce(targetUrl, redirects = 0) {
             return;
           }
 
+          response.resume();
           resolve(fetchText(redirectUrl.toString(), redirects + 1));
           return;
         }
@@ -154,8 +156,8 @@ function fetchTextOnce(targetUrl, redirects = 0) {
           return;
         }
 
-        response.setEncoding("utf8");
-        let body = "";
+        // Node의 네트워크 inspector도 data 이벤트를 읽으므로 Buffer를 유지합니다.
+        const chunks = [];
         let bytes = 0;
         response.on("data", (chunk) => {
           bytes += Buffer.byteLength(chunk, "utf8");
@@ -163,9 +165,9 @@ function fetchTextOnce(targetUrl, redirects = 0) {
             request.destroy(new Error("프로그래머스 페이지 응답이 너무 큽니다."));
             return;
           }
-          body += chunk;
+          chunks.push(chunk);
         });
-        response.on("end", () => resolve(body));
+        response.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
       }
     );
 

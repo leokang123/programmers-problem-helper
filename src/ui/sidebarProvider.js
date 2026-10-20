@@ -1,3 +1,4 @@
+const { logPerformance, measurePerformance } = require("../core/performance");
 const vscode = require("vscode");
 const {
   buildSidebarHtml,
@@ -24,6 +25,13 @@ class ProgrammersSidebarProvider {
     webviewView.webview.html = this.getHtml();
 
     webviewView.webview.onDidReceiveMessage(async (message) => {
+      if (message.type === "performance") {
+        if (Number.isFinite(message.renderMs) && Number.isFinite(message.count)) {
+          logPerformance(`webview.render: ${message.renderMs.toFixed(1)} ms, rows=${message.count}`);
+        }
+        return;
+      }
+
       if (message.type === "webviewReady") {
         this.onDidResolveView?.();
         return;
@@ -73,10 +81,14 @@ class ProgrammersSidebarProvider {
       resolveProgrammersDir,
     } = require("../problems/problemStore");
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-    const programmersDir = await resolveProgrammersDir(this.context, workspaceFolder?.uri);
+    const programmersDir = await measurePerformance("list.resolveStorage", () => resolveProgrammersDir(this.context, workspaceFolder?.uri));
     const cacheKey = programmersDir?.fsPath || "";
     if (Array.isArray(options.problems)) {
       const problems = options.problems;
+      if (this.problemListCache?.cacheKey === cacheKey && this.problemListCache.problems === problems) {
+        return;
+      }
+      logPerformance(`list.source=provided count=${problems.length}`);
       this.problemListCache = { cacheKey, problems };
       if (this.problemListRefreshPromise?.cacheKey === cacheKey) {
         this.problemListRefreshPromise = undefined;
@@ -95,6 +107,7 @@ class ProgrammersSidebarProvider {
     }
 
     if (!options.force && this.problemListCache?.cacheKey === cacheKey) {
+      logPerformance(`list.source=memory count=${this.problemListCache.problems.length}`);
       this.post({ type: "problems", problems: this.problemListCache.problems });
       return;
     }

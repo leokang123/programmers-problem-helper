@@ -1,3 +1,4 @@
+const { setPerformanceOutput } = require("./src/core/performance");
 const vscode = require("vscode");
 const cp = require("child_process");
 const path = require("path");
@@ -78,6 +79,7 @@ async function autoPrepareLastProblem(context) {
 // 확장 진입점을 초기화하고 명령을 등록합니다.
 function activate(context) {
   outputChannel = vscode.window.createOutputChannel("Programmers Helper");
+  setPerformanceOutput(outputChannel);
   diagnosticCollection = vscode.languages.createDiagnosticCollection("programmers-helper");
   outputChannel.appendLine(`[Programmers Helper] Runtime: ${getExtensionRuntimeLabel(context)}`);
   outputChannel.appendLine(`[Programmers Helper] Extension path: ${context.extensionUri.fsPath}`);

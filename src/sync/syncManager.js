@@ -418,7 +418,7 @@ class SyncManager {
         } else {
           await this.git(context, ["pull", "origin", context.branch]);
         }
-        await this.refreshProblems?.({ invalidateCache: true, force: true });
+        await this.refreshProblemsAfterSync(context);
       }
       this.updateStatusBar("synced");
       if (!silent) {
@@ -477,7 +477,7 @@ class SyncManager {
           progress.report({ message: "원격 저장소로 푸시하는 중..." });
           await this.conflicts.assertNoConflictMarkersInRepository(context);
           await this.git(context, ["push", "-u", "origin", context.branch]);
-          await this.refreshProblems?.({ invalidateCache: true, force: true });
+          await this.refreshProblemsAfterSync(context, true);
         }
       );
       this.updateStatusBar("synced");
@@ -488,6 +488,21 @@ class SyncManager {
       return false;
     } finally {
       this.syncInFlight = false;
+    }
+  }
+
+  // 이전 전체 갱신의 commit과 같을 때만 자동 pull의 재스캔을 생략합니다.
+  async refreshProblemsAfterSync(context, force = false) {
+    if (!this.refreshProblems) {
+      return;
+    }
+    const result = await this.git(context, ["rev-parse", "--verify", "HEAD"], { allowNonZeroExit: true });
+    const head = result.code === 0 ? result.stdout.trim() : "";
+    const previous = this.context.globalState.get("syncIndexedHead");
+    const rebuild = force || !head || previous?.cwd !== context.cwd || previous?.head !== head;
+    await this.refreshProblems({ invalidateCache: true, force: rebuild });
+    if (head && rebuild) {
+      await this.context.globalState.update("syncIndexedHead", { cwd: context.cwd, head });
     }
   }
 

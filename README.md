@@ -262,6 +262,14 @@ Expected Output:
 npm run check
 ```
 
+회귀 테스트:
+
+```sh
+npm test
+```
+
+로딩 시간은 Output의 `Programmers Helper` 채널에서 `[perf]` 로그로 확인합니다. 파일 조회, 에디터 열기, 실행 환경 준비, 인덱스 갱신 시간을 구분하며, `webview.render`는 화면 표시 완료 시간이 아닌 JavaScript 렌더링 처리 시간입니다.
+
 VSIX 패키징 확인:
 
 ```sh

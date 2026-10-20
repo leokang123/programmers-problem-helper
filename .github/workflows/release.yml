@@ -24,6 +24,9 @@ jobs:
       - name: Check extension syntax
         run: npm run check
 
+      - name: Run regression tests
+        run: npm test
+
       - name: Verify package version matches tag
         run: |
           PACKAGE_VERSION=$(node -p "require('./package.json').version")

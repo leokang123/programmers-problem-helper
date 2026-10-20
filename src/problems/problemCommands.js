@@ -1,3 +1,4 @@
+const { measurePerformance } = require("../core/performance");
 const path = require("path");
 const vscode = require("vscode");
 const {
@@ -124,16 +125,16 @@ class ProblemCommands {
 
   async showOpenedProblemState(problemDir, runtimeStatus = { kind: "", detail: "" }) {
     const settings = getExecutionSettings();
-    const problem = await loadProblemInfo(problemDir, settings.language);
-    const examples = await loadProblemExamples(problemDir);
-    const savedCustomTests = await loadSavedCustomTests(problemDir);
+    const problem = await measurePerformance("open.readInfo", () => loadProblemInfo(problemDir, settings.language));
+    const examples = await measurePerformance("open.readExamples", () => loadProblemExamples(problemDir));
+    const savedCustomTests = await measurePerformance("open.readCustomTests", () => loadSavedCustomTests(problemDir));
 
     await this.context.workspaceState.update("lastProblemDir", problemDir);
     this.currentProblemInfo = problem;
     this.postMessage?.({ type: "currentProblem", problem });
     this.postMessage?.({ type: "customTests", tests: savedCustomTests.length > 0 ? savedCustomTests : examples.length > 0 ? [examples[0]] : [] });
-    const problems = await this.updateProblemIndexForSummary(problem);
-    await this.refreshProblemsFromIndex(problems);
+    const problems = await measurePerformance("open.updateIndex", () => this.updateProblemIndexForSummary(problem));
+    await measurePerformance("open.refreshList", () => this.refreshProblemsFromIndex(problems));
 
     const statusKind = runtimeStatus.kind || "";
     const statusTitle = runtimeStatus.title || (statusKind === "ready"

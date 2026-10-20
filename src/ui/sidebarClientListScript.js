@@ -250,6 +250,19 @@ function buildSidebarClientListScript() {
 
     // 문제 목록과 현재 문제의 풀이 기록 목록 전체를 다시 그립니다.
     function renderProblems() {
+      const started = performance.now();
+      try {
+        renderProblemsContent();
+      } finally {
+        vscode.postMessage({
+          type: 'performance',
+          renderMs: performance.now() - started,
+          count: renderedProblems.length + renderedSnapshots.length
+        });
+      }
+    }
+
+    function renderProblemsContent() {
       const filter = document.querySelector('input[name="problemFilter"]:checked')?.value || 'all';
       const query = problemSearch.value.trim().toLowerCase();
       const matched = getMatchedProblems(query);

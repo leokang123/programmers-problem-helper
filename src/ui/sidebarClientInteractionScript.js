@@ -195,7 +195,6 @@ function buildSidebarClientInteractionScript() {
           return;
         }
         selectedSnapshotKey = '';
-        renderProblems();
         saveSidebarState();
         flushReviewSaves();
         vscode.postMessage({ type: 'openProblem', problemDir: problem.problemDir });
@@ -385,7 +384,14 @@ function buildSidebarClientInteractionScript() {
         activeTimer = undefined;
         resetTimerNotifications();
         updateCurrentActions();
-        renderProblems();
+        const filter = document.querySelector('input[name="problemFilter"]:checked')?.value || 'all';
+        if (filter === 'solutions') {
+          renderProblems();
+        } else {
+          problemRowCache.get(previousProblemDir)?.classList.remove('current');
+          problemRowCache.get(currentProblemDir)?.classList.add('current');
+          updatePaneSummaries();
+        }
         scrollCurrentProblemIntoView();
         saveSidebarState();
         if (currentProblemDir) {
