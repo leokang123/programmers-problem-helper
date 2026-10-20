@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.1
+
+- Replace the Marketplace and extension-list icon with an original problem-card P and blue completion check design.
+- Bump the extension manifest and lockfile to `0.7.1`.
+
 ## 0.7.0
 
 - Add a first-use guide for language, test execution mode, optional Git sync, and available settings. Keep existing preferences and allow reopening the guide.
