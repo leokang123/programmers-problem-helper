@@ -2,7 +2,7 @@
   "name": "programmers-problem-helper",
   "displayName": "Programmers Problem Helper",
   "description": "Solve Programmers problems in VS Code with guided setup, C++/Java/Python templates, local or Docker tests, and Git sync.",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "publisher": "leokang123",
   "license": "MIT",
   "icon": "media/icon.png",

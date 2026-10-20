@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.2
+
+- Resize the new icon to 256×256 PNG to meet the Marketplace icon file-size limit while preserving the selected design.
+- Bump the extension manifest and lockfile to `0.7.2`.
+
 ## 0.7.1
 
 - Replace the Marketplace and extension-list icon with an original problem-card P and blue completion check design.
