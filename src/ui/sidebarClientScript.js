@@ -1,3 +1,4 @@
+const { buildStartGuideScript } = require("./startGuideScript");
 const {
   buildSidebarClientInteractionScript,
 } = require("./sidebarClientInteractionScript");
@@ -14,6 +15,7 @@ function buildSidebarClientScript() {
     buildSidebarClientStateScript(),
     buildSidebarClientListScript(),
     buildSidebarClientInteractionScript(),
+    buildStartGuideScript(),
   ].join("\n");
 }
 

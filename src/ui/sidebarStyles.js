@@ -8,10 +8,21 @@ function buildSidebarStyles() {
     button { width: 100%; margin-top: 6px; padding: 6px 7px; border: 0; background: var(--vscode-button-background); color: var(--vscode-button-foreground); cursor: pointer; }
     button.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
     button:hover { background: var(--vscode-button-hoverBackground); }
-    .app { height: 100%; box-sizing: border-box; display: grid; grid-template-rows: auto minmax(0, 58fr) minmax(0, 42fr); gap: 4px; padding: 4px; overflow: hidden; }
+    .app { position: relative; height: 100%; box-sizing: border-box; display: grid; grid-template-rows: auto minmax(0, 58fr) minmax(0, 42fr); gap: 4px; padding: 4px; overflow: hidden; }
     .app.tests-collapsed { grid-template-rows: auto auto minmax(0, 1fr); }
     .app.list-collapsed { grid-template-rows: auto minmax(0, 1fr) auto; }
     .app.tests-collapsed.list-collapsed { grid-template-rows: auto auto auto; align-content: start; }
+    .guide-toolbar { display: flex; gap: 6px; flex: 0 0 auto; padding-bottom: 4px; }
+    .guide-toolbar button { margin: 0; }
+    .start-guide { position: absolute; z-index: 5; top: 36px; left: 4px; right: 4px; max-height: calc(100% - 48px); overflow: auto; box-sizing: border-box; padding: 12px; border: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBar-background); box-shadow: 0 4px 12px var(--vscode-widget-shadow); }
+    .start-guide[hidden] { display: none; }
+    .start-guide h2 { margin: 0 0 8px; font-size: 15px; }
+    .start-guide h3 { margin: 14px 0 6px; font-size: 13px; }
+    .start-guide p, .start-guide li { font-size: 12px; line-height: 1.5; color: var(--vscode-descriptionForeground); }
+    .start-guide label { margin-top: 10px; }
+    .start-guide select { width: 100%; padding: 6px; background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border); }
+    .start-guide summary { cursor: pointer; margin-top: 12px; }
+    .start-guide button:disabled { opacity: 0.6; cursor: default; }
     .pane { min-height: 0; display: flex; flex-direction: column; background: var(--vscode-sideBar-background); }
     .pane + .pane { border-top: 1px solid var(--vscode-panel-border); }
     .pane-title { flex: 0 0 auto; padding: 5px 2px; font-size: 12px; font-weight: 600; color: var(--vscode-foreground); }
@@ -29,6 +40,16 @@ function buildSidebarStyles() {
     .pane-body[hidden] { display: none !important; }
     .pane.collapsed .collapsed-badge { display: inline-block; }
     #listPane .pane-body { display: flex; flex-direction: column; overflow: hidden; }
+    .list-heading { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; }
+    .list-heading .toggle-title { flex: 1; min-width: 0; }
+    #maximizeList { flex: 0 0 auto; width: auto; margin: 0; white-space: nowrap; }
+    .app.list-maximized { grid-template-rows: minmax(0, 1fr) !important; }
+    .app.list-maximized #topPane, .app.list-maximized #testsPane { display: none; }
+    .app.list-maximized #listPane { border-top: 0; }
+    .app.list-maximized #listPane .pane-body { display: flex; }
+    .app.list-maximized #listPane .toggle-icon,
+    .app.list-maximized #listPane .toggle-summary,
+    .app.list-maximized #listPane .collapsed-badge { display: none; }
     .section-title { margin-bottom: 5px; font-size: 12px; font-weight: 600; color: var(--vscode-foreground); }
     .section { margin-bottom: 8px; }
     .section:last-child { margin-bottom: 0; }

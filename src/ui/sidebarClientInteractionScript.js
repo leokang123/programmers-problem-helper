@@ -313,6 +313,16 @@ function buildSidebarClientInteractionScript() {
     document.getElementById('toggleList').addEventListener('click', (event) => {
       togglePane(listPane, event.currentTarget, 'list-collapsed');
     });
+    document.getElementById('maximizeList').addEventListener('click', (event) => {
+      const maximized = app.classList.toggle('list-maximized');
+      event.currentTarget.textContent = maximized ? '돌아가기' : '크게 보기';
+      event.currentTarget.title = maximized ? '기존 사이드바 화면으로 돌아가기' : '문제 목록을 사이드바 전체 높이로 보기';
+      event.currentTarget.setAttribute('aria-pressed', String(maximized));
+      const toggle = document.getElementById('toggleList');
+      toggle.disabled = maximized;
+      toggle.setAttribute('aria-expanded', String(maximized || !listPane.classList.contains('collapsed')));
+      listPane.querySelector('.pane-body').hidden = !maximized && listPane.classList.contains('collapsed');
+    });
     document.querySelectorAll('input[name="problemFilter"]').forEach((filter) => {
       filter.addEventListener('change', () => {
         renderProblems();
@@ -336,6 +346,10 @@ function buildSidebarClientInteractionScript() {
     problemList.addEventListener('click', handleProblemListClick);
     window.addEventListener('beforeunload', flushReviewSaves);
     window.addEventListener('message', (event) => {
+      if (event.data.type === 'performanceSettings') {
+        performanceDiagnosticsEnabled = event.data.enabled === true;
+        return;
+      }
       if (event.data.type === 'status') {
         status.textContent = event.data.text;
         status.className = 'status ' + (event.data.kind || '');

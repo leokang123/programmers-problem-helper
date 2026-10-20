@@ -28,6 +28,7 @@ function buildSidebarClientStateScript() {
     const timerReset = document.getElementById('timerReset');
     let testCount = 0;
     let problems = [];
+    let performanceDiagnosticsEnabled = false;
     let currentProblem = undefined;
     let currentProblemDir = '';
     let activeTimer = undefined;

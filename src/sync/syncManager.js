@@ -83,6 +83,8 @@ class SyncManager {
 
   // sync 활성화 여부와 현재 상태를 왼쪽 status bar에 반영합니다.
   updateStatusBar(state = "idle") {
+    this.currentSyncState = state;
+    this.onDidChangeSyncState?.();
     const settings = getSyncSettings();
     if (!settings.enabled) {
       this.statusBar.hide();
@@ -104,23 +106,36 @@ class SyncManager {
 
   // 사용자가 설정 UI에서 Git sync를 처음 구성하는 흐름을 안내하고 초기 sync를 실행합니다.
   async setupSync() {
+    if (this.setupInFlight || this.syncInFlight) {
+      vscode.window.showInformationMessage("동기화 작업이 진행 중입니다. 완료 후 다시 시도해주세요.");
+      return;
+    }
+    this.setupInFlight = true;
+    try {
+      await this.runSyncSetup();
+    } finally {
+      this.setupInFlight = false;
+    }
+  }
+
+  async runSyncSetup() {
     const picked = await vscode.window.showQuickPick([
       {
-        label: "Use existing GitHub repository",
-        description: "Recommended",
-        detail: "You create the repo on GitHub first, then paste its remote URL here. The extension runs git init, sets origin, stores an optional token, commits local Programmers data, pulls remote data, then pushes.",
+        label: "GitHub 저장소 연결하기",
+        description: "처음 설정할 때 추천",
+        detail: "먼저 GitHub 저장소를 만든 뒤 주소를 입력하세요. 설정 후 현재 문제·풀이를 커밋하고 원격 변경을 가져와 업로드합니다.",
         kind: "remote",
       },
       {
-        label: "Local Git repo already configured",
-        description: "I already ran git init and remote add",
-        detail: "Use this when the Programmers storage folder already has .git and origin configured. The extension only turns sync on and uses the existing Git/SSH/credential setup.",
+        label: "이미 설정한 Git 저장소 사용",
+        description: "Git과 원격 주소를 직접 설정한 경우",
+        detail: "문제 저장 폴더의 기존 Git 저장소와 인증 설정을 사용해 동기화합니다.",
         kind: "configured",
       },
       {
-        label: "Manual setup",
-        description: "Open the folder and do everything yourself",
-        detail: "Opens the Programmers storage folder. After you configure Git manually, run Programmers: Sync Now to commit, merge, and push.",
+        label: "직접 설정하기",
+        description: "고급 사용자용",
+        detail: "문제 저장 폴더를 엽니다. Git 설정을 마친 뒤 Sync Now로 동기화하세요.",
         kind: "manual",
       },
     ], {
@@ -206,6 +221,7 @@ class SyncManager {
 
   // sync 설정만 켜져 있고 Git repo/remote가 없을 때 다음 행동을 안내합니다.
   async explainSetupAfterEnabled() {
+    if (this.setupInFlight || this.suppressAutoPull || this.syncInFlight) return;
     const settings = getSyncSettings();
     if (!settings.enabled) {
       this.updateStatusBar();
@@ -219,6 +235,7 @@ class SyncManager {
       this.logError("Sync setup check failed", error);
       context = undefined;
     }
+    if (this.setupInFlight || this.suppressAutoPull || this.syncInFlight) return;
     if (context) {
       this.updateStatusBar("idle");
       return;
@@ -373,7 +390,8 @@ class SyncManager {
   // extension activate 시 local 변경이 없으면 remote 변경을 자동으로 가져옵니다.
   async autoPullOnActivate() {
     const settings = getSyncSettings();
-    if (this.suppressAutoPull || !settings.enabled || !settings.autoPullOnActivate) {
+    if (this.setupInFlight || this.suppressAutoPull || this.syncInFlight) return;
+    if (!settings.enabled || !settings.autoPullOnActivate) {
       this.updateStatusBar();
       return;
     }
@@ -408,6 +426,7 @@ class SyncManager {
       return;
     }
 
+    if (this.setupInFlight || this.syncInFlight) return;
     this.syncInFlight = true;
     this.updateStatusBar("syncing");
     try {
@@ -478,6 +497,9 @@ class SyncManager {
           await this.conflicts.assertNoConflictMarkersInRepository(context);
           await this.git(context, ["push", "-u", "origin", context.branch]);
           await this.refreshProblemsAfterSync(context, true);
+          await this.context.globalState.update(`syncSuccessfulTarget.${isDevelopmentExtension(this.context) ? "development" : "production"}`, {
+            cwd: context.cwd, remoteUrl: context.remoteUrl, branch: context.branch,
+          });
         }
       );
       this.updateStatusBar("synced");
@@ -953,9 +975,13 @@ class SyncManager {
       : path.join(this.context.globalStorageUri.fsPath, "programmers-git-askpass.sh");
   }
 
-  // sync 설정 변경을 VS Code global configuration에 저장합니다.
+  // workspace에 지정한 값이 있으면 같은 범위에 저장해 실제 적용값을 바꿉니다.
   async updateConfig(key, value) {
-    await vscode.workspace.getConfiguration("programmersHelper").update(key, value, vscode.ConfigurationTarget.Global);
+    const config = vscode.workspace.getConfiguration("programmersHelper");
+    const current = config.inspect(key);
+    const target = current?.workspaceFolderValue !== undefined ? vscode.ConfigurationTarget.WorkspaceFolder
+      : current?.workspaceValue !== undefined ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
+    await config.update(key, value, target);
   }
 
   // setup 과정에서 저장해 둔 remote URL을 workspace/global state에서 읽습니다.
@@ -994,6 +1020,7 @@ class SyncManager {
     const message = error instanceof Error ? error.message : String(error);
     this.logError("Sync failed", error);
     if (error?.conflictMarkers) {
+      this.updateStatusBar("conflict");
       const context = await this.getGitContext({ requireConfigured: true });
       await this.conflicts.openConflictResolver(await this.conflicts.getGitOperationKind(context));
       return;

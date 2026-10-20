@@ -1,4 +1,4 @@
-const { logPerformance, measurePerformance } = require("../core/performance");
+const { logPerformance, measurePerformance, isPerformanceEnabled } = require("../core/performance");
 const vscode = require("vscode");
 const {
   buildSidebarHtml,
@@ -33,6 +33,7 @@ class ProgrammersSidebarProvider {
       }
 
       if (message.type === "webviewReady") {
+        this.postPerformanceSettings();
         this.onDidResolveView?.();
         return;
       }
@@ -47,6 +48,11 @@ class ProgrammersSidebarProvider {
         await handler(message);
       }
     });
+  }
+
+  // 초기 로딩과 설정 변경 때 Webview의 진단 상태를 맞춥니다.
+  postPerformanceSettings() {
+    this.post({ type: "performanceSettings", enabled: isPerformanceEnabled() });
   }
 
   // Webview로 메시지를 보냅니다.

@@ -250,6 +250,10 @@ function buildSidebarClientListScript() {
 
     // 문제 목록과 현재 문제의 풀이 기록 목록 전체를 다시 그립니다.
     function renderProblems() {
+      if (!performanceDiagnosticsEnabled) {
+        renderProblemsContent();
+        return;
+      }
       const started = performance.now();
       try {
         renderProblemsContent();

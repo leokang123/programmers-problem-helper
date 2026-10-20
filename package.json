@@ -1,8 +1,8 @@
 {
   "name": "programmers-problem-helper",
   "displayName": "Programmers Problem Helper",
-  "description": "Solve Programmers coding-test problems in VS Code with language templates, split previews, and local sample test runs.",
-  "version": "0.6.3",
+  "description": "Solve Programmers problems in VS Code with guided setup, C++/Java/Python templates, local or Docker tests, and Git sync.",
+  "version": "0.7.0",
   "publisher": "leokang123",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -153,6 +153,16 @@
             "default": 0,
             "minimum": 0,
             "markdownDescription": "How often to check whether the Programmers storage Git repository needs synchronization. `0` disables periodic checks."
+          }
+        }
+      },
+      {
+        "title": "Programmers Helper: Diagnostics",
+        "properties": {
+          "programmersHelper.diagnostics.performance": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "Log loading and sidebar rendering timings as `[perf]` in the Programmers Helper Output channel. Enable only when diagnosing performance. Changes apply immediately."
           }
         }
       }

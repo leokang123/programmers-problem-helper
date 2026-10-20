@@ -1,4 +1,5 @@
-const { setPerformanceOutput } = require("./src/core/performance");
+const { StartGuide } = require("./src/ui/startGuide");
+const { setPerformanceOutput, setPerformanceEnabled } = require("./src/core/performance");
 const vscode = require("vscode");
 const cp = require("child_process");
 const path = require("path");
@@ -80,6 +81,7 @@ async function autoPrepareLastProblem(context) {
 function activate(context) {
   outputChannel = vscode.window.createOutputChannel("Programmers Helper");
   setPerformanceOutput(outputChannel);
+  setPerformanceEnabled(vscode.workspace.getConfiguration("programmersHelper").get("diagnostics.performance"));
   diagnosticCollection = vscode.languages.createDiagnosticCollection("programmers-helper");
   outputChannel.appendLine(`[Programmers Helper] Runtime: ${getExtensionRuntimeLabel(context)}`);
   outputChannel.appendLine(`[Programmers Helper] Extension path: ${context.extensionUri.fsPath}`);
@@ -87,7 +89,12 @@ function activate(context) {
   logResolvedProgrammersStorage(context);
   lastExecutionMode = getConfiguredExecutionMode();
   syncManager = createSyncManager(context);
+  const startGuide = new StartGuide(context, syncManager, (message) => sidebarProvider?.post(message));
+  syncManager.onDidChangeSyncState = () => {
+    if (sidebarProvider?.view) void startGuide.refresh();
+  };
   sidebarProvider = new ProgrammersSidebarProvider(context, {
+    startGuide: (message) => startGuide.handle(message),
     create: async (message) => {
       const { problemCommands, timerManager } = ensureServices(context);
       await timerManager.pauseAllRunning();
@@ -191,7 +198,10 @@ function activate(context) {
       }
     },
   }, {
-    onDidResolveView: replayLatestStatusMessage,
+    onDidResolveView: () => {
+      replayLatestStatusMessage();
+      void startGuide.refresh();
+    },
   });
 
   context.subscriptions.push(
@@ -242,6 +252,13 @@ function activate(context) {
       await syncManager?.clearGitHubToken();
     }),
     vscode.workspace.onDidChangeConfiguration(async (event) => {
+      if (event.affectsConfiguration("programmersHelper")) {
+        void startGuide.refresh();
+      }
+      if (event.affectsConfiguration("programmersHelper.diagnostics.performance")) {
+        setPerformanceEnabled(vscode.workspace.getConfiguration("programmersHelper").get("diagnostics.performance"));
+        sidebarProvider?.postPerformanceSettings();
+      }
       if (event.affectsConfiguration("programmersHelper.executionMode")) {
         await handleExecutionModeChange();
       }

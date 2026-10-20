@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.0
+
+- Add a first-use guide for language, test execution mode, optional Git sync, and available settings. Keep existing preferences and allow reopening the guide.
+- Show sync connection, success, disabled, and conflict states in the guide; collapse completed sync or local-only choices and allow changing them later.
+- Prevent background setup checks from overwriting active sync state and match verified sync records to the repository and branch.
+- Add a full-height problem-list view with a return button that restores the original pane collapse states.
+- Make performance timing logs opt-in with `programmersHelper.diagnostics.performance`, disabled by default and applied without reloading.
+- Add regression coverage for diagnostics, onboarding, sync state transitions, and configuration scope.
+- Update extension metadata and manifest/lockfile versions to `0.7.0`.
+
 ## 0.6.3
 
 - Skip full problem rescans after automatic sync when the repository commit matches the last successful index refresh; keep full validation for manual sync and changed repositories.

@@ -20,6 +20,42 @@ ${buildSidebarStyles()}
 <body>
   <div class="app">
     <section id="topPane" class="pane top-pane collapsible-pane">
+      <div class="guide-toolbar">
+        <button id="showStartGuide" class="secondary" aria-controls="startGuide" aria-expanded="false">시작 안내</button>
+        <button id="openHelperSettings" class="secondary">설정</button>
+      </div>
+      <section id="startGuide" class="start-guide" aria-label="처음 사용 설정" hidden>
+        <h2>처음 사용 설정</h2>
+        <p>현재 설정으로 바로 시작해도 됩니다. 아래에서 바꾼 값은 즉시 적용됩니다.</p>
+        <label for="guideLanguage">풀이 언어</label>
+        <select id="guideLanguage" disabled><option value="cpp">C++</option><option value="java">Java</option><option value="python">Python</option></select>
+        <label for="guideExecutionMode">테스트 실행 방식</label>
+        <select id="guideExecutionMode" disabled><option value="docker">Docker</option><option value="local">로컬</option></select>
+        <p id="guideRuntimeHelp">Docker는 설치 및 실행이 필요합니다. 로컬은 해당 언어의 컴파일러 또는 인터프리터가 필요합니다.</p>
+        <h3>다른 컴퓨터와 동기화</h3>
+        <p>GitHub 저장소를 연결하면 문제와 풀이 기록을 다른 컴퓨터에서도 이어서 사용할 수 있습니다. 동기화 없이도 모든 풀이 기능을 사용할 수 있습니다.</p>
+        <p id="guideSyncState" role="status">현재 설정을 확인하고 있습니다…</p>
+        <button id="guideChangeSync" class="secondary" hidden aria-controls="guideSyncChoices" aria-expanded="false">변경</button>
+        <div id="guideSyncChoices">
+        <button id="guideSyncPrimary" hidden>동기화 켜기</button>
+        <button id="guideSyncInfo" class="secondary" hidden>연결·인증 정보 확인</button>
+        <button id="guideSetupSync">동기화 설정하기</button>
+        <button id="guideLocalOnly" class="secondary">이 컴퓨터에서만 사용</button>
+        <button id="guideCreateRepository" class="secondary">GitHub에서 저장소 만들기 ↗</button>
+        <p>GitHub에 저장소를 먼저 준비하세요. 설정 완료 시 현재 파일을 커밋하고 원격 저장소와 동기화합니다.</p>
+        </div>
+        <details><summary>더 조정할 수 있는 설정</summary>
+          <ul>
+            <li>탭 유지 방식: 문제 전환 시 기존 풀이 탭 유지</li>
+            <li>테스트 제한 시간: 테스트 한 개의 최대 실행 시간</li>
+            <li>C++ 컴파일러·표준: 사용할 컴파일러와 C++ 버전</li>
+            <li>동기화: 시작 시 자동 가져오기·상태 확인 주기</li>
+            <li>성능 진단: 느릴 때만 켜는 시간 측정 로그</li>
+          </ul>
+        </details>
+        <button id="guideAllSettings" class="secondary">전체 설정 보기</button>
+        <button id="guideComplete" disabled>이 설정으로 시작</button>
+      </section>
       <button id="toggleTop" class="pane-title toggle-title" type="button" aria-expanded="true">
         <span class="toggle-icon">▾</span>
         <span class="toggle-label">문제 열기 / 현재 상태</span>
@@ -94,12 +130,15 @@ ${buildSidebarStyles()}
     </section>
 
     <section id="listPane" class="pane collapsible-pane">
+      <div class="list-heading">
       <button id="toggleList" class="pane-title toggle-title" type="button" aria-expanded="true">
         <span class="toggle-icon">▾</span>
         <span class="toggle-label">문제 목록</span>
         <span id="listSummary" class="toggle-summary"></span>
         <span class="collapsed-badge">닫힘</span>
       </button>
+      <button id="maximizeList" class="secondary" type="button" aria-pressed="false" title="문제 목록을 사이드바 전체 높이로 보기">크게 보기</button>
+      </div>
       <div class="pane-body">
         <div class="list-actions">
           <label class="filter"><input name="problemFilter" type="radio" value="all" checked /> 전체</label>
