@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.3
+
+- Load problem files, editors, examples and the sidebar list before automatically preparing Docker. Update only runtime status afterwards to preserve edits.
+- Keep Git sync setup inputs and authentication choices open when switching windows; restore repository URLs on retry and reuse saved tokens.
+- Add loading-order and sync-setup regression tests.
+
 ## 0.7.2
 
 - Resize the new icon to 256×256 PNG to meet the Marketplace icon file-size limit while preserving the selected design.

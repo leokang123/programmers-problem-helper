@@ -388,7 +388,7 @@ async function handleExecutionModeChange() {
     postSidebarMessage({
       type: "status",
       kind: "",
-      text: "Docker 실행으로 전환됨\n\n문제를 열거나 테스트를 실행하면 Docker 컨테이너를 준비합니다.",
+      text: "Docker 실행으로 전환됨\n\n문제를 열면 화면 로드 후 Docker 컨테이너를 준비합니다. 테스트 실행 시에도 준비 상태를 확인합니다.",
     });
     return;
   }

@@ -140,6 +140,7 @@ class SyncManager {
       },
     ], {
       title: "Programmers Sync 설정",
+      ignoreFocusOut: true,
       placeHolder: "처음에는 GitHub repo를 직접 만든 뒤 remote URL을 입력하는 흐름입니다.",
     });
 
@@ -158,6 +159,8 @@ class SyncManager {
     if (picked.kind === "remote") {
       const remoteUrl = await vscode.window.showInputBox({
         title: "Programmers Sync: remote URL",
+        ignoreFocusOut: true,
+        value: this.setupRemoteUrlDraft || this.getStoredRemoteUrl(),
         prompt: "먼저 GitHub에서 private repo를 만든 뒤, 그 repo의 HTTPS 또는 SSH URL을 입력하세요. 아직 repo 생성 자동화는 하지 않습니다.",
         placeHolder: "https://github.com/you/programmers-state.git",
         // remote URL 입력이 비어 있으면 setup 흐름을 진행하지 않습니다.
@@ -169,8 +172,10 @@ class SyncManager {
         return;
       }
 
+      this.setupRemoteUrlDraft = remoteUrl.trim();
       const branch = await vscode.window.showInputBox({
         title: "Programmers Sync: branch",
+        ignoreFocusOut: true,
         prompt: "동기화에 사용할 브랜치입니다. 보통 main을 쓰면 됩니다.",
         value: getSyncSettings().branch || "main",
         // Git이 허용하지 않는 브랜치 이름 문자를 설정 단계에서 걸러냅니다.
@@ -185,6 +190,7 @@ class SyncManager {
       }
 
       await this.storeRemoteUrl(remoteUrl.trim());
+      this.setupRemoteUrlDraft = undefined;
       await this.updateConfig("sync.branch", branch.trim());
       if (isHttpsGitHubRemote(remoteUrl)) {
         if (!(await this.ensureTokenForHttpsRemote())) {
@@ -276,6 +282,7 @@ class SyncManager {
         },
       ], {
         title: "Programmers Sync: GitHub token",
+        ignoreFocusOut: true,
         placeHolder: "HTTPS remote는 token 또는 기존 Git credential이 필요합니다.",
       });
       if (!picked) {

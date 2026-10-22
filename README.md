@@ -63,7 +63,7 @@
 - Docker 실행 모드: Docker Desktop 또는 docker 엔진
 - 로컬 실행 모드: 선택한 언어의 실행 명령
 
-Docker 실행 모드에서는 테스트 실행 시 확장이 Docker 실행 컨테이너를 자동으로 준비하고, 그 안에서 현재 언어에 맞게 컴파일 또는 실행합니다.
+Docker 실행 모드에서는 문제 파싱·파일 저장·문제와 풀이 에디터·사이드바의 예제와 목록 로드를 먼저 마친 뒤 실행 컨테이너를 자동으로 준비합니다. 준비 중에도 문제를 읽고 풀이를 작성할 수 있으며, 준비 완료 후에는 상태 문구만 갱신해 편집 중인 커스텀 테스트를 유지합니다. 테스트 실행 시에도 준비 상태를 확인하고 컨테이너 안에서 컴파일 또는 실행합니다.
 
 ```sh
 docker version
@@ -113,7 +113,7 @@ Programmers 사이드바를 처음 열면 시작 안내에서 현재 풀이 언�
 
 Git 동기화는 기본값이 꺼져 있습니다. Windows와 macOS처럼 여러 환경에서 같은 문제 폴더와 풀이 상태를 쓰고 싶을 때 설정에서 `programmersHelper.sync.enabled`를 켠 뒤 `Programmers: Setup Sync`를 실행합니다.
 
-Setup Sync에서는 원격 저장소 URL과 브랜치를 입력합니다. Git commit에 필요한 user name 또는 email이 설정되지 않았다면 현재 storage 저장소에만 사용할 값을 추가로 입력합니다. HTTPS GitHub remote를 쓰는 경우 토큰을 입력할 수 있고, 입력한 토큰은 VS Code SecretStorage에 저장되어 기존 시스템 Git credential보다 우선 사용됩니다. SSH remote나 시스템 Git credential을 쓰는 경우 토큰을 비워둘 수 있습니다. 저장된 토큰은 `Programmers: Clear Stored GitHub Token` 명령으로 삭제할 수 있습니다.
+Setup Sync에서는 원격 저장소 URL과 브랜치를 입력합니다. GitHub에서 주소나 토큰을 복사하기 위해 다른 창으로 이동해도 입력창이 유지됩니다. 중간에 취소한 뒤 다시 시작하면 저장된 주소·브랜치를 기본값으로 표시하며, 브랜치 입력 단계에서 취소한 경우에도 같은 실행 세션에서는 입력한 주소를 기억합니다. Git commit에 필요한 user name 또는 email이 설정되지 않았다면 현재 storage 저장소에만 사용할 값을 추가로 입력합니다. HTTPS GitHub remote를 쓰는 경우 토큰을 입력할 수 있고, 입력한 토큰은 VS Code SecretStorage에 저장되어 기존 시스템 Git credential보다 우선 사용됩니다. SSH remote나 시스템 Git credential을 쓰는 경우 토큰을 비워둘 수 있습니다. 저장된 토큰은 `Programmers: Clear Stored GitHub Token` 명령으로 삭제할 수 있습니다.
 
 `Programmers: Sync Now`는 현재 열려 있는 파일을 저장한 뒤 Git 저장소에서 다음 순서로 동작합니다.
 

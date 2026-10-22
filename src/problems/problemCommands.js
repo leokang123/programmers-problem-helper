@@ -71,8 +71,8 @@ class ProblemCommands {
     return this.crud.openLastProblemFromState();
   }
 
-  openProblemFromDir(problemDir, options = {}) {
-    return this.crud.openProblemFromDir(problemDir, options);
+  openProblemFromDir(problemDir) {
+    return this.crud.openProblemFromDir(problemDir);
   }
 
   deleteProblem(problemDir) {
@@ -227,7 +227,9 @@ class ProblemCommands {
       problemDir,
       execCommand: this.execCommand,
       limitStatusText,
-      postStatus: (message) => this.postMessage?.(message),
+      postStatus: (message) => {
+        if (this.currentProblemInfo?.problemDir === problemDir) this.postMessage?.({ ...message, problemDir });
+      },
     });
   }
 

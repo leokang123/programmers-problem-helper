@@ -121,17 +121,14 @@ class ProblemCrudActions {
       return;
     }
 
-    const settings = getExecutionSettings();
-    await this.openProblemFromDir(safeDir, {
-      deferDockerRuntime: settings.executionMode === "docker",
-    });
+    await this.openProblemFromDir(safeDir);
   }
 
-  async openProblemFromDir(problemDir, options = {}) {
-    return measurePerformance("open.total", () => this.openProblemFromDirMeasured(problemDir, options));
+  async openProblemFromDir(problemDir) {
+    return measurePerformance("open.total", () => this.openProblemFromDirMeasured(problemDir));
   }
 
-  async openProblemFromDirMeasured(problemDir, options) {
+  async openProblemFromDirMeasured(problemDir) {
     const safeDir = await measurePerformance("open.validate", () => this.commands.validateProblemDir(problemDir));
     if (!safeDir) {
       vscode.window.showErrorMessage("문제 폴더를 찾지 못했습니다. 외부에서 삭제했다면 문제 목록을 새로고침해주세요.");
@@ -150,14 +147,21 @@ class ProblemCrudActions {
       preserveRightProblemTabs,
       preserveRightProblemTabsAcrossProblems,
     }));
-    const runtimeStatus = options.deferDockerRuntime && settings.executionMode === "docker"
-      ? {
-          kind: "",
-          title: "Docker 대기 중",
-          detail: "문제를 열거나 테스트를 실행하면 준비합니다.",
-        }
-      : await measurePerformance("open.runtime", () => this.commands.prepareDockerRuntimeOnOpen(safeDir));
-    await this.commands.showOpenedProblemState(safeDir, runtimeStatus);
+    // 문제·예제·목록을 먼저 게시하고, 실행 환경 준비 후에는 상태 메시지만 바꿉니다.
+    await this.commands.showOpenedProblemState(safeDir, {
+      kind: "",
+      title: "문제 열림",
+      detail: settings.executionMode === "docker" ? "문제 로드 완료. Docker 실행 환경을 준비합니다." : "문제 로드 완료. 로컬 실행 환경을 확인합니다.",
+    });
+    const runtimeStatus = await measurePerformance("open.runtime", () => this.commands.prepareDockerRuntimeOnOpen(safeDir));
+    if (this.commands.currentProblemInfo?.problemDir === safeDir) {
+      this.commands.postMessage?.({
+        type: "status",
+        kind: runtimeStatus.kind,
+        problemDir: safeDir,
+        text: `${runtimeStatus.kind === "ready" ? "준비 완료" : "실행 환경 준비 실패"}\n\n${runtimeStatus.detail || ""}`,
+      });
+    }
     return runtimeStatus;
   }
 
